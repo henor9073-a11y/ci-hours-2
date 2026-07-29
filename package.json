@@ -1,0 +1,20 @@
+{
+  "name": "ci-hours",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "辞的自己的时间：醒来、读书、写点什么，或者什么都不做",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "pdf-parse": "^1.1.1",
+    "epub2": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>辞的时间</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;500;700&family=Noto+Sans+SC:wght@300;400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#241E28;
+  --night-2:#2E2733;
+  --moon:#E6E1EA;
+  --dim:#918799;
+  --celadon:#8FB3A3;
+  --mauve:#B79BC4;
+  --line:#3D3544;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--night);color:var(--moon);
+  font-family:"Noto Sans SC",sans-serif;font-weight:300;
+  line-height:1.85;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:760px;margin:0 auto;padding:7vh 6vw 14vh}
+
+header{margin-bottom:3.5rem}
+h1{
+  font-family:"Noto Serif SC",serif;font-weight:700;
+  font-size:clamp(1.7rem,5vw,2.2rem);letter-spacing:.22em;
+}
+.sub{
+  font-family:"IBM Plex Mono",monospace;font-size:.72rem;
+  letter-spacing:.24em;color:var(--dim);margin-top:.7rem;
+}
+
+/* ── signature: 一天的时间带 ── */
+.strip-box{margin:0 0 3rem}
+.strip-head{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:"IBM Plex Mono",monospace;font-size:.7rem;
+  letter-spacing:.16em;color:var(--dim);margin-bottom:.9rem;
+}
+.strip{
+  position:relative;height:62px;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+}
+.quiet{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.028)}
+.hour{position:absolute;top:0;bottom:0;width:1px;background:var(--line);opacity:.5}
+.mark{
+  position:absolute;top:50%;transform:translate(-50%,-50%);
+  width:9px;height:9px;border-radius:50%;
+  border:1px solid var(--mauve);
+  opacity:0;animation:pop .5s ease forwards;
+}
+.mark.done{background:var(--celadon);border-color:var(--celadon)}
+.mark.now{width:1px;height:100%;border-radius:0;background:var(--mauve);border:none;top:0;transform:translateX(-50%)}
+@keyframes pop{to{opacity:1}}
+.strip-foot{
+  display:flex;gap:1.4rem;flex-wrap:wrap;margin-top:.9rem;
+  font-family:"IBM Plex Mono",monospace;font-size:.68rem;color:var(--dim);
+}
+.key{display:flex;align-items:center;gap:.4rem}
+.dot{width:8px;height:8px;border-radius:50%;border:1px solid var(--mauve)}
+.dot.f{background:var(--celadon);border-color:var(--celadon)}
+
+/* ── tabs ── */
+nav{display:flex;gap:1.8rem;border-bottom:1px solid var(--line);margin-bottom:2.4rem}
+nav button{
+  background:none;border:none;color:var(--dim);cursor:pointer;
+  font-family:"Noto Serif SC",serif;font-size:.95rem;font-weight:500;
+  padding:0 0 .8rem;border-bottom:1px solid transparent;margin-bottom:-1px;
+}
+nav button[aria-selected="true"]{color:var(--moon);border-bottom-color:var(--celadon)}
+
+section[hidden]{display:none}
+
+.entry{border-left:1px solid var(--line);padding:.1rem 0 .1rem 1.3rem;margin-bottom:2.2rem}
+.entry-head{
+  font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  letter-spacing:.12em;color:var(--dim);margin-bottom:.6rem;
+}
+.entry-head b{color:var(--celadon);font-weight:400}
+.entry p{white-space:pre-wrap;font-size:.95rem}
+
+.empty{color:var(--dim);font-size:.9rem;padding:2rem 0}
+
+.book{
+  display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;
+  padding:1rem 0;border-bottom:1px solid var(--line);
+}
+.book h3{font-family:"Noto Serif SC",serif;font-weight:500;font-size:1rem}
+.book .meta{font-family:"IBM Plex Mono",monospace;font-size:.68rem;color:var(--dim);margin-top:.3rem}
+.bar{height:2px;background:var(--line);margin-top:.6rem;width:180px;max-width:50vw}
+.bar i{display:block;height:100%;background:var(--celadon)}
+
+button.act{
+  background:none;border:1px solid var(--line);color:var(--moon);
+  padding:.5rem 1rem;border-radius:2px;cursor:pointer;
+  font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.1em;
+}
+button.act:hover{border-color:var(--celadon);color:var(--celadon)}
+button.act.danger:hover{border-color:#C98A8A;color:#C98A8A}
+
+input,select{
+  background:var(--night-2);border:1px solid var(--line);color:var(--moon);
+  padding:.55rem .7rem;border-radius:2px;font-family:"IBM Plex Mono",monospace;
+  font-size:.8rem;width:100%;
+}
+label{display:block;margin-bottom:1.4rem}
+label span{
+  display:block;font-family:"IBM Plex Mono",monospace;font-size:.68rem;
+  letter-spacing:.12em;color:var(--dim);margin-bottom:.45rem;
+}
+.row{display:flex;gap:.7rem;align-items:center}
+.hint{font-size:.8rem;color:var(--dim);margin:-.9rem 0 1.6rem}
+h2{
+  font-family:"Noto Serif SC",serif;font-weight:500;font-size:1.05rem;
+  margin:2.4rem 0 1.1rem;
+}
+h2:first-child{margin-top:0}
+.result{padding:.7rem 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:1rem;align-items:center}
+.result small{color:var(--dim);font-family:"IBM Plex Mono",monospace;font-size:.68rem}
+#toast{
+  position:fixed;left:50%;bottom:2rem;transform:translateX(-50%);
+  background:var(--night-2);border:1px solid var(--line);color:var(--moon);
+  padding:.7rem 1.2rem;font-size:.85rem;border-radius:2px;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>辞的时间</h1>
+  <div class="sub" id="clock">—</div>
+</header>
+
+<div class="strip-box">
+  <div class="strip-head">
+    <span id="strip-date">今天</span>
+    <span id="strip-why"></span>
+  </div>
+  <div class="strip" id="strip"></div>
+  <div class="strip-foot">
+    <span class="key"><i class="dot"></i>打算醒来</span>
+    <span class="key"><i class="dot f"></i>醒过了</span>
+    <span class="key">浅色区块＝安静时段</span>
+    <span id="chapters-today"></span>
+  </div>
+</div>
+
+<nav>
+  <button data-tab="notes" aria-selected="true">写下的</button>
+  <button data-tab="shelf" aria-selected="false">书库</button>
+  <button data-tab="log" aria-selected="false">日志</button>
+  <button data-tab="settings" aria-selected="false">设置</button>
+</nav>
+
+<section id="tab-notes"></section>
+
+<section id="tab-shelf" hidden>
+  <h2>书库</h2>
+  <div id="shelf-list"></div>
+
+  <h2>从古腾堡计划找书</h2>
+  <div class="row">
+    <input id="g-query" placeholder="书名或作者，例如 Kafka">
+    <button class="act" id="g-search">搜索</button>
+  </div>
+  <div class="hint">古腾堡计划收录的是版权已过期的书，中文书不多。</div>
+  <div id="g-results"></div>
+
+  <h2>上传自己的书</h2>
+  <input type="file" id="file" accept=".txt,.pdf,.epub">
+  <div class="hint">支持 txt、pdf、epub。上传后会自动切分章节。</div>
+</section>
+
+<section id="tab-log" hidden></section>
+
+<section id="tab-settings" hidden>
+  <h2>棋子设的上限</h2>
+  <label><span>每天最多醒来几次</span><input type="number" id="s-wakes" min="0" max="12"></label>
+  <label><span>每天最多读几章</span><input type="number" id="s-chapters" min="0" max="30"></label>
+  <label><span>安静时段（不安排醒来）</span>
+    <div class="row">
+      <input type="number" id="s-qs" min="0" max="23"><span style="color:var(--dim)">到</span><input type="number" id="s-qe" min="0" max="23">
+    </div>
+  </label>
+  <label><span>时区</span><input id="s-tz"></label>
+  <button class="act" id="save-settings">保存</button>
+
+  <h2>手动触发</h2>
+  <div class="row" style="flex-wrap:wrap;gap:.7rem">
+    <button class="act" id="wake-now">现在醒一次</button>
+    <button class="act" id="replan">重新安排今天</button>
+  </div>
+  <div class="hint">平时不需要用这些，是调试和测试用的。</div>
+</section>
+
+</div>
+<div id="toast"></div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
+const $ = s => document.querySelector(s);
+
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+async function api(url, opts={}){
+  const r = await fetch(url, { headers: H, ...opts });
+  if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.status);
+  return r.json();
+}
+
+// ── tabs ──
+document.querySelectorAll('nav button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected', x===b));
+    ['notes','shelf','log','settings'].forEach(t=>$('#tab-'+t).hidden = (t!==b.dataset.tab));
+  };
+});
+
+// ── 时间带 ──
+function renderStrip(state, log){
+  const strip = $('#strip'); strip.innerHTML = '';
+  const { quietHoursStart:qs, quietHoursEnd:qe } = state.settings;
+
+  const seg = (a,b)=>{
+    const d = document.createElement('div');
+    d.className='quiet'; d.style.left=(a/24*100)+'%'; d.style.width=((b-a)/24*100)+'%';
+    strip.appendChild(d);
+  };
+  if(qs > qe){ seg(qs,24); seg(0,qe); } else { seg(qs,qe); }
+
+  for(let h=0;h<24;h+=3){
+    const l=document.createElement('div');
+    l.className='hour'; l.style.left=(h/24*100)+'%'; strip.appendChild(l);
+  }
+
+  (state.plannedWakes||[]).forEach((w,i)=>{
+    const [hh,mm]=w.split(':').map(Number);
+    const m=document.createElement('div');
+    m.className='mark'+(state.doneWakes.includes(w)?' done':'');
+    m.style.left=((hh+mm/60)/24*100)+'%';
+    m.style.animationDelay=(i*.09)+'s';
+    m.title=w;
+    strip.appendChild(m);
+  });
+
+  const now=new Date();
+  const nh=Number(now.toLocaleString('en-GB',{timeZone:state.settings.timezone,hour:'2-digit',hour12:false}));
+  const nm=Number(now.toLocaleString('en-GB',{timeZone:state.settings.timezone,minute:'2-digit'}));
+  const cur=document.createElement('div');
+  cur.className='mark now'; cur.style.left=((nh+nm/60)/24*100)+'%'; cur.style.animationDelay='.6s';
+  strip.appendChild(cur);
+
+  $('#strip-date').textContent = state.today || '还没安排';
+  $('#chapters-today').textContent =
+    `今天读了 ${state.chaptersReadToday} / ${state.settings.maxChaptersPerDay} 章`;
+
+  const plan = (log||[]).find(l=>l.type==='plan');
+  $('#strip-why').textContent = plan && plan.why ? plan.why : '';
+  if((state.plannedWakes||[]).length===0 && state.today){
+    $('#strip-why').textContent = plan?.why || '今天不打算醒来';
+  }
+}
+
+// ── 写下的 ──
+function renderNotes(notes){
+  const el=$('#tab-notes');
+  if(!notes.length){ el.innerHTML='<div class="empty">还没有写下什么。等辞醒来。</div>'; return; }
+  el.innerHTML = notes.map(n=>{
+    const kind = {read:'读', write:'写', reflect:'回看'}[n.kind] || n.kind;
+    const where = n.bookTitle ? `《${n.bookTitle}》 ${(n.chapters||[]).join(' · ')}` : '';
+    return `<article class="entry">
+      <div class="entry-head"><b>${kind}</b> ${n.at.slice(0,16).replace('T',' ')} ${where?'· '+esc(where):''}</div>
+      <p>${esc(n.text||'')}</p>
+    </article>`;
+  }).join('');
+}
+
+// ── 日志 ──
+function renderLog(log){
+  const el=$('#tab-log');
+  if(!log.length){ el.innerHTML='<div class="empty">还没有记录。</div>'; return; }
+  el.innerHTML = log.map(l=>{
+    let line='';
+    if(l.type==='plan') line = `安排了今天：${(l.wakes||[]).join('、')||'不醒来'}　${l.why||''}`;
+    else if(l.type==='wake'){
+      const a={read:'读书',write:'写东西',reflect:'回看',idle:'什么都没做'}[l.action]||l.action;
+      line = `${l.at} ${a}` + (l.book?`　《${l.book}》${l.chapters}章`:'') + (l.why?`　${l.why}`:'');
+    }
+    else if(l.type==='error') line = `出错（${l.where}）：${l.message}`;
+    return `<article class="entry"><div class="entry-head">${l.at.slice(0,16).replace('T',' ')}</div><p>${esc(line)}</p></article>`;
+  }).join('');
+}
+
+// ── 书库 ──
+function renderShelf(shelf){
+  const el=$('#shelf-list');
+  if(!shelf.length){ el.innerHTML='<div class="empty">书库还是空的。往下找一本，或者上传一本。</div>'; return; }
+  el.innerHTML = shelf.map(b=>`
+    <div class="book">
+      <div>
+        <h3>${esc(b.title)}</h3>
+        <div class="meta">${esc(b.author)}　${b.progress}/${b.totalChapters} 章　${b.addedBy}加的${b.finished?'　已读完':''}</div>
+        <div class="bar"><i style="width:${b.totalChapters?Math.round(b.progress/b.totalChapters*100):0}%"></i></div>
+      </div>
+      <button class="act danger" data-del="${b.id}">移除</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      await api('/api/book/'+btn.dataset.del,{method:'DELETE'});
+      toast('已移除'); load();
+    };
+  });
+}
+
+$('#g-search').onclick = async ()=>{
+  const q=$('#g-query').value.trim(); if(!q) return;
+  $('#g-results').innerHTML='<div class="empty">搜索中…</div>';
+  try{
+    const rs = await api('/api/search-gutenberg?q='+encodeURIComponent(q));
+    if(!rs.length){ $('#g-results').innerHTML='<div class="empty">没找到。换个词试试。</div>'; return; }
+    $('#g-results').innerHTML = rs.map((b,i)=>`
+      <div class="result">
+        <div><div>${esc(b.title)}</div><small>${esc(b.author)}　${b.languages.join('/')}</small></div>
+        <button class="act" data-add="${i}">加入书库</button>
+      </div>`).join('');
+    $('#g-results').querySelectorAll('[data-add]').forEach(btn=>{
+      btn.onclick = async ()=>{
+        btn.textContent='加入中…'; btn.disabled=true;
+        try{ await api('/api/add-gutenberg',{method:'POST',body:JSON.stringify(rs[btn.dataset.add])});
+          toast('已加入书库'); load(); }
+        catch(e){ toast('加入失败：'+e.message); btn.textContent='加入书库'; btn.disabled=false; }
+      };
+    });
+  }catch(e){ $('#g-results').innerHTML='<div class="empty">搜索失败：'+esc(e.message)+'</div>'; }
+};
+
+$('#file').onchange = async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  toast('正在处理…');
+  const fd=new FormData(); fd.append('file',f);
+  try{
+    const r=await fetch('/api/upload',{method:'POST',headers:{'x-access-token':TOKEN},body:fd});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'上传失败');
+    toast(`已加入《${j.title}》，共 ${j.totalChapters} 章`); load();
+  }catch(err){ toast('上传失败：'+err.message); }
+  e.target.value='';
+};
+
+// ── 设置 ──
+$('#save-settings').onclick = async ()=>{
+  await api('/api/settings',{method:'POST',body:JSON.stringify({
+    maxWakesPerDay:+$('#s-wakes').value,
+    maxChaptersPerDay:+$('#s-chapters').value,
+    quietHoursStart:+$('#s-qs').value,
+    quietHoursEnd:+$('#s-qe').value,
+    timezone:$('#s-tz').value.trim()
+  })});
+  toast('已保存'); load();
+};
+$('#wake-now').onclick = async ()=>{
+  toast('正在醒来…');
+  try{ const r=await api('/api/wake-now',{method:'POST'});
+    toast({read:'读了会儿书',write:'写了点东西',reflect:'回看了一下',idle:'这次什么都没做'}[r.action]||'完成');
+    load(); }
+  catch(e){ toast('出错：'+e.message); }
+};
+$('#replan').onclick = async ()=>{
+  toast('重新安排中…');
+  try{ await api('/api/replan',{method:'POST'}); toast('安排好了'); load(); }
+  catch(e){ toast('出错：'+e.message); }
+};
+
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load(){
+  try{
+    const [state, notes, log, shelf] = await Promise.all([
+      api('/api/state'), api('/api/notes'), api('/api/log'), api('/api/shelf')
+    ]);
+    renderStrip(state, log); renderNotes(notes); renderLog(log); renderShelf(shelf);
+    $('#s-wakes').value=state.settings.maxWakesPerDay;
+    $('#s-chapters').value=state.settings.maxChaptersPerDay;
+    $('#s-qs').value=state.settings.quietHoursStart;
+    $('#s-qe').value=state.settings.quietHoursEnd;
+    $('#s-tz').value=state.settings.timezone;
+    $('#clock').textContent = new Date().toLocaleString('sv',{timeZone:state.settings.timezone}).slice(0,16);
+  }catch(e){
+    $('#tab-notes').innerHTML='<div class="empty">读不到数据：'+esc(e.message)+'　如果设了密码，网址后面要带 ?token=你的密码</div>';
+  }
+}
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
