@@ -10,6 +10,9 @@ import {
 } from './lib/store.js';
 import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js';
 import { wakeUp, tick, planToday } from './lib/ci.js';
+import {
+  getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
+} from './lib/memory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -83,6 +86,32 @@ app.get('/api/book/:id', (req, res) => {
 // ---- 记录与日志 ----
 app.get('/api/notes', (_, res) => res.json(getNotes(200)));
 app.get('/api/log', (_, res) => res.json(getLog(200)));
+
+// ---- 记忆 ----
+app.get('/api/memory', (_, res) => res.json(getMemory()));
+
+// ---- 讨论 / 疑问：辞和棋子都能发起，靠回合往返 ----
+app.get('/api/questions', (_, res) => res.json(getQuestions()));
+
+app.post('/api/questions', (req, res) => {
+  const { text, context } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
+  res.json(askQuestion(text.trim(), context || '', '棋子'));
+});
+
+app.post('/api/questions/:id/reply', (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
+  const q = replyToQuestion(req.params.id, '棋子', text.trim());
+  if (!q) return res.status(404).json({ error: '找不到这个讨论' });
+  res.json(q);
+});
+
+app.post('/api/questions/:id/resolve', (req, res) => {
+  const q = resolveQuestion(req.params.id, (req.body && req.body.note) || '');
+  if (!q) return res.status(404).json({ error: '找不到这个讨论' });
+  res.json(q);
+});
 
 // ---- 手动触发（测试用）----
 app.post('/api/wake-now', async (_, res) => {
