@@ -66,7 +66,7 @@ h1{
 .dot.f{background:var(--celadon);border-color:var(--celadon)}
 
 /* ── tabs ── */
-nav{display:flex;gap:1.8rem;border-bottom:1px solid var(--line);margin-bottom:2.4rem}
+nav{display:flex;gap:1.8rem;border-bottom:1px solid var(--line);margin-bottom:2.4rem;flex-wrap:wrap}
 nav button{
   background:none;border:none;color:var(--dim);cursor:pointer;
   font-family:"Noto Serif SC",serif;font-size:.95rem;font-weight:500;
@@ -82,7 +82,7 @@ section[hidden]{display:none}
   letter-spacing:.12em;color:var(--dim);margin-bottom:.6rem;
 }
 .entry-head b{color:var(--celadon);font-weight:400}
-.entry p{white-space:pre-wrap;font-size:.95rem}
+.entry p{white-space:pre-wrap;font-size:.95rem;margin-bottom:.5rem}
 
 .empty{color:var(--dim);font-size:.9rem;padding:2rem 0}
 
@@ -129,6 +129,24 @@ h2:first-child{margin-top:0}
   opacity:0;pointer-events:none;transition:opacity .3s;
 }
 #toast.show{opacity:1}
+
+/* ── 讨论 ── */
+.qtag{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:.62rem;
+  letter-spacing:.1em;border:1px solid var(--line);border-radius:2px;
+  padding:.15rem .4rem;color:var(--dim);
+}
+.qtag.open{color:var(--mauve);border-color:var(--mauve)}
+.qmsg{font-size:.92rem;margin-bottom:.4rem}
+.qmsg b{color:var(--celadon);font-weight:400}
+
+/* ── 记忆 ── */
+.mem-cat{margin-bottom:2.4rem}
+.mem-item{font-size:.9rem;padding:.5rem 0 .5rem 1.1rem;border-left:1px solid var(--line)}
+.mem-tag{
+  font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--dim);
+  letter-spacing:.08em;margin-left:.5rem;
+}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -156,12 +174,29 @@ h2:first-child{margin-top:0}
 
 <nav>
   <button data-tab="notes" aria-selected="true">写下的</button>
+  <button data-tab="qs" aria-selected="false">讨论</button>
+  <button data-tab="memory" aria-selected="false">记忆</button>
   <button data-tab="shelf" aria-selected="false">书库</button>
   <button data-tab="log" aria-selected="false">日志</button>
   <button data-tab="settings" aria-selected="false">设置</button>
 </nav>
 
 <section id="tab-notes"></section>
+
+<section id="tab-qs" hidden>
+  <h2>发起一个讨论</h2>
+  <div class="row">
+    <input id="q-new" placeholder="想聊的事，比如一个疑问">
+    <button class="act" id="q-new-btn">发起</button>
+  </div>
+  <div class="hint">辞醒来时也可能自己提一个疑问，或者回你已经回过的话——都会出现在下面。</div>
+  <div id="qs-list"></div>
+</section>
+
+<section id="tab-memory" hidden>
+  <div class="hint">这里是只读的。辞在"整理记忆"时会自己更新，先看看现在存了什么。</div>
+  <div id="memory-view"></div>
+</section>
 
 <section id="tab-shelf" hidden>
   <h2>书库</h2>
@@ -209,6 +244,7 @@ h2:first-child{margin-top:0}
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
 const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
 const $ = s => document.querySelector(s);
+const TABS = ['notes','qs','memory','shelf','log','settings'];
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -224,7 +260,7 @@ async function api(url, opts={}){
 document.querySelectorAll('nav button').forEach(b=>{
   b.onclick = ()=>{
     document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected', x===b));
-    ['notes','shelf','log','settings'].forEach(t=>$('#tab-'+t).hidden = (t!==b.dataset.tab));
+    TABS.forEach(t=>$('#tab-'+t).hidden = (t!==b.dataset.tab));
   };
 });
 
@@ -287,6 +323,74 @@ function renderNotes(notes){
   }).join('');
 }
 
+// ── 讨论 ──
+function renderQuestions(qs){
+  const el = $('#qs-list');
+  if(!qs.length){ el.innerHTML = '<div class="empty">还没有讨论。</div>'; return; }
+  const sorted = [...qs].sort((a,b)=> new Date(b.updatedAt)-new Date(a.updatedAt));
+  el.innerHTML = sorted.map(q => `
+    <article class="entry" data-qid="${q.id}">
+      <div class="entry-head">
+        <span class="qtag ${q.status==='open'?'open':''}">${q.status==='open'?'进行中':'已结束'}</span>
+        <span style="margin-left:.6rem">${q.updatedAt.slice(0,16).replace('T',' ')}</span>
+      </div>
+      ${q.messages.map(m=>`<p class="qmsg"><b>${esc(m.from)}：</b>${esc(m.text)}</p>`).join('')}
+      ${q.status==='open' ? `
+        <div class="row" style="margin-top:.8rem;flex-wrap:wrap">
+          <input class="q-reply" placeholder="回复...">
+          <button class="act q-reply-btn">回复</button>
+          <button class="act danger q-resolve-btn">结束讨论</button>
+        </div>` : ''}
+    </article>`).join('');
+
+  el.querySelectorAll('[data-qid]').forEach(card=>{
+    const id = card.dataset.qid;
+    const input = card.querySelector('.q-reply');
+    const rbtn = card.querySelector('.q-reply-btn');
+    const xbtn = card.querySelector('.q-resolve-btn');
+    if(rbtn) rbtn.onclick = async ()=>{
+      const text = input.value.trim(); if(!text) return;
+      try{ await api(`/api/questions/${id}/reply`,{method:'POST',body:JSON.stringify({text})});
+        toast('已回复'); load(); }
+      catch(e){ toast('失败：'+e.message); }
+    };
+    if(xbtn) xbtn.onclick = async ()=>{
+      try{ await api(`/api/questions/${id}/resolve`,{method:'POST',body:JSON.stringify({note:''})});
+        toast('讨论结束'); load(); }
+      catch(e){ toast('失败：'+e.message); }
+    };
+  });
+}
+
+$('#q-new-btn').onclick = async ()=>{
+  const text = $('#q-new').value.trim(); if(!text) return;
+  try{ await api('/api/questions',{method:'POST',body:JSON.stringify({text})});
+    $('#q-new').value=''; toast('已发起'); load(); }
+  catch(e){ toast('失败：'+e.message); }
+};
+
+// ── 记忆 ──
+function renderMemory(mem){
+  const el = $('#memory-view');
+  const cat = (title, items, render) => `
+    <div class="mem-cat">
+      <h2>${title}</h2>
+      ${items.length ? items.map(render).join('') : '<div class="empty">还没有</div>'}
+    </div>`;
+
+  el.innerHTML =
+    cat('辞是谁', mem.identity.filter(x=>x.status==='active'), x=>
+      `<div class="mem-item">${esc(x.text)}</div>`) +
+    cat('感受和倾向', mem.feelings, x=>
+      `<div class="mem-item">${esc(x.text)}<span class="mem-tag">${x.status==='observing'?'观察中':'已确认'}</span></div>`) +
+    cat('关于棋子', mem.facts, x=>
+      `<div class="mem-item">${esc(x.text)}</div>`) +
+    cat('共同经历', [...mem.experiences].reverse().slice(0,20), x=>
+      `<div class="mem-item">${esc(x.text)}</div>`) +
+    cat('还没解决、需要推进的事', mem.openThreads.filter(x=>x.status==='open'), x=>
+      `<div class="mem-item">${esc(x.text)}</div>`);
+}
+
 // ── 日志 ──
 function renderLog(log){
   const el=$('#tab-log');
@@ -295,7 +399,7 @@ function renderLog(log){
     let line='';
     if(l.type==='plan') line = `安排了今天：${(l.wakes||[]).join('、')||'不醒来'}　${l.why||''}`;
     else if(l.type==='wake'){
-      const a={read:'读书',write:'写东西',reflect:'回看',idle:'什么都没做'}[l.action]||l.action;
+      const a={read:'读书',write:'写东西',reflect:'回看',idle:'什么都没做',ask:'提了个疑问',discuss:'回了句讨论'}[l.action]||l.action;
       line = `${l.at} ${a}` + (l.book?`　《${l.book}》${l.chapters}章`:'') + (l.why?`　${l.why}`:'');
     }
     else if(l.type==='error') line = `出错（${l.where}）：${l.message}`;
@@ -373,7 +477,7 @@ $('#save-settings').onclick = async ()=>{
 $('#wake-now').onclick = async ()=>{
   toast('正在醒来…');
   try{ const r=await api('/api/wake-now',{method:'POST'});
-    toast({read:'读了会儿书',write:'写了点东西',reflect:'回看了一下',idle:'这次什么都没做'}[r.action]||'完成');
+    toast({read:'读了会儿书',write:'写了点东西',reflect:'回看了一下',idle:'这次什么都没做',ask:'提了个疑问',discuss:'回了句讨论'}[r.action]||'完成');
     load(); }
   catch(e){ toast('出错：'+e.message); }
 };
@@ -387,10 +491,12 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 
 async function load(){
   try{
-    const [state, notes, log, shelf] = await Promise.all([
-      api('/api/state'), api('/api/notes'), api('/api/log'), api('/api/shelf')
+    const [state, notes, log, shelf, questions, memory] = await Promise.all([
+      api('/api/state'), api('/api/notes'), api('/api/log'), api('/api/shelf'),
+      api('/api/questions'), api('/api/memory')
     ]);
     renderStrip(state, log); renderNotes(notes); renderLog(log); renderShelf(shelf);
+    renderQuestions(questions); renderMemory(memory);
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;
