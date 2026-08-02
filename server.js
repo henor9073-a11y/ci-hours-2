@@ -13,6 +13,7 @@ import { wakeUp, tick, planToday } from './lib/ci.js';
 import {
   getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
 } from './lib/memory.js';
+import { handleMcpRequest } from './lib/mcp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -21,12 +22,26 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
 
+// ---- 跨域许可：给浏览器里直接发请求的场景用（比如调试面板、未来的网页小工具）----
+// 放在密码校验前面，让 OPTIONS 预检请求不会被密码卡住。
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
 // ---- 简单的密码保护 ----
+// token 可以从三个地方拿：自定义头 x-access-token、标准的 Authorization: Bearer、
+// 或者直接拼在 URL 里 ?token=xxx（给 MCP 连接器用，配置起来最省事）。
 const PASSWORD = process.env.ACCESS_PASSWORD;
 app.use((req, res, next) => {
   if (!PASSWORD) return next();
   if (req.path === '/health' || req.path === '/login.html') return next();
-  const token = req.headers['x-access-token'] || req.query.token;
+  const authHeader = req.headers['authorization'] || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = req.headers['x-access-token'] || bearerToken || req.query.token;
   if (token === PASSWORD) return next();
   if (req.path === '/' || req.path.endsWith('.html') || req.path.endsWith('.css')) return next();
   return res.status(401).json({ error: '需要密码' });
@@ -126,6 +141,10 @@ app.post('/api/replan', async (_, res) => {
     res.json(await planToday());
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
+
+// ---- MCP 连接器：给 Cowork/claude.ai 之类的客户端用 ----
+app.post('/mcp', handleMcpRequest);
+app.get('/mcp', (_, res) => res.status(405).json({ error: '这个端点只接受 POST' }));
 
 // ---- 定时器：每分钟检查一次 ----
 cron.schedule('* * * * *', () => {
