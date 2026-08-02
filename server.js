@@ -14,9 +14,12 @@ import {
   getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
 } from './lib/memory.js';
 import { handleMcpRequest } from './lib/mcp.js';
+import { mountOAuth } from './lib/oauth-routes.js';
+import { checkToken as checkOAuthToken } from './lib/oauth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -32,9 +35,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// ---- OAuth 相关端点：挂在密码中间件之前，这些接口自己管认证（授权页本身就是用密码确认的） ----
+mountOAuth(app);
+
 // ---- 简单的密码保护 ----
 // token 可以从三个地方拿：自定义头 x-access-token、标准的 Authorization: Bearer、
-// 或者直接拼在 URL 里 ?token=xxx（给 MCP 连接器用，配置起来最省事）。
+// 或者直接拼在 URL 里 ?token=xxx（给静态密码模式用，配置起来最省事）。
+// Bearer 那里额外接受 OAuth 授权流程签发的 token，两套认证并存，互不影响。
 const PASSWORD = process.env.ACCESS_PASSWORD;
 app.use((req, res, next) => {
   if (!PASSWORD) return next();
@@ -43,6 +50,7 @@ app.use((req, res, next) => {
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = req.headers['x-access-token'] || bearerToken || req.query.token;
   if (token === PASSWORD) return next();
+  if (bearerToken && checkOAuthToken(bearerToken)) return next();
   if (req.path === '/' || req.path.endsWith('.html') || req.path.endsWith('.css')) return next();
   return res.status(401).json({ error: '需要密码' });
 });
