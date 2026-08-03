@@ -388,7 +388,9 @@ function renderMemory(mem){
     cat('共同经历', [...mem.experiences].reverse().slice(0,20), x=>
       `<div class="mem-item">${esc(x.text)}</div>`) +
     cat('还没解决、需要推进的事', mem.openThreads.filter(x=>x.status==='open'), x=>
-      `<div class="mem-item">${esc(x.text)}</div>`);
+      `<div class="mem-item">${esc(x.text)}</div>`) +
+    cat('原始记录', [...(mem.transcripts||[])].reverse().slice(0,20), x=>
+      `<div class="mem-item" style="white-space:pre-wrap">${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>`);
 }
 
 // ── 日志 ──
