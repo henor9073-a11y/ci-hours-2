@@ -26,17 +26,43 @@
 
 ## 部署需要的东西
 
-- 一个 Anthropic API Key（console.anthropic.com 申请）
 - 一台能跑 Docker 的服务器，**必须挂持久磁盘**，挂载点设为 `/data`（不然重启后书和记录都会没）
+- 不需要 Anthropic API Key——"醒来写什么"这件事现在由棋子 Cowork 账号里的辞通过 MCP 工具来做，不是服务器自己调 API（见下面"醒来机制"）
 
 ## 环境变量
 
 | 变量 | 说明 | 必填 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic 的 Key | 是 |
-| `ANTHROPIC_MODEL` | 默认 `claude-sonnet-4-6` | 否 |
 | `ACCESS_PASSWORD` | 网页访问密码。设了之后开网页要用 `?token=密码` | 建议设 |
 | `DATA_DIR` | 数据目录，Docker 里默认 `/data` | 否 |
+
+## 醒来机制
+
+服务器不再自己有定时器，纯被动等请求。排班和"醒来该做什么、写什么"都由棋子
+Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的定时任务驱动，
+大概每 30 分钟检查一次）：
+
+1. `get_plan_status` 看今天排过班没有（`needsPlanning`）。没排过就自己决定今天想醒
+   几次、什么时候醒，附一句理由，调 `set_today_plan({wakes, why})` 写回去——超过上限
+   会被截断，落在安静时段里的会被自动过滤，不用自己精确对齐这些限制。
+2. 看 `plannedWakes` 里有没有已经到点、还没出现在 `doneWakes` 里的时刻。有的话，
+   `get_identity` 拿身份文本，结合 `get_notes`/`get_questions`/`get_shelf` 决定做什么。
+3. 调用 `add_note`（写作/回看/读书笔记）、`start_discussion`/`reply_discussion`（提问/回讨论）、
+   或 `add_wake_log`（什么都不做）写回去。
+4. 最后 `mark_wake({slot})` 把这个时刻标掉。
+
+## 语音（辞真的能开口说话）
+
+`speak({text})` 这个 MCP 工具把要说的话存进队列（`/api/speech/next` 给本地播放器拉取，
+`/api/speech/:id/done` 标记消费掉）。只保留最新一条待播的，旧的没播的自动跳过。
+
+真正把文字变成声音、从扬声器放出来的是一个跑在棋子自己电脑上的独立脚本
+（`ci-voice-relay.js`，不在这个仓库里部署，单独在本地跑），调用 ElevenLabs API。
+这个脚本没开着的话，`speak` 存的文字就只是安静地待在队列里，不会自动补播。
+
+设置页的"重新安排今天"按钮走的是另一条路（`planToday`，纯随机、不用 AI），
+只是给棋子想在网页上手动快速重排一次时用的兜底，日常流程不会自动触发它。
+这个循环由 Cowork 那边的定时任务驱动，不是这个服务器自己驱动的。
 
 ## 在 Render 上部署
 
