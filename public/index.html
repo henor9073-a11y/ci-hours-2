@@ -245,9 +245,11 @@ h2:first-child{margin-top:0}
   <h2>声音</h2>
   <div class="row" style="flex-wrap:wrap;gap:.7rem">
     <button class="act" id="voice-setup">设置 / 更新声音</button>
+    <button class="act" id="voice-unlock">开启声音播放</button>
     <button class="act danger" id="voice-clear">清除</button>
   </div>
   <div class="hint" id="voice-status">还没设置。设置之后，这个网页开着的时候就会自动念出辞想说的话——密钥只存在这台设备本地（浏览器 localStorage），不会传去别处。</div>
+  <div class="hint">手机（尤其 iOS）第一次用需要先点一下"开启声音播放"，不然系统不让网页自己出声——电脑上一般不用点这个。</div>
 </section>
 
 </div>
@@ -570,6 +572,18 @@ $('#voice-clear').onclick = () => {
 };
 renderVoiceStatus();
 
+// iOS Safari 不让定时器触发的播放自动出声，必须先有一次"人手动点按钮"触发的
+// play()才能解锁——用同一个 <audio> 元素反复换 src 重放，只需解锁这一次，
+// 不是每次都要新建一个 Audio 对象（新建的每个都要重新解锁）。
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const voiceAudioEl = new Audio();
+$('#voice-unlock').onclick = () => {
+  voiceAudioEl.src = SILENT_WAV;
+  voiceAudioEl.play()
+    .then(()=> toast('声音已开启'))
+    .catch(e => toast('开启失败：'+e.message));
+};
+
 let voiceBusy = false;
 async function voiceTick(){
   if (voiceBusy || !voiceConfigured()) return;
@@ -590,12 +604,12 @@ async function voiceTick(){
       if (res.ok){
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        voiceAudioEl.src = url;
         try {
-          await audio.play();
-          await new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; });
+          await voiceAudioEl.play();
+          await new Promise(resolve => { voiceAudioEl.onended = resolve; voiceAudioEl.onerror = resolve; });
         } catch(e){
-          console.warn('播放被浏览器拦截了，先在页面上随便点一下再试', e);
+          console.warn('播放被浏览器拦截了——手机上先点一下"开启声音播放"', e);
         } finally {
           URL.revokeObjectURL(url);
         }
