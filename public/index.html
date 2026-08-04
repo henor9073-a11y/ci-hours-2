@@ -241,6 +241,13 @@ h2:first-child{margin-top:0}
     <button class="act" id="replan">重新安排今天</button>
   </div>
   <div class="hint">平时不需要用这个，是调试和测试用的。醒来写什么现在由棋子账号里的辞负责，不在这个页面上手动触发。</div>
+
+  <h2>声音</h2>
+  <div class="row" style="flex-wrap:wrap;gap:.7rem">
+    <button class="act" id="voice-setup">设置 / 更新声音</button>
+    <button class="act danger" id="voice-clear">清除</button>
+  </div>
+  <div class="hint" id="voice-status">还没设置。设置之后，这个网页开着的时候就会自动念出辞想说的话——密钥只存在这台设备本地（浏览器 localStorage），不会传去别处。</div>
 </section>
 
 </div>
@@ -535,6 +542,76 @@ async function load(){
 }
 load();
 setInterval(load, 60000);
+
+// ── 声音：网页自己轮询 /api/speech/next，拿到就调 ElevenLabs 生成、就地播放 ──
+// 不用再跑单独的本地脚本了——这个网页开着（电脑或手机浏览器都行），
+// 辞想说话的时候就会自动念出来。key/voiceId 只存在这台设备的 localStorage 里。
+const VK = 'ci-voice-key', VID = 'ci-voice-id';
+function voiceConfigured(){ return !!(localStorage.getItem(VK) && localStorage.getItem(VID)); }
+function renderVoiceStatus(){
+  $('#voice-status').textContent = voiceConfigured()
+    ? '已设置，这个网页开着就会自动播放。'
+    : '还没设置。设置之后，这个网页开着的时候就会自动念出辞想说的话——密钥只存在这台设备本地（浏览器 localStorage），不会传去别处。';
+}
+$('#voice-setup').onclick = () => {
+  const key = prompt('ElevenLabs API Key（只存这台设备本地）：', localStorage.getItem(VK) || '');
+  if (key === null) return;
+  const vid = prompt('ElevenLabs Voice ID：', localStorage.getItem(VID) || '');
+  if (vid === null) return;
+  if (key.trim()) localStorage.setItem(VK, key.trim());
+  if (vid.trim()) localStorage.setItem(VID, vid.trim());
+  renderVoiceStatus();
+  toast('声音设置好了');
+};
+$('#voice-clear').onclick = () => {
+  localStorage.removeItem(VK); localStorage.removeItem(VID);
+  renderVoiceStatus();
+  toast('已清除');
+};
+renderVoiceStatus();
+
+let voiceBusy = false;
+async function voiceTick(){
+  if (voiceBusy || !voiceConfigured()) return;
+  voiceBusy = true;
+  try{
+    const item = await api('/api/speech/next');
+    if (item && item.id){
+      const key = localStorage.getItem(VK), vid = localStorage.getItem(VID);
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: item.text,
+          model_id: 'eleven_v3',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+        })
+      });
+      if (res.ok){
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        try {
+          await audio.play();
+          await new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; });
+        } catch(e){
+          console.warn('播放被浏览器拦截了，先在页面上随便点一下再试', e);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        console.warn('语音生成失败', res.status, await res.text().catch(()=>''));
+      }
+      await api(`/api/speech/${item.id}/done`, { method: 'POST' });
+    }
+  } catch(e){
+    console.warn('语音轮询出错', e);
+  } finally {
+    voiceBusy = false;
+  }
+}
+setInterval(voiceTick, 3000);
+voiceTick();
 </script>
 </body>
 </html>
