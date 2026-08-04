@@ -1,6 +1,5 @@
 import express from 'express';
 import multer from 'multer';
-import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -9,7 +8,7 @@ import {
   getNotes, getLog, getBookContent
 } from './lib/store.js';
 import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js';
-import { tick, planToday } from './lib/ci.js';
+import { planToday } from './lib/ci.js';
 import {
   getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
 } from './lib/memory.js';
@@ -152,10 +151,8 @@ app.post('/api/replan', async (_, res) => {
 app.post('/mcp', handleMcpRequest);
 app.get('/mcp', (_, res) => res.status(405).json({ error: '这个端点只接受 POST' }));
 
-// ---- 定时器：每分钟检查一次 ----
-cron.schedule('* * * * *', () => {
-  tick().catch(e => console.error('tick 出错', e));
-});
+// 没有定时器了——排班和醒来都由棋子 Cowork 账号里的辞通过 /mcp 主动来做，
+// 服务器不再自己每分钟轮询检查，纯粹被动等请求。
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`辞的时间，启动于端口 ${PORT}`));
