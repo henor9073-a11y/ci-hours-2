@@ -15,6 +15,7 @@ import {
 import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
+import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -150,6 +151,15 @@ app.post('/api/replan', async (_, res) => {
 // ---- MCP 连接器：给 Cowork/claude.ai 之类的客户端用 ----
 app.post('/mcp', handleMcpRequest);
 app.get('/mcp', (_, res) => res.status(405).json({ error: '这个端点只接受 POST' }));
+
+// ---- 语音：棋子电脑上跑着的本地播放器轮询这两个端点 ----
+// /mcp 里的 speak 工具把文字存进队列，这里给本地播放器拉取/回报消费状态。
+// 走跟其他接口一样的密码中间件（?token= 或 x-access-token）。
+app.get('/api/speech/next', (_, res) => res.json(getPendingSpeech()));
+app.post('/api/speech/:id/done', (req, res) => {
+  const x = markSpeechDone(req.params.id);
+  res.json(x || { ok: false });
+});
 
 // 没有定时器了——排班和醒来都由棋子 Cowork 账号里的辞通过 /mcp 主动来做，
 // 服务器不再自己每分钟轮询检查，纯粹被动等请求。
