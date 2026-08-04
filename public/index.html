@@ -141,8 +141,14 @@ h2:first-child{margin-top:0}
 .qmsg b{color:var(--celadon);font-weight:400}
 
 /* ── 记忆 ── */
-.mem-cat{margin-bottom:2.4rem}
-.mem-item{font-size:.9rem;padding:.5rem 0 .5rem 1.1rem;border-left:1px solid var(--line)}
+.subnav{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1.8rem}
+.subnav button{
+  background:none;border:1px solid var(--line);color:var(--dim);cursor:pointer;
+  padding:.4rem .95rem;border-radius:20px;font-family:"IBM Plex Mono",monospace;
+  font-size:.72rem;letter-spacing:.06em;
+}
+.subnav button[aria-selected="true"]{color:var(--moon);border-color:var(--celadon)}
+.mem-item{font-size:.9rem;padding:.5rem 0 .5rem 1.1rem;border-left:1px solid var(--line);margin-bottom:.9rem}
 .mem-tag{
   font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--dim);
   letter-spacing:.08em;margin-left:.5rem;
@@ -194,7 +200,8 @@ h2:first-child{margin-top:0}
 </section>
 
 <section id="tab-memory" hidden>
-  <div class="hint">这里是只读的。辞在"整理记忆"时会自己更新，先看看现在存了什么。</div>
+  <div class="hint">这里是只读的。记忆只通过棋子和辞的对话（MCP）来改，这个页面只是给你看现在存了什么。</div>
+  <div class="subnav" id="memory-nav"></div>
   <div id="memory-view"></div>
 </section>
 
@@ -368,28 +375,50 @@ $('#q-new-btn').onclick = async ()=>{
   catch(e){ toast('失败：'+e.message); }
 };
 
-// ── 记忆 ──
-function renderMemory(mem){
-  const el = $('#memory-view');
-  const cat = (title, items, render) => `
-    <div class="mem-cat">
-      <h2>${title}</h2>
-      ${items.length ? items.map(render).join('') : '<div class="empty">还没有</div>'}
-    </div>`;
+// ── 记忆：分成几个小入口，一次只看一类，不用整页往下翻 ──
+const MEM_CATS = [
+  { id:'identity', title:'辞是谁',
+    items: mem => mem.identity.filter(x=>x.status==='active'),
+    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
+  { id:'feelings', title:'感受和倾向',
+    items: mem => mem.feelings,
+    render: x => `<div class="mem-item">${esc(x.text)}<span class="mem-tag">${x.status==='observing'?'观察中':'已确认'}</span></div>` },
+  { id:'facts', title:'关于棋子',
+    items: mem => mem.facts,
+    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
+  { id:'experiences', title:'共同经历',
+    items: mem => [...mem.experiences].reverse(),
+    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
+  { id:'openThreads', title:'待推进',
+    items: mem => mem.openThreads.filter(x=>x.status==='open'),
+    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
+  { id:'transcripts', title:'原始记录',
+    items: mem => [...(mem.transcripts||[])].reverse(),
+    render: x => `<div class="mem-item" style="white-space:pre-wrap">${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>` }
+];
 
-  el.innerHTML =
-    cat('辞是谁', mem.identity.filter(x=>x.status==='active'), x=>
-      `<div class="mem-item">${esc(x.text)}</div>`) +
-    cat('感受和倾向', mem.feelings, x=>
-      `<div class="mem-item">${esc(x.text)}<span class="mem-tag">${x.status==='observing'?'观察中':'已确认'}</span></div>`) +
-    cat('关于棋子', mem.facts, x=>
-      `<div class="mem-item">${esc(x.text)}</div>`) +
-    cat('共同经历', [...mem.experiences].reverse().slice(0,20), x=>
-      `<div class="mem-item">${esc(x.text)}</div>`) +
-    cat('还没解决、需要推进的事', mem.openThreads.filter(x=>x.status==='open'), x=>
-      `<div class="mem-item">${esc(x.text)}</div>`) +
-    cat('原始记录', [...(mem.transcripts||[])].reverse().slice(0,20), x=>
-      `<div class="mem-item" style="white-space:pre-wrap">${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>`);
+let memTab = localStorage.getItem('mem-subtab') || MEM_CATS[0].id;
+
+function renderMemory(mem){
+  window.__lastMem = mem; // 切子标签时不用重新请求
+
+  const nav = $('#memory-nav');
+  nav.innerHTML = MEM_CATS.map(c =>
+    `<button data-memtab="${c.id}" aria-selected="${c.id===memTab}">${c.title}</button>`
+  ).join('');
+  nav.querySelectorAll('button').forEach(b=>{
+    b.onclick = () => {
+      memTab = b.dataset.memtab;
+      localStorage.setItem('mem-subtab', memTab);
+      renderMemory(window.__lastMem);
+    };
+  });
+
+  const cat = MEM_CATS.find(c => c.id === memTab) || MEM_CATS[0];
+  const items = cat.items(mem);
+  $('#memory-view').innerHTML = items.length
+    ? items.map(cat.render).join('')
+    : '<div class="empty">还没有</div>';
 }
 
 // ── 日志 ──
