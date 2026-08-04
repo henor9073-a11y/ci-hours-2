@@ -392,6 +392,9 @@ const MEM_CATS = [
   { id:'openThreads', title:'待推进',
     items: mem => mem.openThreads.filter(x=>x.status==='open'),
     render: x => `<div class="mem-item">${esc(x.text)}</div>` },
+  { id:'toSelf', title:'给下一个窗口',
+    items: mem => (mem.toSelf||[]).filter(x=>x.status==='active'),
+    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
   { id:'transcripts', title:'原始记录',
     items: mem => [...(mem.transcripts||[])].reverse(),
     render: x => `<div class="mem-item" style="white-space:pre-wrap">${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>` }
