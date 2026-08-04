@@ -231,10 +231,9 @@ h2:first-child{margin-top:0}
 
   <h2>手动触发</h2>
   <div class="row" style="flex-wrap:wrap;gap:.7rem">
-    <button class="act" id="wake-now">现在醒一次</button>
     <button class="act" id="replan">重新安排今天</button>
   </div>
-  <div class="hint">平时不需要用这些，是调试和测试用的。</div>
+  <div class="hint">平时不需要用这个，是调试和测试用的。醒来写什么现在由棋子账号里的辞负责，不在这个页面上手动触发。</div>
 </section>
 
 </div>
@@ -475,13 +474,6 @@ $('#save-settings').onclick = async ()=>{
     timezone:$('#s-tz').value.trim()
   })});
   toast('已保存'); load();
-};
-$('#wake-now').onclick = async ()=>{
-  toast('正在醒来…');
-  try{ const r=await api('/api/wake-now',{method:'POST'});
-    toast({read:'读了会儿书',write:'写了点东西',reflect:'回看了一下',idle:'这次什么都没做',ask:'提了个疑问',discuss:'回了句讨论'}[r.action]||'完成');
-    load(); }
-  catch(e){ toast('出错：'+e.message); }
 };
 $('#replan').onclick = async ()=>{
   toast('重新安排中…');
