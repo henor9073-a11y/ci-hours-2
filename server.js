@@ -9,7 +9,7 @@ import {
   getNotes, getLog, getBookContent
 } from './lib/store.js';
 import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js';
-import { wakeUp, tick, planToday } from './lib/ci.js';
+import { tick, planToday } from './lib/ci.js';
 import {
   getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
 } from './lib/memory.js';
@@ -137,10 +137,8 @@ app.post('/api/questions/:id/resolve', (req, res) => {
 });
 
 // ---- 手动触发（测试用）----
-app.post('/api/wake-now', async (_, res) => {
-  try { res.json(await wakeUp('manual')); }
-  catch (e) { res.status(500).json({ error: String(e.message || e) }); }
-});
+// "现在醒一次"按钮已经去掉了：醒来内容不再由服务器自己生成，
+// 手动测试的话直接让棋子账号里的辞跑一遍那个 Cowork 定时任务就行。
 app.post('/api/replan', async (_, res) => {
   try {
     const s = getState(); s.today = null;
