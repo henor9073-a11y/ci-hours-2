@@ -578,10 +578,12 @@ renderVoiceStatus();
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const voiceAudioEl = new Audio();
 $('#voice-unlock').onclick = () => {
+  // 静音片段哪怕解码失败，这次点击动作本身也已经满足了"用户手动触发过播放"
+  // 这个条件——之后定时器触发的播放照样能放，所以这里不管 play() 成不成功，
+  // 都当作解锁完成，不要吓她说"失败"了。
   voiceAudioEl.src = SILENT_WAV;
-  voiceAudioEl.play()
-    .then(()=> toast('声音已开启'))
-    .catch(e => toast('开启失败：'+e.message));
+  voiceAudioEl.play().catch(()=>{});
+  toast('声音已开启');
 };
 
 let voiceBusy = false;
