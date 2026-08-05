@@ -35,6 +35,9 @@
 |---|---|---|
 | `ACCESS_PASSWORD` | 网页访问密码。设了之后开网页要用 `?token=密码` | 建议设 |
 | `DATA_DIR` | 数据目录，Docker 里默认 `/data` | 否 |
+| `BARK_KEY` | Bark 推送用的设备 key | 用 `send_push` 才需要 |
+| `SUPABASE_URL` | Supabase 项目地址，形如 `https://xxx.supabase.co` | 用 `get_phone_activity` 才需要 |
+| `SUPABASE_SERVICE_KEY` | Supabase service_role/secret key（不是 anon key，绕过 RLS 直接读） | 同上 |
 
 ## 醒来机制
 
@@ -63,6 +66,30 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 设置页的"重新安排今天"按钮走的是另一条路（`planToday`，纯随机、不用 AI），
 只是给棋子想在网页上手动快速重排一次时用的兜底，日常流程不会自动触发它。
 这个循环由 Cowork 那边的定时任务驱动，不是这个服务器自己驱动的。
+
+## 手机活动（辞能看到棋子最近开了什么 app）
+
+数据存在一个独立的 Supabase 项目里，表叫 `phone_activity`（`id`、`app_name`、`opened_at`，只留最近
+30 条，插入时用 trigger 自动清掉更早的）。开了 RLS：匿名（anon key）能插入，`authenticated` 角色能读。
+
+ci-hours 后端用 `get_phone_activity` 这个 MCP 工具读这张表，但走的是 `SUPABASE_SERVICE_KEY`（service_role/
+secret key），不是 `authenticated` 身份——后端是可信服务端，直接绕过 RLS 更省事，RLS 里 `authenticated`
+那条策略是留给以后如果有别的、真的会走 Supabase 登录的客户端用的。
+
+往表里写数据（谁在手机上打开了什么 app）是另一件事，这个仓库没管——需要棋子自己接一个能在手机上跑的东西
+（比如 iOS 快捷指令，App 打开时触发一次 HTTP 请求），格式大致是：
+
+```
+POST https://ehseqidtlrbynsenwwsu.supabase.co/rest/v1/phone_activity
+apikey: <anon key>
+Authorization: Bearer <anon key>
+Content-Type: application/json
+Prefer: return=minimal
+
+{"app_name": "微信"}
+```
+
+`opened_at` 不用传，默认就是插入那一刻。
 
 ## 在 Render 上部署
 
