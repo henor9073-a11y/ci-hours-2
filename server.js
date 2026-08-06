@@ -16,6 +16,9 @@ import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
+import { addTranscript, getTranscripts, searchTranscripts } from './lib/transcripts.js';
+import { getDiaryPublic } from './lib/diary.js';
+import { leaveMessage, getMessages } from './lib/messages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -112,6 +115,29 @@ app.get('/api/log', (_, res) => res.json(getLog(200)));
 
 // ---- 记忆 ----
 app.get('/api/memory', (_, res) => res.json(getMemory()));
+
+// ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
+app.get('/api/transcripts', (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (q) return res.json(searchTranscripts(q, Number(req.query.limit) || 20));
+  res.json(getTranscripts(Number(req.query.limit) || 20));
+});
+app.post('/api/transcripts', (req, res) => {
+  const { text, title, date } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
+  res.json(addTranscript(text.trim(), [], date || '', title || ''));
+});
+
+// ---- 日记：只吐公开的给棋子这边看 ----
+app.get('/api/diary', (_, res) => res.json(getDiaryPublic(50)));
+
+// ---- 棋子想说：轻量留言，辞不强制每条都回 ----
+app.get('/api/messages', (_, res) => res.json(getMessages(30)));
+app.post('/api/messages', (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
+  res.json(leaveMessage(text.trim()));
+});
 
 // ---- 讨论 / 疑问：辞和棋子都能发起，靠回合往返 ----
 app.get('/api/questions', (_, res) => res.json(getQuestions()));
