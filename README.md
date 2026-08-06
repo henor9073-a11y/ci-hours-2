@@ -38,6 +38,8 @@
 | `BARK_KEY` | Bark 推送用的设备 key | 用 `send_push` 才需要 |
 | `SUPABASE_URL` | Supabase 项目地址，形如 `https://xxx.supabase.co` | 用 `get_phone_activity` 才需要 |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role/secret key（不是 anon key，绕过 RLS 直接读） | 同上 |
+| `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
+| `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
 
 ## 醒来机制
 
@@ -56,12 +58,22 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 
 ## 语音（辞真的能开口说话）
 
-`speak({text})` 这个 MCP 工具把要说的话存进队列（`/api/speech/next` 给播放端拉取，
-`/api/speech/:id/done` 标记消费掉）。只保留最新一条待播的，旧的没播的自动跳过。
+`speak({text})` 这个 MCP 工具调用时，服务端直接调 ElevenLabs 把文字生成语音
+（`lib/voice.js`，`model_id` 固定用 `eleven_multilingual_v2`），存进磁盘
+（`DATA_DIR/voices/*.mp3`）并记一条历史（`voice-history.json`）。同时把这条排进
+播放队列（`/api/speech/next` 给网页拉取，`/api/speech/:id/done` 标记消费掉）——
+只保留最新一条算"待播的"，旧的没播的自动跳过。
 
-真正把文字变成声音的逻辑现在直接写在 `public/index.html` 里——网页开着（电脑或
-手机浏览器都行）就会自动轮询、调 ElevenLabs、就地播放，不需要单独跑本地脚本。
-key/voice ID 存在浏览器本地（localStorage），设置页里配。
+网页开着（电脑或手机浏览器都行）就会自动轮询、拿到就播放，不需要单独跑本地脚本，
+也不用在浏览器里配 key/voice ID 了——这些现在只在 Render 环境变量里。就算网页没
+开着错过了现场播放，"语音记录"标签页（`/api/voice/history`）也能随时回放所有
+说过的话，不会真的丢。
+
+生成失败（比如 key 没配对、额度用完）不会让 `speak` 报错——还是会把文字排进去，
+网页上能看到这句话，只是这次没声音。
+
+环境变量：`ELEVENLABS_API_KEY`、`ELEVENLABS_VOICE_ID`（都是必填，没配的话生成会
+失败，走上面说的降级路径）。
 
 设置页的"重新安排今天"按钮走的是另一条路（`planToday`，纯随机、不用 AI），
 只是给棋子想在网页上手动快速重排一次时用的兜底，日常流程不会自动触发它。

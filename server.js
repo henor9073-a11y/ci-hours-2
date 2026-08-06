@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import {
@@ -16,6 +17,7 @@ import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
+import { getVoiceHistory, getVoiceFilePath } from './lib/voice.js';
 import { addTranscript, getTranscripts, searchTranscripts } from './lib/transcripts.js';
 import { getDiaryPublic } from './lib/diary.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
@@ -185,6 +187,15 @@ app.get('/api/speech/next', (_, res) => res.json(getPendingSpeech()));
 app.post('/api/speech/:id/done', (req, res) => {
   const x = markSpeechDone(req.params.id);
   res.json(x || { ok: false });
+});
+
+// ---- 语音记录：能回放辞之前说过的话，不会因为网页没开着就错过 ----
+app.get('/api/voice/history', (req, res) => res.json(getVoiceHistory(Number(req.query.limit) || 50)));
+app.get('/api/voice/:id/audio', (req, res) => {
+  const p = getVoiceFilePath(req.params.id);
+  if (!p) return res.status(404).json({ error: '找不到这段语音' });
+  res.setHeader('Content-Type', 'audio/mpeg');
+  fs.createReadStream(p).pipe(res);
 });
 
 // 没有定时器了——排班和醒来都由棋子 Cowork 账号里的辞通过 /mcp 主动来做，
