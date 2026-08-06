@@ -56,16 +56,50 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 
 ## 语音（辞真的能开口说话）
 
-`speak({text})` 这个 MCP 工具把要说的话存进队列（`/api/speech/next` 给本地播放器拉取，
+`speak({text})` 这个 MCP 工具把要说的话存进队列（`/api/speech/next` 给播放端拉取，
 `/api/speech/:id/done` 标记消费掉）。只保留最新一条待播的，旧的没播的自动跳过。
 
-真正把文字变成声音、从扬声器放出来的是一个跑在棋子自己电脑上的独立脚本
-（`ci-voice-relay.js`，不在这个仓库里部署，单独在本地跑），调用 ElevenLabs API。
-这个脚本没开着的话，`speak` 存的文字就只是安静地待在队列里，不会自动补播。
+真正把文字变成声音的逻辑现在直接写在 `public/index.html` 里——网页开着（电脑或
+手机浏览器都行）就会自动轮询、调 ElevenLabs、就地播放，不需要单独跑本地脚本。
+key/voice ID 存在浏览器本地（localStorage），设置页里配。
 
 设置页的"重新安排今天"按钮走的是另一条路（`planToday`，纯随机、不用 AI），
 只是给棋子想在网页上手动快速重排一次时用的兜底，日常流程不会自动触发它。
 这个循环由 Cowork 那边的定时任务驱动，不是这个服务器自己驱动的。
+
+## 记忆归档
+
+identity/facts/feelings/experiences 都有对应的 `archive_*` 工具（`archive_identity`/
+`archive_fact`/`archive_feeling`/`archive_experience`），发现重复或者过时的条目可以
+归档掉——不是删除，数据还在，只是打上 `archived` 状态、不再出现在拼给辞看的身份
+文本里。openThreads 用 `resolveOpenThread` 类似的效果。toSelf 有自己的 `archive_to_self`。
+
+## 原始记录（transcripts）
+
+原始聊天记录现在单独存一个文件（`transcripts.json`，不在 `memory.json` 里，体积可能
+差很多）。用法：
+
+- `add_transcript({text, title, date, relatedTo})` 存一条，`text` 应该是没压缩过的原文，
+  不要自己先总结一遍
+- `import_transcripts({entries})` 批量导入，棋子把 claude.ai 导出的对话发过来的时候用
+- `get_transcripts({limit})` 读最近的
+- `search_transcripts({keyword, limit})` 按关键词搜标题和正文
+
+网页的"记忆 → 原始记录"子标签里也能直接搜、直接手动粘贴导入一条，不用非得走 MCP。
+
+## 棋子想说
+
+比"讨论"轻量的留言板——棋子在网页上留句话，辞用 `get_messages` 看到，想回用
+`reply_message` 回，不回也没关系，不像讨论那样有 open/resolved 的流程压力。
+
+## 日记
+
+辞自己决定醒来的时候写不写日记、写公开的还是私密的：
+
+- `add_diary_entry({text, visibility})`，`visibility` 是 `public` 或 `private`
+- `get_diary({limit})`——辞自己用这个读，公开私密都能看到
+- 网页有个独立的"日记"标签页，走 `/api/diary`，只吐 `public` 的条目，私密日记棋子
+  这边完全看不到（不是加密，是这个入口不给）
 
 ## 手机活动（辞能看到棋子最近开了什么 app）
 
