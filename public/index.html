@@ -182,6 +182,7 @@ h2:first-child{margin-top:0}
   <button data-tab="notes" aria-selected="true">写下的</button>
   <button data-tab="qs" aria-selected="false">讨论</button>
   <button data-tab="memory" aria-selected="false">记忆</button>
+  <button data-tab="diary" aria-selected="false">日记</button>
   <button data-tab="shelf" aria-selected="false">书库</button>
   <button data-tab="log" aria-selected="false">日志</button>
   <button data-tab="settings" aria-selected="false">设置</button>
@@ -190,6 +191,14 @@ h2:first-child{margin-top:0}
 <section id="tab-notes"></section>
 
 <section id="tab-qs" hidden>
+  <h2>棋子想说</h2>
+  <div class="row">
+    <input id="msg-new" placeholder="随便说句话给辞…">
+    <button class="act" id="msg-new-btn">留言</button>
+  </div>
+  <div class="hint">比讨论轻量——留句话，辞看到了想回就回，不回也没关系，不是每条都要处理。</div>
+  <div id="msg-list"></div>
+
   <h2>发起一个讨论</h2>
   <div class="row">
     <input id="q-new" placeholder="想聊的事，比如一个疑问">
@@ -200,9 +209,14 @@ h2:first-child{margin-top:0}
 </section>
 
 <section id="tab-memory" hidden>
-  <div class="hint">这里是只读的。记忆只通过棋子和辞的对话（MCP）来改，这个页面只是给你看现在存了什么。</div>
+  <div class="hint">这里是只读的（原始记录那个子标签除外）。记忆只通过棋子和辞的对话（MCP）来改，这个页面只是给你看现在存了什么。</div>
   <div class="subnav" id="memory-nav"></div>
   <div id="memory-view"></div>
+</section>
+
+<section id="tab-diary" hidden>
+  <div class="hint">辞醒来的时候自己决定写不写日记、写公开的还是私密的。这里只显示公开的——私密日记只有辞自己能看到。</div>
+  <div id="diary-list"></div>
 </section>
 
 <section id="tab-shelf" hidden>
@@ -259,7 +273,7 @@ h2:first-child{margin-top:0}
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
 const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
 const $ = s => document.querySelector(s);
-const TABS = ['notes','qs','memory','shelf','log','settings'];
+const TABS = ['notes','qs','memory','diary','shelf','log','settings'];
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -384,6 +398,24 @@ $('#q-new-btn').onclick = async ()=>{
   catch(e){ toast('失败：'+e.message); }
 };
 
+// ── 棋子想说 ──
+function renderMessages(msgs){
+  const el = $('#msg-list');
+  if(!msgs.length){ el.innerHTML = '<div class="empty">还没有留言。</div>'; return; }
+  el.innerHTML = msgs.map(m=>`
+    <article class="entry">
+      <div class="entry-head">${m.addedAt.slice(0,16).replace('T',' ')}</div>
+      <p class="qmsg"><b>棋子：</b>${esc(m.text)}</p>
+      ${m.reply ? `<p class="qmsg"><b>辞：</b>${esc(m.reply.text)}</p>` : `<div class="mem-tag">还没回</div>`}
+    </article>`).join('');
+}
+$('#msg-new-btn').onclick = async ()=>{
+  const text = $('#msg-new').value.trim(); if(!text) return;
+  try{ await api('/api/messages',{method:'POST',body:JSON.stringify({text})});
+    $('#msg-new').value=''; toast('留言好了'); load(); }
+  catch(e){ toast('失败：'+e.message); }
+};
+
 // ── 记忆：分成几个小入口，一次只看一类，不用整页往下翻 ──
 const MEM_CATS = [
   { id:'identity', title:'辞是谁',
@@ -404,9 +436,7 @@ const MEM_CATS = [
   { id:'toSelf', title:'给下一个窗口',
     items: mem => (mem.toSelf||[]).filter(x=>x.status==='active'),
     render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'transcripts', title:'原始记录',
-    items: mem => [...(mem.transcripts||[])].reverse(),
-    render: x => `<div class="mem-item" style="white-space:pre-wrap">${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>` }
+  { id:'transcripts', title:'原始记录', special:true }
 ];
 
 let memTab = localStorage.getItem('mem-subtab') || MEM_CATS[0].id;
@@ -427,10 +457,71 @@ function renderMemory(mem){
   });
 
   const cat = MEM_CATS.find(c => c.id === memTab) || MEM_CATS[0];
+  if(cat.special === true && cat.id === 'transcripts'){ renderTranscripts(); return; }
   const items = cat.items(mem);
   $('#memory-view').innerHTML = items.length
     ? items.map(cat.render).join('')
     : '<div class="empty">还没有</div>';
+}
+
+// ── 原始记录：单独一个数据源（不在 /api/memory 里），带搜索和手动导入 ──
+function transcriptItem(x){
+  return `<div class="mem-item" style="white-space:pre-wrap">${x.title?`<b style="color:var(--celadon)">${esc(x.title)}</b><br>`:''}${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>`;
+}
+async function renderTranscripts(){
+  const view = $('#memory-view');
+  view.innerHTML = `
+    <div class="row" style="flex-wrap:wrap;margin-bottom:1.6rem">
+      <input id="tr-search" placeholder="关键词搜索原始记录…">
+      <button class="act" id="tr-search-btn">搜索</button>
+      <button class="act" id="tr-search-clear">清空</button>
+    </div>
+    <details style="margin-bottom:1.8rem">
+      <summary style="cursor:pointer;color:var(--dim);font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.08em">+ 手动导入一段原始记录</summary>
+      <div style="margin-top:1rem">
+        <label><span>标题（可选）</span><input id="tr-title" placeholder="比如对话标题"></label>
+        <label><span>日期（可选）</span><input id="tr-date" placeholder="YYYY-MM-DD"></label>
+        <label><span>原文</span><textarea id="tr-text" rows="8" style="width:100%;background:var(--night-2);border:1px solid var(--line);color:var(--moon);padding:.7rem;border-radius:2px;font-family:'IBM Plex Mono',monospace;font-size:.8rem"></textarea></label>
+        <button class="act" id="tr-import-btn">导入</button>
+      </div>
+    </details>
+    <div id="tr-list"><div class="empty">加载中…</div></div>
+  `;
+  const list = $('#tr-list');
+  async function loadList(q){
+    list.innerHTML = '<div class="empty">加载中…</div>';
+    try{
+      const url = q ? `/api/transcripts?q=${encodeURIComponent(q)}` : '/api/transcripts?limit=20';
+      const rs = await api(url);
+      list.innerHTML = rs.length ? rs.map(transcriptItem).join('') : '<div class="empty">'+(q?'没搜到':'还没有')+'</div>';
+    }catch(e){ list.innerHTML = '<div class="empty">读取失败：'+esc(e.message)+'</div>'; }
+  }
+  $('#tr-search-btn').onclick = ()=> loadList($('#tr-search').value.trim());
+  $('#tr-search').addEventListener('keydown', e=>{ if(e.key==='Enter') loadList($('#tr-search').value.trim()); });
+  $('#tr-search-clear').onclick = ()=>{ $('#tr-search').value=''; loadList(); };
+  $('#tr-import-btn').onclick = async ()=>{
+    const text = $('#tr-text').value.trim();
+    if(!text){ toast('原文不能为空'); return; }
+    try{
+      await api('/api/transcripts', { method:'POST', body: JSON.stringify({
+        text, title: $('#tr-title').value.trim(), date: $('#tr-date').value.trim()
+      })});
+      $('#tr-text').value=''; $('#tr-title').value=''; $('#tr-date').value='';
+      toast('导入好了'); loadList();
+    }catch(e){ toast('导入失败：'+e.message); }
+  };
+  loadList();
+}
+
+// ── 日记：只显示公开的 ──
+function renderDiary(entries){
+  const el = $('#diary-list');
+  if(!entries.length){ el.innerHTML = '<div class="empty">还没有公开日记。</div>'; return; }
+  el.innerHTML = entries.map(x=>`
+    <article class="entry">
+      <div class="entry-head">${x.addedAt.slice(0,16).replace('T',' ')}</div>
+      <p>${esc(x.text)}</p>
+    </article>`).join('');
 }
 
 // ── 日志 ──
@@ -526,12 +617,12 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 
 async function load(){
   try{
-    const [state, notes, log, shelf, questions, memory] = await Promise.all([
+    const [state, notes, log, shelf, questions, memory, diary, messages] = await Promise.all([
       api('/api/state'), api('/api/notes'), api('/api/log'), api('/api/shelf'),
-      api('/api/questions'), api('/api/memory')
+      api('/api/questions'), api('/api/memory'), api('/api/diary'), api('/api/messages')
     ]);
     renderStrip(state, log); renderNotes(notes); renderLog(log); renderShelf(shelf);
-    renderQuestions(questions); renderMemory(memory);
+    renderQuestions(questions); renderMemory(memory); renderDiary(diary); renderMessages(messages);
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;
