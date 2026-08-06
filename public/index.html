@@ -471,7 +471,14 @@ function renderMemory(mem){
 
 // ── 原始记录：单独一个数据源（不在 /api/memory 里），带搜索和手动导入 ──
 function transcriptItem(x){
-  return `<div class="mem-item" style="white-space:pre-wrap">${x.title?`<b style="color:var(--celadon)">${esc(x.title)}</b><br>`:''}${esc(x.text)}<span class="mem-tag">${esc(x.date||x.addedAt.slice(0,10))}</span></div>`;
+  // 列表/搜索接口现在只给摘要（excerpt + length），不是全文——全文太大会拖垮页面。
+  // 需要看全文再点"查看全文"单独去拿。
+  return `<div class="mem-item" style="white-space:pre-wrap" data-tr-id="${x.id}">
+    ${x.title?`<b style="color:var(--celadon)">${esc(x.title)}</b><br>`:''}
+    <span class="tr-excerpt">${esc(x.excerpt)}</span>
+    ${x.length > x.excerpt.length ? `<div><button class="act tr-full-btn" data-id="${x.id}" style="font-size:.7rem;padding:.2rem .6rem;margin-top:.5rem">查看全文（共 ${x.length} 字）</button></div>` : ''}
+    <span class="mem-tag">${esc(x.date||(x.addedAt||'').slice(0,10))}</span>
+  </div>`;
 }
 async function renderTranscripts(){
   const view = $('#memory-view');
@@ -499,6 +506,17 @@ async function renderTranscripts(){
       const url = q ? `/api/transcripts?q=${encodeURIComponent(q)}` : '/api/transcripts?limit=20';
       const rs = await api(url);
       list.innerHTML = rs.length ? rs.map(transcriptItem).join('') : '<div class="empty">'+(q?'没搜到':'还没有')+'</div>';
+      list.querySelectorAll('.tr-full-btn').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const id = btn.dataset.id;
+          btn.textContent = '加载中…';
+          try{
+            const full = await api('/api/transcripts/'+id);
+            btn.closest('.mem-item').querySelector('.tr-excerpt').textContent = full.text;
+            btn.remove();
+          }catch(e){ btn.textContent = '加载失败：'+e.message; }
+        };
+      });
     }catch(e){ list.innerHTML = '<div class="empty">读取失败：'+esc(e.message)+'</div>'; }
   }
   $('#tr-search-btn').onclick = ()=> loadList($('#tr-search').value.trim());
