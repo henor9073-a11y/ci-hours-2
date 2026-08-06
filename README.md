@@ -100,8 +100,17 @@ identity/facts/feelings/experiences 都有对应的 `archive_*` 工具（`archiv
 - `import_transcripts({entries})` 批量导入，棋子把 claude.ai 导出的对话发过来的时候用
 - `get_transcripts({limit})` 读最近的
 - `search_transcripts({keyword, limit})` 按关键词搜标题和正文
+- `get_transcript({id})` 拿某一条的完整原文
 
-网页的"记忆 → 原始记录"子标签里也能直接搜、直接手动粘贴导入一条，不用非得走 MCP。
+`get_transcripts`/`search_transcripts` 返回的是摘要（标题/日期/字数/一小段摘录），
+不是全文——有些导入的对话原文有几万字，列表/搜索如果每次都倒出全文，页面会卡、
+MCP 单次调用也会因为返回太大直接报错（实测过：搜一个常见词命中好几条几万字的
+原文，直接超过工具调用的输出上限）。确认要看某一条的完整内容时，拿它的 `id`
+去调 `get_transcript` 换全文——原文存储本身还是完整没删减的，只是列表接口不再
+一次性把所有全文都倒出来。
+
+网页的"记忆 → 原始记录"子标签里也能直接搜、直接手动粘贴导入一条，搜索结果里
+字数超出摘录长度的会带一个"查看全文"按钮，点了才会去拿完整原文，不用非得走 MCP。
 
 ## 棋子想说
 

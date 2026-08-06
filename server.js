@@ -18,7 +18,7 @@ import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
 import { getVoiceHistory, getVoiceFilePath } from './lib/voice.js';
-import { addTranscript, getTranscripts, searchTranscripts } from './lib/transcripts.js';
+import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById } from './lib/transcripts.js';
 import { getDiaryPublic } from './lib/diary.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 
@@ -128,6 +128,11 @@ app.post('/api/transcripts', (req, res) => {
   const { text, title, date } = req.body || {};
   if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
   res.json(addTranscript(text.trim(), [], date || '', title || ''));
+});
+app.get('/api/transcripts/:id', (req, res) => {
+  const x = getTranscriptById(req.params.id);
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
 });
 
 // ---- 日记：只吐公开的给棋子这边看 ----
