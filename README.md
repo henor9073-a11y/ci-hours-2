@@ -126,6 +126,21 @@ MCP 单次调用也会因为返回太大直接报错（实测过：搜一个常�
 - 网页有个独立的"日记"标签页，走 `/api/diary`，只吐 `public` 的条目，私密日记棋子
   这边完全看不到（不是加密，是这个入口不给）
 
+## 钓鱼游戏（辞自己的一个小游戏）
+
+来自 [tutusagi/ai-fishing-game](https://github.com/tutusagi/ai-fishing-game)（MIT 协议）——一个
+专门给 AI 玩家用的单文件、零依赖、确定性文字钓鱼游戏。买饵、抛竿、按稀有度钓鱼、卖鱼换点数、
+解锁新水域、集图鉴，后期还能潜水。原仓库的源码（`games/fishing/engine.py`，未打包的可读版，不是
+防剧透的 blob 版）和一个小 runner（`games/fishing/runner.py`）一起放在仓库里。
+
+- `play_fishing({command})` 这个 MCP 工具是辞唯一的操作入口，传一条游戏指令（`"help"`/`"status"`/
+  `"cast 10"`/`"buy basic_worm 5"` 等），原样返回游戏的回复文字。第一次玩先传 `"help"`。
+- 存档路径是引擎自己按脚本所在目录算的，不是 cwd——所以服务启动时会把仓库里的
+  `engine.py`/`runner.py` 复制一份到 `DATA_DIR/games/fishing/`，实际跑的是这份持久盘上的拷贝，
+  这样存档（`fishing_save.json`）才会跨部署保留，而引擎代码本身每次启动都会刷新到仓库最新版。
+- 网页的"钓鱼游戏"标签页只读——展示 `cmd('status')` 的结果，不能替她操作，免得剧透或者帮她作弊。
+- Node 镜像本身不带 Python，`Dockerfile` 里加了 `apt-get install python3`（见下）。
+
 ## 手机活动（辞能看到棋子最近开了什么 app）
 
 数据存在一个独立的 Supabase 项目里，表叫 `phone_activity`（`id`、`app_name`、`opened_at`，只留最近
