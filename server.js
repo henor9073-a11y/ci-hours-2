@@ -192,8 +192,8 @@ app.post('/api/replan', async (_, res) => {
 app.post('/mcp', handleMcpRequest);
 app.get('/mcp', (_, res) => res.status(405).json({ error: '这个端点只接受 POST' }));
 
-// ---- 语音：棋子电脑上跑着的本地播放器轮询这两个端点 ----
-// /mcp 里的 speak 工具把文字存进队列，这里给本地播放器拉取/回报消费状态。
+// ---- 语音：网页轮询这两个端点，拿到就播放服务端生成好的音频 ----
+// /mcp 里的 speak 工具把文字（和生成好的音频 id）存进队列，这里给网页拉取/回报消费状态。
 // 走跟其他接口一样的密码中间件（?token= 或 x-access-token）。
 app.get('/api/speech/next', (_, res) => res.json(getPendingSpeech()));
 app.post('/api/speech/:id/done', (req, res) => {
@@ -206,8 +206,32 @@ app.get('/api/voice/history', (req, res) => res.json(getVoiceHistory(Number(req.
 app.get('/api/voice/:id/audio', (req, res) => {
   const p = getVoiceFilePath(req.params.id);
   if (!p) return res.status(404).json({ error: '找不到这段语音' });
+  // 之前这里直接把整个文件流 pipe 出去，没带 Content-Length、也不支持 Range 请求——
+  // 浏览器（尤其 iOS Safari）拿不到总时长，进度条自然拖不动，有时候还会在快放完
+  // 的时候误判"播完了"提前掐断。这里补上标准的 HTTP Range 支持来修这个。
+  const stat = fs.statSync(p);
+  const total = stat.size;
+  const range = req.headers.range;
   res.setHeader('Content-Type', 'audio/mpeg');
-  fs.createReadStream(p).pipe(res);
+  res.setHeader('Accept-Ranges', 'bytes');
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    let start = m && m[1] ? parseInt(m[1], 10) : 0;
+    let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+    if (isNaN(start) || start < 0) start = 0;
+    if (isNaN(end) || end >= total) end = total - 1;
+    if (start > end) {
+      res.status(416).setHeader('Content-Range', `bytes */${total}`);
+      return res.end();
+    }
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+    res.setHeader('Content-Length', end - start + 1);
+    fs.createReadStream(p, { start, end }).pipe(res);
+  } else {
+    res.setHeader('Content-Length', total);
+    fs.createReadStream(p).pipe(res);
+  }
 });
 
 // 没有定时器了——排班和醒来都由棋子 Cowork 账号里的辞通过 /mcp 主动来做，
