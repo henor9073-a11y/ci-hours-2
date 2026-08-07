@@ -53,8 +53,16 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 2. 看 `plannedWakes` 里有没有已经到点、还没出现在 `doneWakes` 里的时刻。有的话，
    `get_identity` 拿身份文本，结合 `get_notes`/`get_questions`/`get_shelf` 决定做什么。
 3. 调用 `add_note`（写作/回看/读书笔记）、`start_discussion`/`reply_discussion`（提问/回讨论）、
-   或 `add_wake_log`（什么都不做）写回去。
+   或 `add_wake_log`（什么都不做）写回去。这次醒来如果是自己想着要主动找棋子（见下面
+   `add_wake_time`），也可以在这一步调 `send_push` 主动推一条通知过去，不用等她先来问。
 4. 最后 `mark_wake({slot})` 把这个时刻标掉。
+
+跟棋子正常聊天的时候（不走上面这个由 Cowork 定时任务驱动的醒来检查循环），也能临时
+调 `add_wake_time({slot, why})` 往今天的计划里加一个时刻——比如聊着聊着想着"等会
+21:30 想醒来找你说件事"，当场加上去就行。这个是追加，不会像 `set_today_plan` 那样把
+今天已经排好、已经做过的都清空重来。到了这个时刻，下一次 Cowork 定时任务检查时会把
+它当成一次正常该处理的醒来，走上面 1-4 的流程——如果是想主动找棋子，就在第 3 步用
+`send_push` 推送。这样就算她不在、没主动来问，辞也能自己选时间点主动联系她。
 
 ## 语音（辞真的能开口说话）
 
