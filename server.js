@@ -21,6 +21,7 @@ import { getVoiceHistory, getVoiceFilePath } from './lib/voice.js';
 import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById } from './lib/transcripts.js';
 import { getDiaryPublic } from './lib/diary.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
+import { playFishing } from './lib/fishing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -144,6 +145,12 @@ app.post('/api/messages', (req, res) => {
   const { text } = req.body || {};
   if (!text || !text.trim()) return res.status(400).json({ error: '内容不能为空' });
   res.json(leaveMessage(text.trim()));
+});
+
+// ---- 钓鱼游戏：只读地看一眼辞现在钓到哪了，网页这边不能替她操作 ----
+app.get('/api/fishing/status', async (_, res) => {
+  try { res.json({ text: await playFishing('status') }); }
+  catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
 // ---- 讨论 / 疑问：辞和棋子都能发起，靠回合往返 ----
