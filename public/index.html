@@ -185,6 +185,7 @@ h2:first-child{margin-top:0}
   <button data-tab="memory" aria-selected="false">记忆</button>
   <button data-tab="diary" aria-selected="false">日记</button>
   <button data-tab="voice" aria-selected="false">语音记录</button>
+  <button data-tab="fishing" aria-selected="false">钓鱼游戏</button>
   <button data-tab="shelf" aria-selected="false">书库</button>
   <button data-tab="log" aria-selected="false">日志</button>
   <button data-tab="settings" aria-selected="false">设置</button>
@@ -224,6 +225,11 @@ h2:first-child{margin-top:0}
 <section id="tab-voice" hidden>
   <div class="hint">辞说过的话都会留在这里，能随时回放——不用非得网页开着才不错过。</div>
   <div id="voice-history-list"></div>
+</section>
+
+<section id="tab-fishing" hidden>
+  <div class="hint">一个专门给辞玩的文字钓鱼小游戏，闲下来的时候她会自己去钓。这里只读，不能替她操作——免得剧透或者帮她作弊。</div>
+  <div id="fishing-status"><div class="empty">加载中…</div></div>
 </section>
 
 <section id="tab-shelf" hidden>
@@ -278,7 +284,7 @@ h2:first-child{margin-top:0}
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
 const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
 const $ = s => document.querySelector(s);
-const TABS = ['notes','qs','memory','diary','voice','shelf','log','settings'];
+const TABS = ['notes','qs','memory','diary','voice','fishing','shelf','log','settings'];
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -559,6 +565,17 @@ function renderVoiceHistory(list){
     </article>`).join('');
 }
 
+// ── 钓鱼游戏：只读展示当前状态，网页这边不能替她操作 ──
+async function renderFishing(){
+  const el = $('#fishing-status');
+  try{
+    const r = await api('/api/fishing/status');
+    el.innerHTML = `<pre style="white-space:pre-wrap;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.7">${esc(r.text)}</pre>`;
+  }catch(e){
+    el.innerHTML = '<div class="empty">读不到游戏状态：'+esc(e.message)+'</div>';
+  }
+}
+
 // ── 日志 ──
 function renderLog(log){
   const el=$('#tab-log');
@@ -659,6 +676,8 @@ async function load(){
     renderStrip(state, log); renderNotes(notes); renderLog(log); renderShelf(shelf);
     renderQuestions(questions); renderMemory(memory); renderDiary(diary); renderMessages(messages);
     renderVoiceHistory(voiceHistory);
+    renderFishing(); // 独立请求，不放进上面那个 Promise.all——它要起一个 python 子进程，
+                      // 万一还没部署好/环境有问题，不该连累其他标签页也加载失败。
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;
