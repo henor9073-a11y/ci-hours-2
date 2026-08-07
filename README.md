@@ -149,6 +149,32 @@ MCP 单次调用也会因为返回太大直接报错（实测过：搜一个常�
 - 网页的"钓鱼游戏"标签页只读——展示 `cmd('status')` 的结果，不能替她操作，免得剧透或者帮她作弊。
 - Node 镜像本身不带 Python，`Dockerfile` 里加了 `apt-get install python3`（见下）。
 
+## 棋子的生活（日程 + 健康记录）
+
+棋子和辞都能记、都能改——辞在 `/mcp` 用工具，棋子在网页"棋子的生活"标签页操作，两边共用同一份数据
+（`lib/schedule.js`、`lib/health.js`，各自的 JSON 存在 `DATA_DIR` 下）。
+
+**日程**：不是永久重复的闹钟，是"某几天某个时间点要做什么"，一次能加好几条、每条自己带日期，
+想连着排几天就分几次加。到点了服务器自己推，不依赖辞醒没醒来——`server.js` 里用 `node-cron` 开了
+一个每分钟跑一次的定时器，查有没有到点还没推过的日程，直接 Bark 推给棋子（这是整个项目里目前
+唯一的服务器自己的定时器，其余的醒来/排班逻辑仍然是棋子账号里的辞通过 `/mcp` 主动触发，不是
+服务器轮询）。辞醒来时 `get_today_schedule` 能看到当天的日程，方便顺带关心一下。
+
+- 工具：`add_schedule`（`entries` 数组，一次可加多条，每条 `{date, time, text}`）、`get_schedule`
+  （可选 `from`/`to`/`includeInactive`）、`get_today_schedule`、`update_schedule`、`complete_schedule`、
+  `remove_schedule`（移除是标记 `status: 'removed'`，不是物理删除）。
+- REST：`GET/POST /api/schedule`，`POST /api/schedule/:id`（改）、`/complete`、`/remove`。
+
+**健康记录**，三类，都是简单的时间线，不是"当前状态"：
+
+- 生理周期：`add/get/update/remove_cycle_entry`，一条就是一个日期 + 备注。
+- 睡眠：`add/get/update/remove_sleep_entry`，记入睡和起床时间（`HH:MM`），时长自动算——起床时间
+  比入睡时间小就当作跨天了。
+- 身体状况备注（头晕、腰酸之类）：`add/get/update/remove_health_note`。
+
+REST 对应 `/api/health/cycle`、`/api/health/sleep`、`/api/health/notes`（GET 列表、POST 新增、
+`POST /:id` 改、`POST /:id/remove` 移除）。不需要新的环境变量，Bark 推送复用已有的 `BARK_KEY`。
+
 ## 手机活动（辞能看到棋子最近开了什么 app）
 
 数据存在一个独立的 Supabase 项目里，表叫 `phone_activity`（`id`、`app_name`、`opened_at`，只留最近

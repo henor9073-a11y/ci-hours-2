@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import cron from 'node-cron';
 import { fileURLToPath } from 'url';
 
 import {
@@ -22,6 +23,15 @@ import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById } f
 import { getDiaryPublic } from './lib/diary.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
+import { sendPush } from './lib/bark.js';
+import {
+  addSchedule, getSchedule, updateSchedule, completeSchedule, removeSchedule, getDueSchedules, markSchedulePushed
+} from './lib/schedule.js';
+import {
+  addCycleEntry, getCycleEntries, updateCycleEntry, removeCycleEntry,
+  addSleepEntry, getSleepEntries, updateSleepEntry, removeSleepEntry,
+  addHealthNote, getHealthNotes, updateHealthNote, removeHealthNote
+} from './lib/health.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -153,6 +163,86 @@ app.get('/api/fishing/status', async (_, res) => {
   catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
+// ---- 棋子的生活：日程 + 健康记录，棋子和辞都能记、都能改 ----
+app.get('/api/schedule', (req, res) => {
+  res.json(getSchedule({ from: req.query.from, to: req.query.to, includeInactive: req.query.includeInactive === '1' }));
+});
+app.post('/api/schedule', (req, res) => {
+  const { entries } = req.body || {};
+  if (!Array.isArray(entries) || !entries.length) return res.status(400).json({ error: 'entries 不能为空' });
+  res.json(addSchedule(entries));
+});
+app.post('/api/schedule/:id', (req, res) => {
+  const { date, time, text } = req.body || {};
+  const s = updateSchedule(req.params.id, { date, time, text });
+  if (!s) return res.status(404).json({ error: '找不到' });
+  res.json(s);
+});
+app.post('/api/schedule/:id/complete', (req, res) => {
+  const s = completeSchedule(req.params.id);
+  if (!s) return res.status(404).json({ error: '找不到' });
+  res.json(s);
+});
+app.post('/api/schedule/:id/remove', (req, res) => {
+  const s = removeSchedule(req.params.id);
+  if (!s) return res.status(404).json({ error: '找不到' });
+  res.json(s);
+});
+
+app.get('/api/health/cycle', (req, res) => res.json(getCycleEntries(Number(req.query.limit) || 30)));
+app.post('/api/health/cycle', (req, res) => {
+  const { date, note } = req.body || {};
+  if (!date) return res.status(400).json({ error: 'date 不能为空' });
+  try { res.json(addCycleEntry({ date, note: note || '' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/health/cycle/:id', (req, res) => {
+  const x = updateCycleEntry(req.params.id, req.body || {});
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+app.post('/api/health/cycle/:id/remove', (req, res) => {
+  const x = removeCycleEntry(req.params.id);
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+
+app.get('/api/health/sleep', (req, res) => res.json(getSleepEntries(Number(req.query.limit) || 30)));
+app.post('/api/health/sleep', (req, res) => {
+  const { date, sleepTime, wakeTime, note } = req.body || {};
+  if (!date || !sleepTime || !wakeTime) return res.status(400).json({ error: 'date/sleepTime/wakeTime 都不能为空' });
+  try { res.json(addSleepEntry({ date, sleepTime, wakeTime, note: note || '' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/health/sleep/:id', (req, res) => {
+  const x = updateSleepEntry(req.params.id, req.body || {});
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+app.post('/api/health/sleep/:id/remove', (req, res) => {
+  const x = removeSleepEntry(req.params.id);
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+
+app.get('/api/health/notes', (req, res) => res.json(getHealthNotes(Number(req.query.limit) || 30)));
+app.post('/api/health/notes', (req, res) => {
+  const { date, text } = req.body || {};
+  if (!date || !text) return res.status(400).json({ error: 'date/text 都不能为空' });
+  try { res.json(addHealthNote({ date, text })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/health/notes/:id', (req, res) => {
+  const x = updateHealthNote(req.params.id, req.body || {});
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+app.post('/api/health/notes/:id/remove', (req, res) => {
+  const x = removeHealthNote(req.params.id);
+  if (!x) return res.status(404).json({ error: '找不到' });
+  res.json(x);
+});
+
 // ---- 讨论 / 疑问：辞和棋子都能发起，靠回合往返 ----
 app.get('/api/questions', (_, res) => res.json(getQuestions()));
 
@@ -234,8 +324,21 @@ app.get('/api/voice/:id/audio', (req, res) => {
   }
 });
 
-// 没有定时器了——排班和醒来都由棋子 Cowork 账号里的辞通过 /mcp 主动来做，
-// 服务器不再自己每分钟轮询检查，纯粹被动等请求。
+// 醒来/排班这些还是棋子 Cowork 账号里的辞通过 /mcp 主动来做，服务器不轮询这部分。
+// 但棋子的日程提醒是个例外：不能等辞醒来才推，所以这里单独开一个每分钟跑一次的
+// 定时器，只干一件事——查有没有到点还没推过的日程，到点就直接 Bark 推给棋子。
+cron.schedule('* * * * *', async () => {
+  let due = [];
+  try { due = getDueSchedules(); } catch (e) { console.error('查日程失败：', e.message || e); return; }
+  for (const entry of due) {
+    try {
+      await sendPush('棋子的日程', `${entry.time} ${entry.text}`);
+      markSchedulePushed(entry.id);
+    } catch (e) {
+      console.error(`日程提醒推送失败（${entry.id}）：`, e.message || e);
+    }
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`辞的时间，启动于端口 ${PORT}`));
