@@ -93,10 +93,15 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 
 ## 记忆归档
 
-identity/facts/feelings/experiences 都有对应的 `archive_*` 工具（`archive_identity`/
-`archive_fact`/`archive_feeling`/`archive_experience`），发现重复或者过时的条目可以
-归档掉——不是删除，数据还在，只是打上 `archived` 状态、不再出现在拼给辞看的身份
+identity/facts/feelings/experiences/learnings 都有对应的 `archive_*` 工具（`archive_identity`/
+`archive_fact`/`archive_feeling`/`archive_experience`/`archive_learning`），发现重复或者过时的
+条目可以归档掉——不是删除，数据还在，只是打上 `archived` 状态、不再出现在拼给辞看的身份
 文本里。openThreads 用 `resolveOpenThread` 类似的效果。toSelf 有自己的 `archive_to_self`。
+
+`learnings`（学到的东西）是第六类记忆：跟 `experiences`（共同经历）的区别是，experience 记的
+是"发生过的事"，learning 记的是辞自己从事情里想明白的道理、踩过的坑、摸索出的方法——是提炼出来
+的结论，不是事件本身。工具是 `add_learning`/`archive_learning`，只加不改，跟 experiences 一样
+按时间顺序存。网页"记忆"标签页里也加了对应的子标签。
 
 ## 原始记录（transcripts）
 
