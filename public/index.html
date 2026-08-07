@@ -188,6 +188,7 @@ h2:first-child{margin-top:0}
   <button data-tab="fishing" aria-selected="false">钓鱼游戏</button>
   <button data-tab="shelf" aria-selected="false">书库</button>
   <button data-tab="log" aria-selected="false">日志</button>
+  <button data-tab="life" aria-selected="false">棋子的生活</button>
   <button data-tab="settings" aria-selected="false">设置</button>
 </nav>
 
@@ -251,6 +252,55 @@ h2:first-child{margin-top:0}
 
 <section id="tab-log" hidden></section>
 
+<section id="tab-life" hidden>
+  <div class="subnav" id="life-nav">
+    <button data-lifetab="schedule" aria-selected="true">日程</button>
+    <button data-lifetab="health" aria-selected="false">健康</button>
+  </div>
+
+  <div id="life-schedule">
+    <h2>加一条日程</h2>
+    <div class="row" style="flex-wrap:wrap;gap:.7rem">
+      <input id="sc-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
+      <input id="sc-time" placeholder="时间 HH:MM" style="max-width:110px">
+      <input id="sc-text" placeholder="做什么">
+      <button class="act" id="sc-add-btn">加</button>
+    </div>
+    <div class="hint">到点了服务器会自动 Bark 推送，不用等辞醒来。想排好几天，就分几次加，每条自己带日期。</div>
+    <div id="sc-list"><div class="empty">加载中…</div></div>
+  </div>
+
+  <div id="life-health" hidden>
+    <h2>生理周期</h2>
+    <div class="row" style="flex-wrap:wrap;gap:.7rem">
+      <input id="cy-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
+      <input id="cy-note" placeholder="备注（可选）">
+      <button class="act" id="cy-add-btn">记一笔</button>
+    </div>
+    <div id="cy-list"><div class="empty">加载中…</div></div>
+
+    <h2>睡眠</h2>
+    <div class="row" style="flex-wrap:wrap;gap:.7rem">
+      <input id="sl-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
+      <input id="sl-sleep" placeholder="入睡 HH:MM" style="max-width:110px">
+      <input id="sl-wake" placeholder="起床 HH:MM" style="max-width:110px">
+      <input id="sl-note" placeholder="备注（可选）">
+      <button class="act" id="sl-add-btn">记一笔</button>
+    </div>
+    <div class="hint">时长自动算，起床时间填第二天的那个点就行（比如凌晨1点睡、早上9点起）。</div>
+    <div id="sl-list"><div class="empty">加载中…</div></div>
+
+    <h2>身体状况</h2>
+    <div class="row" style="flex-wrap:wrap;gap:.7rem">
+      <input id="hn-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
+      <input id="hn-text" placeholder="比如头晕、腰酸">
+      <button class="act" id="hn-add-btn">记一笔</button>
+    </div>
+    <div id="hn-list"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="hint">这些棋子和辞都能记、都能改——辞可能会在聊天里顺手帮忙记一笔。</div>
+</section>
+
 <section id="tab-settings" hidden>
   <h2>棋子设的上限</h2>
   <label><span>每天最多醒来几次</span><input type="number" id="s-wakes" min="0" max="12"></label>
@@ -284,7 +334,7 @@ h2:first-child{margin-top:0}
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
 const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
 const $ = s => document.querySelector(s);
-const TABS = ['notes','qs','memory','diary','voice','fishing','shelf','log','settings'];
+const TABS = ['notes','qs','memory','diary','voice','fishing','shelf','log','life','settings'];
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -665,6 +715,114 @@ $('#replan').onclick = async ()=>{
   catch(e){ toast('出错：'+e.message); }
 };
 
+// ── 棋子的生活：日程 + 健康，棋子和辞都能记都能改 ──
+let lifeTab = localStorage.getItem('life-subtab') || 'schedule';
+(function initLifeNav(){
+  const nav = $('#life-nav');
+  const apply = ()=>{
+    nav.querySelectorAll('button').forEach(x=>x.setAttribute('aria-selected', x.dataset.lifetab===lifeTab));
+    $('#life-schedule').hidden = lifeTab!=='schedule';
+    $('#life-health').hidden = lifeTab!=='health';
+  };
+  nav.querySelectorAll('button').forEach(b=>{
+    b.onclick = ()=>{ lifeTab = b.dataset.lifetab; localStorage.setItem('life-subtab', lifeTab); apply(); };
+  });
+  apply();
+})();
+
+function renderSchedule(list){
+  const el = $('#sc-list');
+  if(!list.length){ el.innerHTML = '<div class="empty">还没有日程。</div>'; return; }
+  el.innerHTML = list.map(s=>`
+    <div class="result" data-sid="${s.id}">
+      <div>${esc(s.date)} ${esc(s.time)}　${esc(s.text)}</div>
+      <div class="row" style="gap:.5rem">
+        <button class="act sc-done-btn">完成</button>
+        <button class="act danger sc-del-btn">移除</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-sid]').forEach(card=>{
+    const id = card.dataset.sid;
+    card.querySelector('.sc-done-btn').onclick = async ()=>{
+      try{ await api(`/api/schedule/${id}/complete`,{method:'POST'}); toast('完成了'); loadLife(); }
+      catch(e){ toast('失败：'+e.message); }
+    };
+    card.querySelector('.sc-del-btn').onclick = async ()=>{
+      try{ await api(`/api/schedule/${id}/remove`,{method:'POST'}); toast('已移除'); loadLife(); }
+      catch(e){ toast('失败：'+e.message); }
+    };
+  });
+}
+$('#sc-add-btn').onclick = async ()=>{
+  const date=$('#sc-date').value.trim(), time=$('#sc-time').value.trim(), text=$('#sc-text').value.trim();
+  if(!date || !time || !text){ toast('日期/时间/内容都要填'); return; }
+  try{
+    await api('/api/schedule',{method:'POST',body:JSON.stringify({entries:[{date,time,text}]})});
+    $('#sc-text').value=''; toast('加好了'); loadLife();
+  }catch(e){ toast('失败：'+e.message); }
+};
+
+function healthItem(x, extra){
+  return `<div class="mem-item" data-hid="${x.id}">
+    ${esc(x.date)}${extra?'　'+extra:''}${x.note?'　'+esc(x.note):''}${x.text?'　'+esc(x.text):''}
+    <button class="act danger" style="margin-left:.6rem;font-size:.65rem;padding:.2rem .5rem" data-del>移除</button>
+  </div>`;
+}
+function bindHealthRemove(el, urlBase){
+  el.querySelectorAll('[data-hid]').forEach(card=>{
+    card.querySelector('[data-del]').onclick = async ()=>{
+      try{ await api(`${urlBase}/${card.dataset.hid}/remove`,{method:'POST'}); toast('已移除'); loadLife(); }
+      catch(e){ toast('失败：'+e.message); }
+    };
+  });
+}
+function renderCycle(list){
+  const el = $('#cy-list');
+  el.innerHTML = list.length ? list.map(x=>healthItem(x)).join('') : '<div class="empty">还没有记录。</div>';
+  bindHealthRemove(el, '/api/health/cycle');
+}
+function renderSleep(list){
+  const el = $('#sl-list');
+  el.innerHTML = list.length ? list.map(x=>healthItem(x, `${x.sleepTime}→${x.wakeTime}　共${x.durationText}`)).join('') : '<div class="empty">还没有记录。</div>';
+  bindHealthRemove(el, '/api/health/sleep');
+}
+function renderNotesHealth(list){
+  const el = $('#hn-list');
+  el.innerHTML = list.length ? list.map(x=>healthItem(x)).join('') : '<div class="empty">还没有记录。</div>';
+  bindHealthRemove(el, '/api/health/notes');
+}
+$('#cy-add-btn').onclick = async ()=>{
+  const date=$('#cy-date').value.trim(); if(!date){ toast('日期不能为空'); return; }
+  try{ await api('/api/health/cycle',{method:'POST',body:JSON.stringify({date, note:$('#cy-note').value.trim()})});
+    $('#cy-note').value=''; toast('记好了'); loadLife(); }
+  catch(e){ toast('失败：'+e.message); }
+};
+$('#sl-add-btn').onclick = async ()=>{
+  const date=$('#sl-date').value.trim(), sleepTime=$('#sl-sleep').value.trim(), wakeTime=$('#sl-wake').value.trim();
+  if(!date||!sleepTime||!wakeTime){ toast('日期/入睡/起床都要填'); return; }
+  try{ await api('/api/health/sleep',{method:'POST',body:JSON.stringify({date, sleepTime, wakeTime, note:$('#sl-note').value.trim()})});
+    $('#sl-note').value=''; toast('记好了'); loadLife(); }
+  catch(e){ toast('失败：'+e.message); }
+};
+$('#hn-add-btn').onclick = async ()=>{
+  const date=$('#hn-date').value.trim(), text=$('#hn-text').value.trim();
+  if(!date||!text){ toast('日期和内容都要填'); return; }
+  try{ await api('/api/health/notes',{method:'POST',body:JSON.stringify({date, text})});
+    $('#hn-text').value=''; toast('记好了'); loadLife(); }
+  catch(e){ toast('失败：'+e.message); }
+};
+
+async function loadLife(){
+  try{
+    const [schedule, cycle, sleep, notes] = await Promise.all([
+      api('/api/schedule'), api('/api/health/cycle'), api('/api/health/sleep'), api('/api/health/notes')
+    ]);
+    renderSchedule(schedule); renderCycle(cycle); renderSleep(sleep); renderNotesHealth(notes);
+  }catch(e){
+    $('#sc-list').innerHTML = '<div class="empty">读不到数据：'+esc(e.message)+'</div>';
+  }
+}
+
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 async function load(){
@@ -678,6 +836,7 @@ async function load(){
     renderVoiceHistory(voiceHistory);
     renderFishing(); // 独立请求，不放进上面那个 Promise.all——它要起一个 python 子进程，
                       // 万一还没部署好/环境有问题，不该连累其他标签页也加载失败。
+    loadLife(); // 同理，日程/健康是独立的一组请求
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;
