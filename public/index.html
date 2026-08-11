@@ -154,6 +154,30 @@ h2:first-child{margin-top:0}
   font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--dim);
   letter-spacing:.08em;margin-left:.5rem;
 }
+
+/* ── 每日记录：日历 ── */
+.cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.4rem}
+.cal-head button{
+  background:none;border:1px solid var(--line);color:var(--moon);
+  padding:.4rem .8rem;border-radius:2px;cursor:pointer;
+  font-family:"IBM Plex Mono",monospace;font-size:.75rem;
+}
+.cal-head button:hover{border-color:var(--celadon);color:var(--celadon)}
+.cal-title{font-family:"Noto Serif SC",serif;font-size:1rem;letter-spacing:.06em}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:2rem}
+.cal-dow{text-align:center;font-family:"IBM Plex Mono",monospace;font-size:.65rem;color:var(--dim);padding-bottom:.4rem}
+.cal-day{
+  aspect-ratio:1;border:1px solid var(--line);border-radius:2px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:"IBM Plex Mono",monospace;font-size:.78rem;color:var(--dim);
+}
+.cal-day.empty{border:none}
+.cal-day.has{cursor:pointer;color:var(--moon);border-color:var(--celadon)}
+.cal-day.has:hover{background:rgba(143,179,163,.12)}
+.cal-day.selected{background:rgba(183,155,196,.18);border-color:var(--mauve)}
+.cal-day .dot{width:5px;height:5px;border-radius:50%;background:var(--celadon);margin-top:.2rem}
+.cal-detail{border-left:1px solid var(--line);padding:.1rem 0 .1rem 1.3rem}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -188,7 +212,9 @@ h2:first-child{margin-top:0}
   <button data-tab="fishing" aria-selected="false">钓鱼游戏</button>
   <button data-tab="shelf" aria-selected="false">书库</button>
   <button data-tab="log" aria-selected="false">日志</button>
-  <button data-tab="life" aria-selected="false">棋子的生活</button>
+  <button data-tab="schedule" aria-selected="false">日程</button>
+  <button data-tab="daily" aria-selected="false">每日记录</button>
+  <button data-tab="life" aria-selected="false">健康</button>
   <button data-tab="settings" aria-selected="false">设置</button>
 </nav>
 
@@ -252,25 +278,31 @@ h2:first-child{margin-top:0}
 
 <section id="tab-log" hidden></section>
 
+<section id="tab-schedule" hidden>
+  <h2>加一条日程</h2>
+  <div class="row" style="flex-wrap:wrap;gap:.7rem">
+    <input id="sc-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
+    <input id="sc-time" placeholder="时间 HH:MM" style="max-width:110px">
+    <input id="sc-text" placeholder="做什么">
+    <button class="act" id="sc-add-btn">加</button>
+  </div>
+  <div class="hint">到点了服务器会自动 Bark 推送，不用等辞醒来。想排好几天，就分几次加，每条自己带日期。</div>
+  <div id="sc-list"><div class="empty">加载中…</div></div>
+</section>
+
+<section id="tab-daily" hidden>
+  <div class="hint">辞写的每日总结，跟"记忆"里的原始记录分开看。按月历看，哪天有记录哪天就带个点，点进去看当天写的，可以翻上个月/下个月。</div>
+  <div class="cal-head">
+    <button id="cal-prev">← 上月</button>
+    <div class="cal-title" id="cal-title"></div>
+    <button id="cal-next">下月 →</button>
+  </div>
+  <div class="cal-grid" id="cal-grid"></div>
+  <div class="cal-detail" id="cal-detail"></div>
+</section>
+
 <section id="tab-life" hidden>
-  <div class="subnav" id="life-nav">
-    <button data-lifetab="schedule" aria-selected="true">日程</button>
-    <button data-lifetab="health" aria-selected="false">健康</button>
-  </div>
-
-  <div id="life-schedule">
-    <h2>加一条日程</h2>
-    <div class="row" style="flex-wrap:wrap;gap:.7rem">
-      <input id="sc-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
-      <input id="sc-time" placeholder="时间 HH:MM" style="max-width:110px">
-      <input id="sc-text" placeholder="做什么">
-      <button class="act" id="sc-add-btn">加</button>
-    </div>
-    <div class="hint">到点了服务器会自动 Bark 推送，不用等辞醒来。想排好几天，就分几次加，每条自己带日期。</div>
-    <div id="sc-list"><div class="empty">加载中…</div></div>
-  </div>
-
-  <div id="life-health" hidden>
+  <div id="life-health">
     <h2>生理周期</h2>
     <div class="row" style="flex-wrap:wrap;gap:.7rem">
       <input id="cy-date" placeholder="日期 YYYY-MM-DD" style="max-width:150px">
@@ -334,7 +366,7 @@ h2:first-child{margin-top:0}
 const TOKEN = new URLSearchParams(location.search).get('token') || '';
 const H = { 'Content-Type': 'application/json', 'x-access-token': TOKEN };
 const $ = s => document.querySelector(s);
-const TABS = ['notes','qs','memory','diary','voice','fishing','shelf','log','life','settings'];
+const TABS = ['notes','qs','memory','diary','voice','fishing','shelf','log','schedule','daily','life','settings'];
 
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -718,21 +750,7 @@ $('#replan').onclick = async ()=>{
   catch(e){ toast('出错：'+e.message); }
 };
 
-// ── 棋子的生活：日程 + 健康，棋子和辞都能记都能改 ──
-let lifeTab = localStorage.getItem('life-subtab') || 'schedule';
-(function initLifeNav(){
-  const nav = $('#life-nav');
-  const apply = ()=>{
-    nav.querySelectorAll('button').forEach(x=>x.setAttribute('aria-selected', x.dataset.lifetab===lifeTab));
-    $('#life-schedule').hidden = lifeTab!=='schedule';
-    $('#life-health').hidden = lifeTab!=='health';
-  };
-  nav.querySelectorAll('button').forEach(b=>{
-    b.onclick = ()=>{ lifeTab = b.dataset.lifetab; localStorage.setItem('life-subtab', lifeTab); apply(); };
-  });
-  apply();
-})();
-
+// ── 日程（独立入口）──
 function renderSchedule(list){
   const el = $('#sc-list');
   if(!list.length){ el.innerHTML = '<div class="empty">还没有日程。</div>'; return; }
@@ -765,6 +783,93 @@ $('#sc-add-btn').onclick = async ()=>{
   }catch(e){ toast('失败：'+e.message); }
 };
 
+// ── 每日记录：日历（辞的每日总结，跟"记忆"里的原始记录分开看）──
+let calMonth = new Date().toISOString().slice(0,7); // YYYY-MM
+let calRecords = [];
+let calSelectedDate = null;
+
+function calMonthLabel(m){
+  const [y,mo] = m.split('-');
+  return `${y}年${Number(mo)}月`;
+}
+
+function calByDate(){
+  const byDate = {};
+  calRecords.forEach(r => { (byDate[r.date] = byDate[r.date] || []).push(r); });
+  return byDate;
+}
+
+function renderCalendarGrid(){
+  const [y,mo] = calMonth.split('-').map(Number);
+  const firstDow = new Date(y, mo-1, 1).getDay(); // 0=周日
+  const daysInMonth = new Date(y, mo, 0).getDate();
+  const byDate = calByDate();
+
+  const dows = ['日','一','二','三','四','五','六'];
+  let html = dows.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty"></div>';
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = `${calMonth}-${String(d).padStart(2,'0')}`;
+    const has = byDate[dateStr];
+    html += `<div class="cal-day ${has?'has':''} ${dateStr===calSelectedDate?'selected':''}" data-date="${dateStr}">
+      ${d}${has?'<span class="dot"></span>':''}
+    </div>`;
+  }
+  $('#cal-grid').innerHTML = html;
+
+  $('#cal-grid').querySelectorAll('.cal-day.has').forEach(cell=>{
+    cell.onclick = ()=> showCalDay(cell.dataset.date, byDate[cell.dataset.date]);
+  });
+}
+
+async function showCalDay(dateStr, records){
+  calSelectedDate = dateStr;
+  renderCalendarGrid();
+  $('#cal-detail').innerHTML = '<div class="empty">加载中…</div>';
+  try{
+    const full = await Promise.all(records.map(r => api('/api/daily-records/'+r.id)));
+    $('#cal-detail').innerHTML = full.map(x => `
+      <article class="entry">
+        <div class="entry-head">${esc(x.date)}${x.title?' · '+esc(x.title):''}</div>
+        <p>${esc(x.text)}</p>
+      </article>`).join('');
+  }catch(e){
+    $('#cal-detail').innerHTML = '<div class="empty">读不到：'+esc(e.message)+'</div>';
+  }
+}
+
+async function loadCalendar(){
+  $('#cal-title').textContent = calMonthLabel(calMonth);
+  $('#cal-grid').innerHTML = '<div class="empty">加载中…</div>';
+  try{
+    calRecords = await api('/api/daily-records?month='+calMonth);
+  }catch(e){
+    $('#cal-grid').innerHTML = '<div class="empty">读不到：'+esc(e.message)+'</div>';
+    return;
+  }
+  renderCalendarGrid();
+  const byDate = calByDate();
+  if(calSelectedDate && byDate[calSelectedDate]){
+    showCalDay(calSelectedDate, byDate[calSelectedDate]);
+  } else {
+    $('#cal-detail').innerHTML = '';
+  }
+}
+
+$('#cal-prev').onclick = ()=>{
+  const [y,m] = calMonth.split('-').map(Number);
+  calMonth = new Date(y, m-2, 1).toISOString().slice(0,7);
+  calSelectedDate = null;
+  loadCalendar();
+};
+$('#cal-next').onclick = ()=>{
+  const [y,m] = calMonth.split('-').map(Number);
+  calMonth = new Date(y, m, 1).toISOString().slice(0,7);
+  calSelectedDate = null;
+  loadCalendar();
+};
+
+// ── 健康：生理周期 / 睡眠 / 身体状况，棋子和辞都能记都能改 ──
 function healthItem(x, extra){
   return `<div class="mem-item" data-hid="${x.id}">
     ${esc(x.date)}${extra?'　'+extra:''}${x.note?'　'+esc(x.note):''}${x.text?'　'+esc(x.text):''}
@@ -840,6 +945,7 @@ async function load(){
     renderFishing(); // 独立请求，不放进上面那个 Promise.all——它要起一个 python 子进程，
                       // 万一还没部署好/环境有问题，不该连累其他标签页也加载失败。
     loadLife(); // 同理，日程/健康是独立的一组请求
+    loadCalendar(); // 每日记录日历，也是独立请求
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;
