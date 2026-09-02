@@ -446,7 +446,7 @@ function renderNotes(notes){
     const kind = {read:'读', write:'写', reflect:'回看'}[n.kind] || n.kind;
     const where = n.bookTitle ? `《${n.bookTitle}》 ${(n.chapters||[]).join(' · ')}` : '';
     return `<article class="entry">
-      <div class="entry-head"><b>${kind}</b> ${n.at.slice(0,16).replace('T',' ')} ${where?'· '+esc(where):''}</div>
+      <div class="entry-head"><b>${kind}</b> ${fmtTime(n.at)} ${where?'· '+esc(where):''}</div>
       <p>${esc(n.text||'')}</p>
     </article>`;
   }).join('');
@@ -461,7 +461,7 @@ function renderQuestions(qs){
     <article class="entry" data-qid="${q.id}">
       <div class="entry-head">
         <span class="qtag ${q.status==='open'?'open':''}">${q.status==='open'?'进行中':'已结束'}</span>
-        <span style="margin-left:.6rem">${q.updatedAt.slice(0,16).replace('T',' ')}</span>
+        <span style="margin-left:.6rem">${fmtTime(q.updatedAt)}</span>
       </div>
       ${q.messages.map(m=>`<p class="qmsg"><b>${esc(m.from)}：</b>${esc(m.text)}</p>`).join('')}
       ${q.status==='open' ? `
@@ -504,7 +504,7 @@ function renderMessages(msgs){
   if(!msgs.length){ el.innerHTML = '<div class="empty">还没有留言。</div>'; return; }
   el.innerHTML = msgs.map(m=>`
     <article class="entry">
-      <div class="entry-head">${m.addedAt.slice(0,16).replace('T',' ')}</div>
+      <div class="entry-head">${fmtTime(m.addedAt)}</div>
       <p class="qmsg"><b>棋子：</b>${esc(m.text)}</p>
       ${m.reply ? `<p class="qmsg"><b>辞：</b>${esc(m.reply.text)}</p>` : `<div class="mem-tag">还没回</div>`}
     </article>`).join('');
@@ -679,7 +679,7 @@ function renderDiary(entries){
   if(!entries.length){ el.innerHTML = '<div class="empty">还没有公开日记。</div>'; return; }
   el.innerHTML = entries.map(x=>`
     <article class="entry">
-      <div class="entry-head">${x.addedAt.slice(0,16).replace('T',' ')}</div>
+      <div class="entry-head">${fmtTime(x.addedAt)}</div>
       <p>${esc(x.text)}</p>
     </article>`).join('');
 }
@@ -690,7 +690,7 @@ function renderVoiceHistory(list){
   if(!list.length){ el.innerHTML = '<div class="empty">还没有语音记录。</div>'; return; }
   el.innerHTML = list.map(x=>`
     <article class="entry">
-      <div class="entry-head">${x.createdAt.slice(0,16).replace('T',' ')}</div>
+      <div class="entry-head">${fmtTime(x.createdAt)}</div>
       <p>${esc(x.text)}</p>
       <audio controls preload="none" src="/api/voice/${x.id}/audio?token=${encodeURIComponent(TOKEN)}"></audio>
     </article>`).join('');
@@ -719,7 +719,7 @@ function renderLog(log){
       line = `${l.at} ${a}` + (l.book?`　《${l.book}》${l.chapters}章`:'') + (l.why?`　${l.why}`:'');
     }
     else if(l.type==='error') line = `出错（${l.where}）：${l.message}`;
-    return `<article class="entry"><div class="entry-head">${l.at.slice(0,16).replace('T',' ')}</div><p>${esc(line)}</p></article>`;
+    return `<article class="entry"><div class="entry-head">${fmtTime(l.at)}</div><p>${esc(line)}</p></article>`;
   }).join('');
 }
 
@@ -1012,6 +1012,15 @@ async function loadCountdowns(){
   }catch{}
 }
 
+// 时间戳统一按辞的时区显示。旧记录是 UTC（带 Z），新记录带 +10:00 偏移，两种都能正确换算。
+let DISPLAY_TZ = 'Australia/Melbourne';
+function fmtTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  if(isNaN(d)) return String(ts).slice(0,16).replace('T',' ');
+  return d.toLocaleString('sv',{timeZone:DISPLAY_TZ}).slice(0,16);
+}
+
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 async function load(){
@@ -1020,6 +1029,7 @@ async function load(){
       api('/api/state'), api('/api/notes'), api('/api/log'), api('/api/shelf'),
       api('/api/questions'), api('/api/memory'), api('/api/diary'), api('/api/messages'), api('/api/voice/history')
     ]);
+    DISPLAY_TZ = state.settings.timezone;
     renderStrip(state, log); renderNotes(notes); renderLog(log); renderShelf(shelf);
     renderQuestions(questions); renderMemory(memory); renderDiary(diary); renderMessages(messages);
     renderVoiceHistory(voiceHistory);
@@ -1033,6 +1043,7 @@ async function load(){
     $('#s-qs').value=state.settings.quietHoursStart;
     $('#s-qe').value=state.settings.quietHoursEnd;
     $('#s-tz').value=state.settings.timezone;
+    DISPLAY_TZ = state.settings.timezone;
     $('#clock').textContent = new Date().toLocaleString('sv',{timeZone:state.settings.timezone}).slice(0,16);
   }catch(e){
     $('#tab-notes').innerHTML='<div class="empty">读不到数据：'+esc(e.message)+'　如果设了密码，网址后面要带 ?token=你的密码</div>';
