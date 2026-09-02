@@ -150,6 +150,8 @@ h2:first-child{margin-top:0}
 }
 .subnav button[aria-selected="true"]{color:var(--moon);border-color:var(--celadon)}
 .mem-item{font-size:.9rem;padding:.5rem 0 .5rem 1.1rem;border-left:1px solid var(--line);margin-bottom:.9rem}
+.heat-cite{border-color:var(--celadon)!important;color:var(--celadon)!important}
+.heat-ref{opacity:.5}
 .mem-tag{
   font-family:"IBM Plex Mono",monospace;font-size:.62rem;color:var(--dim);
   letter-spacing:.08em;margin-left:.5rem;
@@ -205,6 +207,7 @@ h2:first-child{margin-top:0}
     <span class="key">浅色区块＝安静时段</span>
     <span id="chapters-today"></span>
   </div>
+  <div id="countdown-line" style="font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.06em;color:var(--dim);margin-top:.6rem"></div>
 </div>
 
 <nav>
@@ -513,37 +516,36 @@ $('#msg-new-btn').onclick = async ()=>{
   catch(e){ toast('失败：'+e.message); }
 };
 
-// ── 记忆：分成几个小入口，一次只看一类，不用整页往下翻 ──
+// ── 记忆（木纹）：档案两份 + 纹理六个分区 + 年轮，一次只看一类 ──
+// 纹理按热度排：cite(>70) 可以直接当事实说 / cautious(30–70) 说的时候留余地 / reference(<30) 只在内部参考
+const GRAIN_CATS = [
+  { id:'experience', title:'经历' }, { id:'agreement', title:'约定' }, { id:'feeling', title:'感受' },
+  { id:'learning', title:'学到的' }, { id:'to_self', title:'给下一个窗口' }, { id:'unexplained', title:'说不清的' }
+];
 const MEM_CATS = [
-  { id:'identity', title:'辞是谁',
-    items: mem => mem.identity.filter(x=>x.status==='active'),
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'feelings', title:'感受和倾向',
-    items: mem => mem.feelings,
-    render: x => `<div class="mem-item">${esc(x.text)}<span class="mem-tag">${x.status==='observing'?'观察中':'已确认'}</span></div>` },
-  { id:'facts', title:'关于棋子',
-    items: mem => mem.facts,
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'experiences', title:'共同经历',
-    items: mem => [...mem.experiences].reverse(),
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'learnings', title:'学到的东西',
-    items: mem => [...mem.learnings].filter(x=>x.status!=='archived').reverse(),
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'openThreads', title:'待推进',
-    items: mem => mem.openThreads.filter(x=>x.status==='open'),
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'toSelf', title:'给下一个窗口',
-    items: mem => (mem.toSelf||[]).filter(x=>x.status==='active'),
-    render: x => `<div class="mem-item">${esc(x.text)}</div>` },
-  { id:'transcripts', title:'原始记录', special:true }
+  { id:'profile-cy', title:'辞的档案', profile:'cy' },
+  { id:'profile-nor', title:'棋子的档案', profile:'nor' },
+  ...GRAIN_CATS.map(c => ({ ...c, grain:true })),
+  { id:'transcripts', title:'年轮（原始记录）', special:true }
 ];
 
 let memTab = localStorage.getItem('mem-subtab') || MEM_CATS[0].id;
+if(!MEM_CATS.find(c=>c.id===memTab)) memTab = MEM_CATS[0].id;
+let memStatus = localStorage.getItem('mem-status') || 'active';
+
+function heatTag(g){
+  const cls = g.confidence==='cite' ? 'heat-cite' : (g.confidence==='cautious' ? 'heat-cautious' : 'heat-ref');
+  return `<span class="mem-tag ${cls}" title="热度 ${g.heat}（${g.confidence}）">${Math.round(g.heat)}°${g.pinned?' 📌':''}</span>`;
+}
+function grainItem(g){
+  const fams = (g.families||[]).map(f=>`<span class="mem-tag">${esc(f)}</span>`).join('');
+  const tier = g.category==='feeling' ? `<span class="mem-tag">${g.tier==='confirmed'?'已确认':'观察中'}</span>` : '';
+  const st = g.status!=='active' ? `<span class="mem-tag">${g.status==='background'?'后台':'已归档'}</span>` : '';
+  return `<div class="mem-item" style="white-space:pre-wrap">${esc(g.text)}<div style="margin-top:.35rem">${heatTag(g)}${tier}${st}${g.date?`<span class="mem-tag">${esc(g.date)}</span>`:''}${fams}${g.source_id?`<span class="mem-tag" title="溯源：年轮 ${esc(g.source_id)}">↩ 年轮</span>`:''}</div></div>`;
+}
 
 function renderMemory(mem){
-  window.__lastMem = mem; // 切子标签时不用重新请求
-
+  window.__lastMem = mem; // 旧的 /api/memory 结果，现在只用来做兜底
   const nav = $('#memory-nav');
   nav.innerHTML = MEM_CATS.map(c =>
     `<button data-memtab="${c.id}" aria-selected="${c.id===memTab}">${c.title}</button>`
@@ -555,13 +557,53 @@ function renderMemory(mem){
       renderMemory(window.__lastMem);
     };
   });
-
   const cat = MEM_CATS.find(c => c.id === memTab) || MEM_CATS[0];
   if(cat.special === true && cat.id === 'transcripts'){ renderTranscripts(); return; }
-  const items = cat.items(mem);
-  $('#memory-view').innerHTML = items.length
-    ? items.map(cat.render).join('')
-    : '<div class="empty">还没有</div>';
+  if(cat.profile){ renderProfile(cat.profile); return; }
+  renderGrains(cat.id);
+}
+
+async function renderProfile(owner){
+  const view = $('#memory-view');
+  view.innerHTML = '<div class="empty">加载中…</div>';
+  try{
+    const p = await api('/api/profiles');
+    const rows = p[owner] || [];
+    view.innerHTML = rows.map(r => `
+      <div class="mem-item" style="white-space:pre-wrap">
+        <b style="color:var(--celadon)">${esc(r.label)}</b>
+        ${r.updated_at?`<span class="mem-tag">${esc(r.updated_at.slice(0,10))}</span>`:''}
+        <div style="margin-top:.4rem">${r.content ? esc(r.content) : '<span style="color:var(--dim)">（还没写）</span>'}</div>
+      </div>`).join('') || '<div class="empty">还没有</div>';
+  }catch(e){ view.innerHTML = '<div class="empty">读取失败：'+esc(e.message)+'</div>'; }
+}
+
+async function renderGrains(category){
+  const view = $('#memory-view');
+  view.innerHTML = `
+    <div class="row" style="flex-wrap:wrap;margin-bottom:1.2rem;align-items:center">
+      <input id="gr-search" placeholder="关键词搜这一类…" style="flex:1;min-width:10rem">
+      <button class="act" id="gr-search-btn">搜索</button>
+      <select id="gr-status" style="background:var(--night-2);border:1px solid var(--line);color:var(--moon);padding:.4rem;border-radius:2px">
+        <option value="active">前台</option><option value="background">后台</option><option value="archived">已归档</option><option value="">全部</option>
+      </select>
+    </div>
+    <div id="gr-list"><div class="empty">加载中…</div></div>`;
+  $('#gr-status').value = memStatus;
+  const list = $('#gr-list');
+  async function loadList(){
+    list.innerHTML = '<div class="empty">加载中…</div>';
+    const q = $('#gr-search').value.trim();
+    memStatus = $('#gr-status').value; localStorage.setItem('mem-status', memStatus);
+    try{
+      const gs = await api(`/api/grains?category=${category}&status=${encodeURIComponent(memStatus)}${q?'&q='+encodeURIComponent(q):''}`);
+      list.innerHTML = gs.length ? gs.map(grainItem).join('') : '<div class="empty">'+(q?'没搜到':'还没有')+'</div>';
+    }catch(e){ list.innerHTML = '<div class="empty">读取失败：'+esc(e.message)+'</div>'; }
+  }
+  $('#gr-search-btn').onclick = loadList;
+  $('#gr-search').addEventListener('keydown', e=>{ if(e.key==='Enter') loadList(); });
+  $('#gr-status').onchange = loadList;
+  loadList();
 }
 
 // ── 原始记录：单独一个数据源（不在 /api/memory 里），带搜索和手动导入 ──
@@ -811,8 +853,21 @@ async function showCalDay(dateStr){
   try{
     const r = await api('/api/calendar/day?date='+dateStr);
     const parts = [];
+    // 木纹的结构化每日总结（add_daily 写的）
+    const structured = (r.structured||[]).filter(x => x.nor_status || x.cy_status || x.pending || x.intimate);
+    if(structured.length){
+      parts.push(structured.map(x => `
+        <article class="entry">
+          <div class="entry-head">${esc(x.date)} · ${esc(x.headline)}</div>
+          ${x.nor_status?`<p><b>棋子：</b>${esc(x.nor_status)}</p>`:''}
+          ${x.cy_status?`<p><b>辞：</b>${esc(x.cy_status)}</p>`:''}
+          ${x.pending?`<p><b>未完成：</b>${esc(x.pending)}</p>`:''}
+          ${x.intimate?`<p><b>亲密：</b>${esc(x.intimate)}</p>`:''}
+        </article>`).join(''));
+    }
+    const structuredIds = new Set(structured.map(x=>x.id));
     if(r.daily && r.daily.length){
-      parts.push(r.daily.map(x => `
+      parts.push(r.daily.filter(x => x && !structuredIds.has(x.id)).map(x => `
         <article class="entry">
           <div class="entry-head">${esc(x.date)}${x.title?' · '+esc(x.title):''}</div>
           <p>${esc(x.text)}</p>
@@ -948,6 +1003,15 @@ async function loadLife(){
   }
 }
 
+async function loadCountdowns(){
+  try{
+    const cds = await api('/api/countdowns');
+    const el = $('#countdown-line');
+    if(!cds.length){ el.textContent=''; return; }
+    el.innerHTML = cds.slice(0,4).map(c => c.is_today ? `<b style="color:var(--celadon)">今天是${esc(c.title)}</b>` : `${esc(c.title)} 还有 ${c.days_until} 天`).join('　·　');
+  }catch{}
+}
+
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 async function load(){
@@ -963,6 +1027,7 @@ async function load(){
                       // 万一还没部署好/环境有问题，不该连累其他标签页也加载失败。
     loadLife(); // 同理，日程/健康是独立的一组请求
     loadCalendar(); // 每日记录日历，也是独立请求
+    loadCountdowns(); // 木纹：倒数日
     $('#s-wakes').value=state.settings.maxWakesPerDay;
     $('#s-chapters').value=state.settings.maxChaptersPerDay;
     $('#s-qs').value=state.settings.quietHoursStart;

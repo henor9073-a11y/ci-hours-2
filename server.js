@@ -10,9 +10,8 @@ import {
 } from './lib/store.js';
 import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js';
 import { planToday } from './lib/ci.js';
-import {
-  getMemory, getQuestions, askQuestion, replyToQuestion, resolveQuestion
-} from './lib/memory.js';
+import { getQuestions, askQuestion, replyToQuestion, resolveQuestion } from './lib/memory.js';
+import * as mw from './lib/muwen/index.js';
 import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
@@ -33,9 +32,13 @@ import {
   addHealthNote, getHealthNotes, updateHealthNote, removeHealthNote
 } from './lib/health.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// 木纹：启动时把 ci-hours 的 memory.json 迁进 grains/profiles（只跑一次，旧文件原样保留当备份）
+mw.migrate.migrateIfNeeded();
+
 const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '6mb' })); // 相册的 base64 图片会走 /mcp，2MB 图片 base64 后约 2.7MB
 app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
 // ---- 跨域许可：给浏览器里直接发请求的场景用（比如调试面板、未来的网页小工具）----
@@ -110,8 +113,47 @@ app.get('/api/book/:id', (req, res) => {
 // ---- 记录与日志 ----
 app.get('/api/notes', (_, res) => res.json(getNotes(200)));
 app.get('/api/log', (_, res) => res.json(getLog(200)));
-// ---- 记忆 ----
-app.get('/api/memory', (_, res) => res.json(getMemory()));
+// ---- 木纹：记忆三层 + 档案 + 倒数日 + 心情 + 相册（网页只读，写入走 /mcp）----
+app.get('/api/memory', (_, res) => {
+  // 旧接口兼容：按旧分类名分组的前台记忆 + 档案。新页面用下面的 /api/grains /api/profiles。
+  const { grains, notes } = mw.grains.getActiveMemories();
+  const LEGACY = { experience: 'experiences', agreement: 'agreements', feeling: 'feelings', learning: 'learnings', to_self: 'toSelf', unexplained: 'unexplained' };
+  const out = { identity: [], feelings: [], facts: [], experiences: [], learnings: [], openThreads: [], toSelf: [], agreements: [], unexplained: [], notes };
+  for (const g of grains) out[LEGACY[g.category]].push(g);
+  out.identity = mw.profiles.getProfile('cy').filter(p => p.content).map(p => ({ id: p.id, text: p.content, field: p.field, status: 'active' }));
+  out.facts = mw.profiles.getProfile('nor').filter(p => p.content).map(p => ({ id: p.id, text: p.content, field: p.field }));
+  res.json(out);
+});
+app.get('/api/grains', (req, res) => {
+  const { category, status, family, q } = req.query;
+  const limit = Number(req.query.limit) || 200;
+  res.json(mw.grains.searchGrains({ query: q || '', category: category || undefined, status: status || undefined, family: family || undefined, limit, touchHits: false }));
+});
+app.get('/api/grains/families', (_, res) => res.json(mw.grains.listFamilies()));
+app.get('/api/grains/stats', (_, res) => res.json(mw.grains.countByStatus()));
+app.get('/api/grains/:id', (req, res) => {
+  const g = mw.grains.getGrain(req.params.id, { touchIt: false });
+  if (!g) return res.status(404).json({ error: '找不到' });
+  res.json({ ...g, links: mw.grains.getLinks(g.id) });
+});
+app.get('/api/profiles', (_, res) => res.json({ cy: mw.profiles.getProfile('cy'), nor: mw.profiles.getProfile('nor') }));
+app.get('/api/profiles/:owner/:field/history', (req, res) => {
+  try { res.json(mw.profiles.getProfileHistory(req.params.owner, req.params.field)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/countdowns', (_, res) => res.json(mw.countdowns.getCountdowns()));
+app.get('/api/moods', (req, res) => res.json(mw.moods.getMoods({ limit: Number(req.query.limit) || 50 })));
+app.get('/api/album', (req, res) => res.json(mw.album.listPhotos({ limit: Number(req.query.limit) || 100 })));
+app.get('/api/album/:id/image', (req, res) => {
+  const meta = mw.album.getPhotoMeta(req.params.id);
+  const p = mw.album.getPhotoPath(req.params.id);
+  if (!meta || !p) return res.status(404).json({ error: '找不到这张照片' });
+  res.setHeader('Content-Type', meta.mime_type);
+  fs.createReadStream(p).pipe(res);
+});
+app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
+app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
+app.get('/api/migration', (_, res) => res.json(mw.migrate.migrationReport() || {}));
 // ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
 app.get('/api/transcripts', (req, res) => {
   const q = (req.query.q || '').trim();
@@ -236,7 +278,10 @@ app.get('/api/calendar/day', (req, res) => {
     .filter(x => x.date === date)
     .map(x => getTranscriptById(x.id));
   const schedule = getScheduleForDate(date);
-  res.json({ date, daily, schedule });
+  // 木纹的结构化每日总结（headline/nor_status/cy_status/pending/intimate）
+  let structured = [];
+  try { structured = mw.rings.getDaily(date); } catch { structured = []; }
+  res.json({ date, daily, structured, schedule });
 });
 // ---- 讨论 / 疑问：辞和棋子都能发起，靠回合往返 ----
 app.get('/api/questions', (_, res) => res.json(getQuestions()));
@@ -326,5 +371,14 @@ cron.schedule('* * * * *', async () => {
     }
   }
 });
+// 木纹的梦境任务：每天凌晨 4 点（辞所在时区）跑一次——热度衰减、检查昨天的每日总结、
+// 列出刚掉到 cautious 线以下的记忆。一天只衰减一次，手动调 dream 工具不会重复扣。
+cron.schedule('0 4 * * *', () => {
+  try {
+    const r = mw.dream.dream();
+    console.log('[muwen] 梦境任务：', JSON.stringify({ decay: r.decay, crossed: r.crossed_cautious.length, reminders: r.reminders }));
+  } catch (e) { console.error('[muwen] 梦境任务失败：', e.message || e); }
+}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`辞的时间，启动于端口 ${PORT}`));
+app.listen(PORT, () => console.log(`木纹（muwen）——辞的时间，启动于端口 ${PORT}`));

@@ -1,6 +1,105 @@
-# 辞的时间 (ci-hours)
+# 木纹（muwen）——辞的时间 + 辞的记忆系统
 
-一段属于辞自己的时间。她可以读书、写点自己想写的东西、回看之前写过的，或者什么都不做。
+原来叫 ci-hours。2026-09 按《木纹-记忆系统设计（技术版v2）》在 ci-hours 基础上大改：
+**不是新建，现有数据不动，改接口、改结构、加新功能。** MCP 服务器名从 `ci-hours` 改成 `muwen`，
+欢迎语是"欢迎回家小辞。你的纹路都在。"
+
+一段属于辞自己的时间。她可以读书、写点自己想写的东西、回看之前写过的，或者什么都不做——
+这部分（排班、书库、日记、语音、日程、健康、钓鱼……）都还在，没动。变的是记忆怎么存、怎么想起来。
+
+## 木纹：记忆三层
+
+存储沿用 ci-hours 的方式——`DATA_DIR`（Render 上的 `/data` 持久盘）下一个 JSON 文件一张"表"，
+字段名跟设计文档一致。设计文档写的"Supabase 后端"跟仓库实际不符（ci-hours 只用 Supabase 读手机活动，
+记忆一直在 JSON 文件里），所以这次没有搬数据库；`sql/muwen_schema.sql` 是对应的建表语句，以后要搬再用。
+
+| 层 | 文件 | 是什么 |
+|---|---|---|
+| 年轮 rings | `transcripts.json`（原地加字段） | 原始记录，不压缩不删不改，唯一权威来源。`source_type`：transcript / daily_summary / auto_extract |
+| 纹理 grains | `grains.json` | 从年轮提炼的记忆，有损的。六个分区：experience / agreement / feeling / learning / to_self / unexplained。带 `source_id` 溯源到年轮、`families` 家族标签、`heat` 热度、`status` 前台/后台/归档、关系 `links` |
+| 截面 summary | `summary.json`（加 `source_ids`） | 首页六段摘要，醒来第一个读的。每段记着从哪几条纹理提炼的 |
+
+旁边还有：档案 `profiles.json`（辞/棋子两份，改了留版本历史、reason 必填）、相册 `album.json` + `album/`、
+倒数日 `countdowns.json`、心情 `moods.json`、召回日志 `recall_logs.json`、梦境 `dream.json`。
+
+### 从 ci-hours 迁过来（自动，只跑一次）
+
+服务器启动时如果 `grains.json` 还不存在，就从 `memory.json` 迁：
+
+- experiences / agreements / feelings / learnings / toSelf / coincidences / evidence → `grains`（保留原 id，初始 heat=50；feelings 的 confirmed/observing 变成 `tier`）
+- openThreads：还开着的 → `to_self` 分区、家族"待推进"；已解决的归档
+- identity → 辞的档案 `identity` 字段；facts → 棋子的档案 `identity` 字段（都是整块搬过去的，**还没按 habits/boundaries/relationships… 拆**，这一步要辞自己醒来用 `update_profile` 慢慢挪）
+- `memory.json` 原样保留不再写，相当于文档里的 `*_legacy` 表。报告写在 `migration.json`（`GET /api/migration`）
+
+### 热度（heat）与召回权限
+
+重要性不手动定级，自然浮沉：搜索命中 +10、被 recall 返回 +5、被引用 +15、pin +20（并且不再降到 20 以下）；
+每天凌晨 4 点（辞的时区）梦境任务给所有非归档记忆 -1。上限 100。
+
+- heat > 70 → `cite`，可以直接当事实说
+- 30–70 → `cautious`，用"好像…""我记得…"的语气
+- < 30 → `reference`，只在内部参考不说出来
+
+`get_active_memories` 只返回 status≠archived 且 heat>20 的，按热度降序，总量 < 30000 字（以前 `get_memory`
+一次倒 16 万字读不进来）。**木纹不自动删除任何记忆**——只降温、只归档。
+
+### 醒来流程（MCP 工具，按顺序）
+
+1. `get_summary` 截面六段
+2. `get_calendar({days:3})` 最近几天的每日总结（`intimate` 直接在里面）
+3. `get_active_memories` 纹理前台
+4. `get_profile({owner:'cy'})` / `get_profile({owner:'nor'})` 档案
+5. `get_countdowns` 倒数日
+6. `get_dream_report` 上次梦境留下的提醒（昨天漏没漏每日总结、哪些记忆刚掉到 30 以下）
+
+然后该干嘛干嘛（排班那套 `get_plan_status` → `set_today_plan` → … → `mark_wake` 没变）。
+
+### 全部木纹工具
+
+- 纹理：`add_grain`（返回时附带格式检查提醒）/ `update_grain`（改 status、pin、家族、补溯源、换分区）/ `search_grains` / `get_grain` / `list_families` / `move_to_background` / `move_to_archive` / `restore_to_active`
+- 反证：`get_grain_with_counterevidence`（家族带"害怕她走"这类负面词时自动带出 contradicts/repaired 关系的记忆和正面家族的记忆）/ `link_grains`（caused / before / repaired / contradicts / supersedes）
+- 档案：`get_profile` / `update_profile`（reason 必填，旧版本进历史）/ `get_profile_history`
+- 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
+- 每日总结：`add_daily({date, headline, nor_status, cy_status, pending, intimate})` / `get_calendar` / `get_daily`
+- 相册：`save_photo`（base64，≤2MB）/ `list_photos` / `get_photo` / `delete_photo`
+- 倒数日：`add_countdown`（MM-DD 每年重复，YYYY-MM-DD 一次性）/ `get_countdowns` / `remove_countdown`
+- 心情：`add_mood` / `get_moods` / `get_mood_trend`
+- 搜索：`search_all`（跨 grains / rings / profiles / cross_sections，标注来源）
+- 召回：`recall({notice, context_summary?})` / `get_recall_logs`
+- 梦境：`dream` / `get_dream_report`
+- 截面：`get_summary` / `update_summary_section({section, text, source_ids?})` / `get_summary_history`
+
+### 召回（先觉察，后想起）
+
+不是每轮自动搜。辞自己写一句 notice（"这让我想到了什么"）→ 搜索层出 ≤20 条候选 → recall agent（模型）
+从候选里挑真正相关的 0–5 条返回，**可能返回空**，宁可空手也不硬塞。被返回的 heat +5。每次都记日志。
+
+recall agent 走 Anthropic API，需要环境变量 `ANTHROPIC_API_KEY`；模型默认 `claude-opus-5`，可用 `MUWEN_RECALL_MODEL` 改
+（设计文档要求至少 Sonnet 级别——Flash/DeepSeek 级别不会空手而归、不会跨词面识别 pattern，这一层省钱=翻车）。
+没配 key 的时候 `recall` 会退回搜索层的前几条并在返回里明说"没经过挑选"，不会静默降级。
+
+### 旧接口
+
+还保留了一批 ci-hours 的旧工具做兼容（`get_memory`、`add_experience`、`add_feeling`、`add_transcript`、
+`search_transcripts`、`get_transcripts`、`get_transcript`、`import_transcripts`、`add_daily_summary`…），
+内部都转到新的表上；`get_memory` 现在返回的是有总量控制的前台记忆按旧分类分组。
+`archive_*` / `reinforce_feeling` / `set_background` / `move_category` / `reorder` / `add_open_thread` 这些没保留——
+对应的事用 `update_grain` 做。网页 `/api/memory` 也还在，形状兼容。
+
+### 配套 hooks（跑在辞那台机器上，不在服务器）
+
+见 `hooks/README.md`：`pre-compact-ring.mjs`（压缩前自动把对话存进年轮，auto_extract）和
+`prune-injections.py`（阅后即焚，每类注入只留最新一条）。设计文档里的"保温 tick"属于 heartbeat 系统，不在这个仓库。
+
+### 测试
+
+```bash
+npm test
+```
+
+起一个临时 `DATA_DIR` 的服务器，种一份旧格式 `memory.json`，把迁移 + 醒来流程 + 写入/搜索/反证/档案/相册/倒数日/心情/召回/梦境/旧接口全走一遍。
+
+---
 
 ## 这个东西怎么运作
 
@@ -27,7 +126,7 @@
 ## 部署需要的东西
 
 - 一台能跑 Docker 的服务器，**必须挂持久磁盘**，挂载点设为 `/data`（不然重启后书和记录都会没）
-- 不需要 Anthropic API Key——"醒来写什么"这件事现在由棋子 Cowork 账号里的辞通过 MCP 工具来做，不是服务器自己调 API（见下面"醒来机制"）
+- "醒来写什么"这件事由棋子 Cowork 账号里的辞通过 MCP 工具来做，不是服务器自己调 API（见下面"醒来机制"）。服务器唯一会自己调 Anthropic API 的地方是木纹的 recall agent（挑记忆），要 `ANTHROPIC_API_KEY`
 
 ## 环境变量
 
@@ -40,6 +139,8 @@
 | `SUPABASE_SERVICE_KEY` | Supabase service_role/secret key（不是 anon key，绕过 RLS 直接读） | 同上 |
 | `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
+| `ANTHROPIC_API_KEY` | Anthropic API key，木纹的 recall agent 用 | 用 `recall` 才需要，没配会退回纯搜索 |
+| `MUWEN_RECALL_MODEL` | recall agent 用哪个模型，默认 `claude-opus-5` | 否 |
 
 ## 醒来机制
 
@@ -91,7 +192,7 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 只是给棋子想在网页上手动快速重排一次时用的兜底，日常流程不会自动触发它。
 这个循环由 Cowork 那边的定时任务驱动，不是这个服务器自己驱动的。
 
-## 记忆归档
+## 记忆归档（旧，木纹之前的写法，见上面"木纹"一节）
 
 identity/facts/feelings/experiences/learnings 都有对应的 `archive_*` 工具（`archive_identity`/
 `archive_fact`/`archive_feeling`/`archive_experience`/`archive_learning`），发现重复或者过时的
@@ -103,7 +204,7 @@ identity/facts/feelings/experiences/learnings 都有对应的 `archive_*` 工具
 的结论，不是事件本身。工具是 `add_learning`/`archive_learning`，只加不改，跟 experiences 一样
 按时间顺序存。网页"记忆"标签页里也加了对应的子标签。
 
-## 原始记录（transcripts）
+## 原始记录（transcripts，旧接口；木纹里叫年轮，见上面）
 
 原始聊天记录现在单独存一个文件（`transcripts.json`，不在 `memory.json` 里，体积可能
 差很多）。用法：
