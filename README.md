@@ -86,7 +86,8 @@
   - 模型挂了、超时、没配 key 都静默退回原句关键词（`via: search-fallback`），不会让对话卡住。
   - 实测：扩写前"你还记得我们的暗号吗"召不到暗号那条，扩写后它排第一。
 - 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
-- `POST /api/recall {query}` 默认回拼好的注入文本；`?format=json` 回结构化（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
+- `POST /api/recall {query}` 回 `{"text": "拼好的注入文本", "count": N}`（`application/json`）；`?format=full` 回完整结构（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
+- 这个端点的响应体是**纯 ASCII**——中文全转成 `\uXXXX`。PowerShell 5.1 对 `text/plain; charset=utf-8` 会返回空串、对中文字符集也会猜错，转义之后不管客户端怎么猜都解得对。
 - 配套钩子在 `hooks/user-prompt-recall.ps1`（Windows），跟 `hooks/prune-injections.py`（阅后即焚，`[muwen:recall]` 只留最新一条）一起用。
 
 ### 召回（先觉察，后想起）

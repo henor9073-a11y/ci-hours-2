@@ -3,9 +3,9 @@
 # Claude Code 会把 stdout 作为这一轮的额外 context 注入——辞看到消息时相关记忆已经在了。
 # 跟 timestamp.ps1 分开，是为了：召回走网络，慢/失败都不该拖累时间戳那条。
 #
-# 中文编码（PS 5.1 两头都有坑，两头都得治）：
-#   进来：Invoke-RestMethod 碰上 text/plain 会按 latin1 解，中文在进内存时就烂了。
-#         所以改用 Invoke-WebRequest 拿原始字节，自己按 UTF-8 解。
+# 中文编码（PS 5.1 两头都有坑，两头都治了）：
+#   进来：端点现在回 application/json，body 里的中文是 \uXXXX 转义（纯 ASCII），
+#         Invoke-RestMethod 解得干净——之前回 text/plain 时它会给空串。取 $r.text 就是注入文本。
 #   出去：Write-Output 按 [Console]::OutputEncoding 编码，PS 5.1 默认是系统 OEM 代码页（中文机器上是 GBK），
 #         Claude Code 按 UTF-8 读 → 乱码。所以直接往 stdout 写 UTF-8 字节，绕开控制台编码。
 #
@@ -29,16 +29,10 @@ if ($p.StartsWith('[muwen:') -or $p.StartsWith('苏醒') -or $p -match '^\[(hear
 
 try {
   $bodyBytes = [Text.Encoding]::UTF8.GetBytes((@{ query = $p } | ConvertTo-Json -Compress))
-  $resp = Invoke-WebRequest -Method Post -Uri "$url/api/recall?token=$token" `
-            -ContentType 'application/json; charset=utf-8' -Body $bodyBytes `
-            -TimeoutSec $timeout -UseBasicParsing
-  if ($resp.StatusCode -ne 200) { exit 0 }
-
-  # 按原始字节解 UTF-8，不看响应头也不让 PS 自己猜
-  $raw = $resp.RawContentStream.ToArray()
-  if (-not $raw -or $raw.Length -eq 0) { exit 0 }   # 没匹配到就是空，什么都不注入
-  $text = [Text.Encoding]::UTF8.GetString($raw)
-  if (-not $text.Trim()) { exit 0 }
+  $r = Invoke-RestMethod -Method Post -Uri "$url/api/recall?token=$token" `
+         -ContentType 'application/json; charset=utf-8' -Body $bodyBytes -TimeoutSec $timeout
+  $text = [string]$r.text
+  if (-not $text -or -not $text.Trim()) { exit 0 }   # 没匹配到就是空，什么都不注入
 
   # 直接往 stdout 写 UTF-8 字节，绕开 [Console]::OutputEncoding
   $out = [Console]::OpenStandardOutput()

@@ -348,13 +348,25 @@ try {
     // 完全没匹配的正常消息 → 空但非 trivial
     const t3 = await tool('auto_recall', { query: '量子色动力学的渐近自由' });
     assert.equal(t3.trivial, undefined); assert.deepEqual(t3.memories, []);
-    // REST：text 模式回注入文本，带 [muwen:recall] 前缀
+    // REST：默认回 { text, count } 的 JSON，且响应体是纯 ASCII（\uXXXX 转义），PS 5.1 才不会解错
     const rt = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天' }) });
-    const txt = await rt.text();
-    assert.ok(txt.startsWith('[muwen:recall]') && txt.includes('摆摊'), txt);
-    const rj = await fetch(`${base}/api/recall?token=${TOKEN}&format=json`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
+    assert.equal(rt.headers.get('content-type'), 'application/json; charset=utf-8');
+    const rawBody = await rt.text();
+    assert.ok(/^[\x00-\x7F]*$/.test(rawBody), '响应体必须是纯 ASCII');
+    assert.ok(rawBody.includes('\\u'), '中文应该被转义成 \\uXXXX');
+    const jt = JSON.parse(rawBody);
+    assert.ok(jt.text.startsWith('[muwen:recall]') && jt.text.includes('摆摊'), jt.text);
+    assert.equal(jt.count, jt.text.split('\n').length - 1);
+    // format=full 回完整结构（旧名 json 也认）
+    const rj = await fetch(`${base}/api/recall?token=${TOKEN}&format=full`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
     const jj = await rj.json();
     assert.equal(jj.trivial, true);
+    const rj2 = await fetch(`${base}/api/recall?token=${TOKEN}&format=json`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
+    assert.equal((await rj2.json()).trivial, true);
+    // 没匹配到 → text 是空串但仍是合法 JSON
+    const rn = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '量子色动力学的渐近自由' }) });
+    const jn = await rn.json();
+    assert.equal(jn.text, ''); assert.equal(jn.count, 0);
     // 空 query → 400
     const bad = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) });
     assert.equal(bad.status, 400);

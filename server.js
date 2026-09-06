@@ -154,22 +154,33 @@ app.get('/api/album/:id/image', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+// 响应体里的非 ASCII 全部转成 \uXXXX——JSON 转义序列本身是纯 ASCII，
+// 不管客户端怎么猜字符集都不会解错。PS 5.1 在中文这件事上翻过两次车了，这里一劳永逸。
+function jsonAscii(res, obj, status = 200) {
+  const body = JSON.stringify(obj).replace(/[\u0080-\uFFFF]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  res.status(status).set('Content-Type', 'application/json; charset=utf-8').send(body);
+}
+
 app.post('/api/recall', async (req, res) => {
-  // 自动召回：钩子每条消息 POST 一次 { query, format?:'text'|'json', max_return?, use_agent? }。
-  // format=text（默认）直接回拼好的注入文本，钩子原样打到 stdout 就行。
+  // 自动召回：钩子每条消息 POST 一次 { query, max_return?, use_agent?, queries? }。
+  // 默认回 { text, count }——text 就是拼好的注入文本，钩子取 .text 打到 stdout 就行。
+  // ?format=full（旧名 json 也认）回完整结构，带 via / angles / matched_angles，用来看是哪个角度召回的。
   try {
     const { query, max_return, use_agent, context, queries } = req.body || {};
-    if (!query || !String(query).trim()) return res.status(400).json({ error: 'query 不能为空' });
+    if (!query || !String(query).trim()) return jsonAscii(res, { error: 'query 不能为空' }, 400);
     const result = await mw.recall.autoRecall(String(query), {
-      maxReturn: Number(max_return) || 5,
+      maxReturn: Number(max_return) || 3,
       useAgent: use_agent === undefined ? null : !!use_agent,
       queries: Array.isArray(queries) && queries.length ? queries : null,
       context: context || ''
     });
-    if ((req.query.format || req.body.format) === 'json') return res.json(result);
-    // 显式写死 charset，别让客户端猜——PowerShell 5.1 猜不到就会按 latin1 解，中文直接烂掉
-    res.set('Content-Type', 'text/plain; charset=utf-8').send(mw.recall.formatInjection(result));
-  } catch (e) { res.status(500).set('Content-Type', 'text/plain; charset=utf-8').send(''); } // 失败静默，别把错误注进辞的 context
+    const format = req.query.format || req.body.format;
+    if (format === 'full' || format === 'json') return jsonAscii(res, result);
+    const text = mw.recall.formatInjection(result);
+    jsonAscii(res, { text, count: result.memories.length });
+  } catch (e) {
+    jsonAscii(res, { text: '', count: 0, error: String(e.message || e) }, 500); // 失败也给合法 JSON，钩子照样能解
+  }
 });
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
