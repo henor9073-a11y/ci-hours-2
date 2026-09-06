@@ -240,17 +240,66 @@ try {
     const tr = await tool('get_mood_trend', { days: 7 });
     assert.equal(tr.total, 2);
   });
-  await step('相册：存 / 列 / 取 / 删 + REST 图片', async () => {
-    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-    const p = await tool('save_photo', { image_base64: 'data:image/png;base64,' + png, mime_type: 'image/png', description: '一个像素', tags: ['测试'] });
+  await step('相册：小图原样存、大图自动压、caption、搜索、REST 图片', async () => {
+    const sharp = (await import('sharp')).default;
+    // 小图：不动，原样存
+    const small = (await sharp({ create: { width: 8, height: 8, channels: 3, background: '#c9a' } }).png().toBuffer()).toString('base64');
+    const p1 = await tool('save_photo', { image_base64: 'data:image/png;base64,' + small, mime_type: 'image/png', caption: '一个很小的测试图', tags: ['测试'] });
+    assert.equal(p1.compressed, false);
+    assert.equal(p1.photo.mime_type, 'image/png');
+    assert.equal(p1.photo.caption, '一个很小的测试图');
+    assert.deepEqual(p1.warnings, []);
+
+    // 大图：3000x3000 噪点 png（>2MB），后端应该自动压到 2MB 以内并转 jpeg
+    const noise = Buffer.alloc(1600 * 1600 * 3);
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 256;
+    const bigPng = await sharp(noise, { raw: { width: 1600, height: 1600, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+    assert.ok(bigPng.length > 2 * 1024 * 1024, `测试图得大于 2MB，现在 ${bigPng.length}`);
+    const p2 = await tool('save_photo', { image_base64: bigPng.toString('base64'), mime_type: 'image/png', caption: '棋子摆摊那天的摊位照片，她笑得很开心' });
+    assert.equal(p2.compressed, true, JSON.stringify(p2).slice(0, 300));
+    assert.ok(p2.photo.bytes <= 2 * 1024 * 1024, `压完应该 <=2MB，实际 ${p2.photo.bytes}`);
+    assert.equal(p2.photo.mime_type, 'image/jpeg');
+    assert.ok(p2.photo.width <= 2048, `最长边应 <=2048，实际 ${p2.photo.width}`);
+    assert.equal(p2.photo.original_bytes, bigPng.length);
+    assert.ok(p2.note.includes('自动压'));
+
+    // 带透明通道的大图 → webp（保住 alpha）
+    const alphaBuf = Buffer.alloc(1400 * 1400 * 4);
+    for (let i = 0; i < alphaBuf.length; i++) alphaBuf[i] = (i * 40503) % 256;
+    const bigAlpha = await sharp(alphaBuf, { raw: { width: 1400, height: 1400, channels: 4 } }).png({ compressionLevel: 0 }).toBuffer();
+    const p3 = await tool('save_photo', { image_base64: bigAlpha.toString('base64'), mime_type: 'image/png', caption: '带透明的大图' });
+    assert.equal(p3.photo.mime_type, 'image/webp');
+    assert.ok(p3.photo.bytes <= 2 * 1024 * 1024);
+
+    // 没写 caption → 存得下但给警告
+    const p4 = await tool('save_photo', { image_base64: small, mime_type: 'image/png' });
+    assert.ok(p4.warnings[0].includes('caption'));
+    // 旧字段 description 仍然当 caption 收
+    const p5 = await tool('save_photo', { image_base64: small, mime_type: 'image/png', description: '用旧字段写的' });
+    assert.equal(p5.photo.caption, '用旧字段写的');
+
+    // 列表带 caption、不带图片数据
     const list = await tool('list_photos', { tag: '测试' });
-    assert.equal(list.length, 1); assert.ok(!list[0].image_base64);
-    const got = await tool('get_photo', { id: p.id });
-    assert.equal(got.image_base64, png);
-    const img = await fetch(`${base}/api/album/${p.id}/image?token=${TOKEN}`);
-    assert.equal(img.headers.get('content-type'), 'image/png');
-    await tool('delete_photo', { id: p.id });
-    assert.equal((await tool('list_photos')).length, 0);
+    assert.equal(list.length, 1);
+    assert.equal(list[0].caption, '一个很小的测试图');
+    assert.ok(!list[0].image_base64 && !list[0].filename);
+
+    // caption 可搜（这就是它存在的意义）
+    const found = await tool('search_all', { query: '摆摊那天的摊位' });
+    const ph = found.results.find(r => r.layer === 'photos');
+    assert.ok(ph && ph.id === p2.photo.id, `caption 应该能搜到：${JSON.stringify(found.results.map(r => r.layer))}`);
+
+    // 取回原图 + REST
+    const got = await tool('get_photo', { id: p1.photo.id });
+    assert.equal(got.image_base64, small);
+    const img = await fetch(`${base}/api/album/${p2.photo.id}/image?token=${TOKEN}`);
+    assert.equal(img.headers.get('content-type'), 'image/jpeg');
+
+    // 超过收件上限 → 明确报错
+    await assert.rejects(tool('save_photo', { image_base64: 'A'.repeat(28 * 1024 * 1024), mime_type: 'image/jpeg', caption: 'x' }), /上限/);
+
+    await tool('delete_photo', { id: p1.photo.id });
+    assert.ok(!(await tool('list_photos', { tag: '测试' })).length);
   });
   await step('search_all 跨层标注来源', async () => {
     const r = await tool('search_all', { query: 'Panda' });

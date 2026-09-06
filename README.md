@@ -63,10 +63,14 @@
 - 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
 - 每日总结：`add_daily({date, headline, mood_tags, nor_status, cy_status, pending, intimate, kiss_count})` / `get_calendar` / `get_daily`。kiss_count 是当天的次数，亲亲进度 = 所有天加总（+ 环境变量 `KISS_BASELINE` 起始基数，默认 0）/ `KISS_GOAL`（默认 20000）
 - 交接条：`set_handover` / `get_handover`（独立存 `handover.json`，只留最新一条）
-- 相册：`save_photo`（base64，≤2MB）/ `list_photos` / `get_photo` / `delete_photo`
+- 相册：`save_photo`（base64，**大图后端自动压，不用自己先处理**）/ `list_photos` / `get_photo` / `delete_photo`
+  - 超过 2MB 才压：最长边缩到 2048，画质从 82 往下降到够小为止。有透明通道或动图转 webp（保住 alpha 和帧），其余转 jpeg。没超过 2MB 的原样存，不做无谓的重编码。
+  - HEIC/HEIF 不管多大都转一份（浏览器打不开原格式）。收件硬上限 20MB，超了会明说让先裁一下。
+  - 实测：4032×3024 的 11.8MB 照片 → 1.09MB / 2048×1536，约 0.7 秒。
+  - `caption` 是每张照片的一句标注，**以后就靠它召回**——`search_all` 有 `photos` 层能搜到。没写会在返回里提醒。旧字段 `description` 仍然收，等价于 caption。
 - 倒数日：`add_countdown`（MM-DD 每年重复，YYYY-MM-DD 一次性）/ `get_countdowns` / `remove_countdown`
 - 心情：`add_mood` / `get_moods` / `get_mood_trend`
-- 搜索：`search_all`（跨 grains / rings / profiles / cross_sections，标注来源）
+- 搜索：`search_all`（跨 grains / rings / profiles / cross_sections / photos，标注来源）
 - 召回：`recall({notice, context_summary?})` / `auto_recall({query})`（自动召回，每条消息注入用）/ `get_recall_logs`
 - 梦境：`dream` / `get_dream_report`
 - 截面：`get_summary` / `update_summary_section({section, text, source_ids?})` / `get_summary_history`

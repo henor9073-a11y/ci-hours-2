@@ -38,7 +38,8 @@ mw.migrate.migrateIfNeeded();
 
 const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
-app.use(express.json({ limit: '6mb' })); // 相册的 base64 图片会走 /mcp，2MB 图片 base64 后约 2.7MB
+app.use(express.json({ limit: '40mb' })); // 相册的原图走 /mcp 的 base64：20MB 上限的图编码后约 27MB，留出余量，
+// 好让超限时报的是 album.js 里那句人话（'先在手机上裁一下'），而不是 express 的 413 HTML。后端会再自动压到 2MB 存
 app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
 // ---- 跨域许可：给浏览器里直接发请求的场景用（比如调试面板、未来的网页小工具）----
