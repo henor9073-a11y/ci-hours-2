@@ -67,9 +67,20 @@
 - 倒数日：`add_countdown`（MM-DD 每年重复，YYYY-MM-DD 一次性）/ `get_countdowns` / `remove_countdown`
 - 心情：`add_mood` / `get_moods` / `get_mood_trend`
 - 搜索：`search_all`（跨 grains / rings / profiles / cross_sections，标注来源）
-- 召回：`recall({notice, context_summary?})` / `get_recall_logs`
+- 召回：`recall({notice, context_summary?})` / `auto_recall({query})`（自动召回，每条消息注入用）/ `get_recall_logs`
 - 梦境：`dream` / `get_dream_report`
 - 截面：`get_summary` / `update_summary_section({section, text, source_ids?})` / `get_summary_history`
+
+### 自动召回注入（参考 LMC-5）
+
+除了辞自己触发的 `recall`，还有一条"每条消息自动召回"的旁路：棋子每发一条消息，GPD 的 `UserPromptSubmit` 钩子后台 `POST /api/recall`，用消息内容当 query，把匹配到的 3–5 条记忆拼成一段 `[muwen:recall] …` 注入辞的 context——辞看到消息时相关记忆已经在了，不用调任何工具。
+
+- 两层级联（木纹没有向量，对应 LMC-5 的关键词→原始事件两层）：先纹理 `grains` 关键词命中（authority），太弱再翻年轮 `rings`（last_resort，只当线索）。
+- 琐碎消息（"嗯""好的""ok"、单字、纯标点）直接跳过。
+- 默认不跑 recall agent（每条消息都调 LLM 太贵）；`MUWEN_AUTORECALL_AGENT=1` 打开精选。
+- 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
+- `POST /api/recall {query}` 默认回拼好的注入文本；`?format=json` 回结构化。MCP 工具 `auto_recall` 也能调，主要给调试。
+- 配套钩子在 `hooks/user-prompt-recall.ps1`（Windows），跟 `hooks/prune-injections.py`（阅后即焚，`[muwen:recall]` 只留最新一条）一起用。
 
 ### 召回（先觉察，后想起）
 

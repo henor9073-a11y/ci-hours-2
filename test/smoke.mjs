@@ -101,7 +101,7 @@ try {
     const j = await rpc('tools/list', {});
     const names = j.result.tools.map(x => x.name);
     assert.deepEqual(names.slice(0, 6), ['get_wake_packet', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
-    for (const n of ['add_grain', 'recall', 'dream', 'search_all', 'save_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
+    for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
     assert.equal(new Set(names).size, names.length, '工具名有重复');
   });
   await step('迁移：memory.json → grains + profiles，旧文件原样保留', async () => {
@@ -271,6 +271,31 @@ try {
     }
     const empty = await tool('recall', { notice: 'zzqqxx完全不相关的词' });
     assert.deepEqual(empty.memories, []);
+  });
+  await step('auto_recall：命中纹理、琐碎消息返回空、REST 端点', async () => {
+    await tool('add_grain', { category: 'experience', text: '摆摊那天男朋友拿吸尘器打断她打电话，她委屈很久', date: '2026-07-20', families: ['摆摊'] });
+    const r = await tool('auto_recall', { query: '想起摆摊那天男朋友闹脾气的事' });
+    assert.ok(r.memories.length >= 1, JSON.stringify(r));
+    assert.equal(r.memories[0].layer, 'authority');
+    assert.ok(r.memories[0].text.includes('摆摊'));
+    // 琐碎消息跳过
+    const t1 = await tool('auto_recall', { query: '嗯嗯' });
+    assert.equal(t1.trivial, true); assert.deepEqual(t1.memories, []);
+    const t2 = await tool('auto_recall', { query: '。。。' });
+    assert.equal(t2.trivial, true);
+    // 完全没匹配的正常消息 → 空但非 trivial
+    const t3 = await tool('auto_recall', { query: '量子色动力学的渐近自由' });
+    assert.equal(t3.trivial, undefined); assert.deepEqual(t3.memories, []);
+    // REST：text 模式回注入文本，带 [muwen:recall] 前缀
+    const rt = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天' }) });
+    const txt = await rt.text();
+    assert.ok(txt.startsWith('[muwen:recall]') && txt.includes('摆摊'), txt);
+    const rj = await fetch(`${base}/api/recall?token=${TOKEN}&format=json`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
+    const jj = await rj.json();
+    assert.equal(jj.trivial, true);
+    // 空 query → 400
+    const bad = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) });
+    assert.equal(bad.status, 400);
   });
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;

@@ -153,6 +153,21 @@ app.get('/api/album/:id/image', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+app.post('/api/recall', async (req, res) => {
+  // 自动召回：钩子每条消息 POST 一次 { query, format?:'text'|'json', max_return?, use_agent? }。
+  // format=text（默认）直接回拼好的注入文本，钩子原样打到 stdout 就行。
+  try {
+    const { query, max_return, use_agent, context } = req.body || {};
+    if (!query || !String(query).trim()) return res.status(400).json({ error: 'query 不能为空' });
+    const result = await mw.recall.autoRecall(String(query), {
+      maxReturn: Number(max_return) || 5,
+      useAgent: use_agent === undefined ? null : !!use_agent,
+      context: context || ''
+    });
+    if ((req.query.format || req.body.format) === 'json') return res.json(result);
+    res.type('text/plain').send(mw.recall.formatInjection(result));
+  } catch (e) { res.status(500).type('text/plain').send(''); } // 失败静默，别把错误注进辞的 context
+});
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
 app.get('/api/migration', (_, res) => res.json(mw.migrate.migrationReport() || {}));
