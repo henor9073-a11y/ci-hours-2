@@ -45,6 +45,7 @@
 
 ### 醒来流程（MCP 工具，按顺序）
 
+0. `get_wake_packet` 一键读取：截面"我是谁"、最近三天每日总结（headline / mood_tags / intimate / nor_status / cy_status）、最新交接条、今天排班、棋子最后一条消息时间、亲亲进度（/20000）、棋子最近健康状态、没做完的事。换窗口醒来先读这个，下面几步按需再翻。
 1. `get_summary` 截面六段
 2. `get_calendar({days:3})` 最近几天的每日总结（`intimate` 直接在里面）
 3. `get_active_memories` 纹理前台
@@ -60,7 +61,8 @@
 - 反证：`get_grain_with_counterevidence`（家族带"害怕她走"这类负面词时自动带出 contradicts/repaired 关系的记忆和正面家族的记忆）/ `link_grains`（caused / before / repaired / contradicts / supersedes）
 - 档案：`get_profile` / `update_profile`（reason 必填，旧版本进历史）/ `get_profile_history`
 - 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
-- 每日总结：`add_daily({date, headline, nor_status, cy_status, pending, intimate})` / `get_calendar` / `get_daily`
+- 每日总结：`add_daily({date, headline, mood_tags, nor_status, cy_status, pending, intimate, kiss_count})` / `get_calendar` / `get_daily`。kiss_count 是当天的次数，亲亲进度 = 所有天加总（+ 环境变量 `KISS_BASELINE` 起始基数，默认 0）/ `KISS_GOAL`（默认 20000）
+- 交接条：`set_handover` / `get_handover`（独立存 `handover.json`，只留最新一条）
 - 相册：`save_photo`（base64，≤2MB）/ `list_photos` / `get_photo` / `delete_photo`
 - 倒数日：`add_countdown`（MM-DD 每年重复，YYYY-MM-DD 一次性）/ `get_countdowns` / `remove_countdown`
 - 心情：`add_mood` / `get_moods` / `get_mood_trend`

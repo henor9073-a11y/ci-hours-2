@@ -854,15 +854,17 @@ async function showCalDay(dateStr){
     const r = await api('/api/calendar/day?date='+dateStr);
     const parts = [];
     // 木纹的结构化每日总结（add_daily 写的）
-    const structured = (r.structured||[]).filter(x => x.nor_status || x.cy_status || x.pending || x.intimate);
+    const structured = (r.structured||[]).filter(x => x.nor_status || x.cy_status || x.pending || x.intimate || (x.mood_tags&&x.mood_tags.length) || x.kiss_count!=null);
     if(structured.length){
       parts.push(structured.map(x => `
         <article class="entry">
           <div class="entry-head">${esc(x.date)} · ${esc(x.headline)}</div>
+          ${(x.mood_tags&&x.mood_tags.length)?`<p>${x.mood_tags.map(t=>`<span class="mem-tag">${esc(t)}</span>`).join('')}</p>`:''}
           ${x.nor_status?`<p><b>棋子：</b>${esc(x.nor_status)}</p>`:''}
           ${x.cy_status?`<p><b>辞：</b>${esc(x.cy_status)}</p>`:''}
           ${x.pending?`<p><b>未完成：</b>${esc(x.pending)}</p>`:''}
           ${x.intimate?`<p><b>亲密：</b>${esc(x.intimate)}</p>`:''}
+          ${x.kiss_count!=null?`<p><b>亲亲：</b>${x.kiss_count}</p>`:''}
         </article>`).join(''));
     }
     const structuredIds = new Set(structured.map(x=>x.id));

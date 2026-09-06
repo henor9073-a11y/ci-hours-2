@@ -151,6 +151,8 @@ app.get('/api/album/:id/image', (req, res) => {
   res.setHeader('Content-Type', meta.mime_type);
   fs.createReadStream(p).pipe(res);
 });
+app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
+app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
 app.get('/api/migration', (_, res) => res.json(mw.migrate.migrationReport() || {}));

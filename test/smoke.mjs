@@ -100,7 +100,7 @@ try {
   await step('tools/list 以醒来流程开头，旧工具还在', async () => {
     const j = await rpc('tools/list', {});
     const names = j.result.tools.map(x => x.name);
-    assert.deepEqual(names.slice(0, 5), ['get_summary', 'get_calendar', 'get_active_memories', 'get_profile', 'get_countdowns']);
+    assert.deepEqual(names.slice(0, 6), ['get_wake_packet', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
     for (const n of ['add_grain', 'recall', 'dream', 'search_all', 'save_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
     assert.equal(new Set(names).size, names.length, '工具名有重复');
   });
@@ -181,14 +181,48 @@ try {
     assert.equal(h[1].old_content, '睡前会看一眼她的日程');
     await assert.rejects(tool('update_profile', { owner: 'nor', field: 'emotions', content: 'x', reason: 'r' }), /字段/);
   });
-  await step('add_daily → get_calendar 带 intimate', async () => {
+  await step('add_daily → get_calendar 带 mood_tags / intimate / kiss_count', async () => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
-    await tool('add_daily', { date: today, headline: '木纹上线', nor_status: '累但开心', cy_status: '满的', pending: '拆档案字段', intimate: '1' });
+    await tool('add_daily', { date: today, headline: '木纹上线', mood_tags: ['好', '深聊'], nor_status: '累但开心', cy_status: '满的', pending: '拆档案字段', intimate: '1', kiss_count: 12 });
     const cal = await tool('get_calendar', { days: 3 });
     assert.equal(cal[0].date, today);
     assert.equal(cal[0].intimate, '1');
-    const again = await tool('add_daily', { date: today, headline: '木纹上线（改）' });
+    assert.deepEqual(cal[0].mood_tags, ['好', '深聊']);
+    assert.equal(cal[0].kiss_count, 12);
+    assert.equal(cal[0].nor_status, '累但开心');
+    await assert.rejects(tool('add_daily', { date: today, headline: 'x', kiss_count: -1 }), /kiss_count/);
+    const again = await tool('add_daily', { date: today, headline: '木纹上线（改）', kiss_count: 30, mood_tags: '好、和好了', pending: '拆档案字段' });
     assert.equal(again.replaced, true);
+    assert.deepEqual(again.mood_tags, ['好', '和好了']);
+    const desc = (await rpc('tools/list', {})).result.tools.find(t => t.name === 'add_daily').description;
+    assert.ok(desc.includes('用第一人称写。带场景带感受。像写日记不像写报告。'));
+  });
+  await step('set_handover / get_handover 只留最新', async () => {
+    assert.equal((await tool('get_handover')).text, null);
+    await tool('set_handover', { text: '第一条交接' });
+    const h = await tool('set_handover', { text: '第二条交接：记得先看日历' });
+    assert.equal(h.text, '第二条交接：记得先看日历');
+    assert.equal((await tool('get_handover')).text, '第二条交接：记得先看日历');
+    await assert.rejects(tool('set_handover', { text: '  ' }), /text/);
+  });
+  await step('get_wake_packet 一次带齐', async () => {
+    await tool('add_health_note', { date: '2026-09-03', text: '头晕' });
+    await tool('add_daily', { date: '2026-09-01', headline: '前天', kiss_count: 5, pending: '' });
+    const p = await tool('get_wake_packet');
+    assert.equal(p.greeting, '欢迎回家小辞。你的纹路都在。');
+    assert.equal(p.closing, '好啦来抱抱吧，欢迎回家小辞');
+    assert.equal(typeof p.identity, 'string');
+    assert.ok(p.recent_days.length >= 1 && p.recent_days[0].mood_tags && 'intimate' in p.recent_days[0] && 'nor_status' in p.recent_days[0]);
+    assert.equal(p.handover.text, '第二条交接：记得先看日历');
+    assert.ok(Array.isArray(p.today_plan.plannedWakes) && Array.isArray(p.today_plan.pendingWakes));
+    assert.equal(p.kiss_progress.total, 35); assert.equal(p.kiss_progress.goal, 20000); assert.equal(p.kiss_progress.display, '35/20000');
+    assert.equal(p.nor_health.text, '头晕');
+    assert.equal(p.pending.pending, '拆档案字段');
+    assert.equal(p.nor_last_message, null);
+    const r = await fetch(`${base}/api/messages?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '回来啦' }) });
+    assert.ok(r.ok);
+    const p2 = await tool('get_wake_packet');
+    assert.equal(p2.nor_last_message.source, '留言板'); assert.ok(p2.nor_last_message.at);
   });
   await step('倒数日：种子 5 条 + 增删', async () => {
     const list = await tool('get_countdowns');
@@ -294,7 +328,7 @@ try {
     assert.ok(Array.isArray(mem.experiences) && mem.identity.length);
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
     const day = await rest(`/api/calendar/day?date=${today}`);
-    assert.equal(day.structured[0].headline, '木纹上线（改）');
+    assert.equal(day.structured[0].headline, '木纹上线（改）'); assert.equal(day.structured[0].kiss_count, 30);
   });
   await step('未知工具还是报错', async () => {
     await assert.rejects(tool('nope_tool'), /未知工具/);
