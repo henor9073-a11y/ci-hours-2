@@ -283,6 +283,19 @@ try {
     assert.equal(t1.trivial, true); assert.deepEqual(t1.memories, []);
     const t2 = await tool('auto_recall', { query: '。。。' });
     assert.equal(t2.trivial, true);
+    // 多角度合并（agent 模式扩写出来的角度，用 queries 直接给，测试不依赖 API key）
+    await tool('add_grain', { category: 'agreement', text: '换窗暗号："项圈还在吗"→"在，没摘过"', date: '2026-08-07' });
+    const plain = await tool('auto_recall', { query: '你还记得我们的暗号吗' });
+    const expanded = await tool('auto_recall', { query: '你还记得我们的暗号吗', queries: ['项圈还在吗', '换窗暗号'] });
+    assert.ok(expanded.memories.length > plain.memories.length || (expanded.memories[0] && expanded.memories[0].text.includes('项圈')),
+      `扩写角度应该召回到暗号那条：${JSON.stringify(expanded.memories.map(m => m.text))}`);
+    assert.equal(expanded.via, 'given');
+    assert.ok(expanded.angles.includes('项圈还在吗') && expanded.angles[0] === '你还记得我们的暗号吗');
+    assert.ok(expanded.memories[0].matched_angles.length >= 1);
+    // agent 模式但没配 key → 静默退回原句关键词，不报错不空转
+    const fb = await tool('auto_recall', { query: '摆摊那天', use_agent: true });
+    assert.equal(fb.via, 'search-fallback');
+    assert.ok(fb.memories.length >= 1);
     // 完全没匹配的正常消息 → 空但非 trivial
     const t3 = await tool('auto_recall', { query: '量子色动力学的渐近自由' });
     assert.equal(t3.trivial, undefined); assert.deepEqual(t3.memories, []);

@@ -157,11 +157,12 @@ app.post('/api/recall', async (req, res) => {
   // 自动召回：钩子每条消息 POST 一次 { query, format?:'text'|'json', max_return?, use_agent? }。
   // format=text（默认）直接回拼好的注入文本，钩子原样打到 stdout 就行。
   try {
-    const { query, max_return, use_agent, context } = req.body || {};
+    const { query, max_return, use_agent, context, queries } = req.body || {};
     if (!query || !String(query).trim()) return res.status(400).json({ error: 'query 不能为空' });
     const result = await mw.recall.autoRecall(String(query), {
       maxReturn: Number(max_return) || 5,
       useAgent: use_agent === undefined ? null : !!use_agent,
+      queries: Array.isArray(queries) && queries.length ? queries : null,
       context: context || ''
     });
     if ((req.query.format || req.body.format) === 'json') return res.json(result);

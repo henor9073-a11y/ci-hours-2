@@ -4,11 +4,12 @@
 # 跟 timestamp.ps1 分开，是为了：召回走网络，慢/失败都不该拖累时间戳那条。
 # 装法（~/.claude/settings.json，UserPromptSubmit 下和 timestamp.ps1 并列，多个 hook 会都跑）：
 #   { "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\<你>\\.claude\\hooks\\user-prompt-recall.ps1" }
-# 环境变量：MUWEN_URL（默认 https://ci-hours-2.onrender.com）、MUWEN_TOKEN（默认 010219）、MUWEN_RECALL_TIMEOUT 秒（默认 6）。
+# 环境变量：MUWEN_URL（默认 https://ci-hours-2.onrender.com）、MUWEN_TOKEN（默认 010219）、MUWEN_RECALL_TIMEOUT 秒（默认 12）。
+# 注：服务器开了 MUWEN_AUTORECALL_AGENT=1 的话，每条消息会多一次模型调用（扩写检索角度），所以超时给到 12 秒。
 $ErrorActionPreference = 'SilentlyContinue'
 $url = $env:MUWEN_URL; if (-not $url) { $url = 'https://ci-hours-2.onrender.com' }
 $token = $env:MUWEN_TOKEN; if (-not $token) { $token = '010219' }
-$timeout = [int]$env:MUWEN_RECALL_TIMEOUT; if ($timeout -le 0) { $timeout = 6 }
+$timeout = [int]$env:MUWEN_RECALL_TIMEOUT; if ($timeout -le 0) { $timeout = 12 }
 
 # stdin 用 $input 读（-File 场景 [Console]::In 读不到；$input 能读且中文不乱）
 $p = ''

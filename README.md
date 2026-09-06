@@ -77,9 +77,12 @@
 
 - 两层级联（木纹没有向量，对应 LMC-5 的关键词→原始事件两层）：先纹理 `grains` 关键词命中（authority），太弱再翻年轮 `rings`（last_resort，只当线索）。
 - 琐碎消息（"嗯""好的""ok"、单字、纯标点）直接跳过。
-- 默认不跑 recall agent（每条消息都调 LLM 太贵）；`MUWEN_AUTORECALL_AGENT=1` 打开精选。
+- **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：关键词层的天花板是"换了说法就召不到"——"你还记得我们的暗号吗"里根本没有"项圈"两个字。打开之后，每条非琐碎消息先跑一次模型，把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。只多一次模型调用，不是再跑一遍挑选 agent。模型判断这句话根本不用翻记忆时会直接 skip。
+  - 模型默认 `claude-opus-5`，`effort: low`、5 秒超时；`MUWEN_AUTORECALL_MODEL` 可换（这是每条消息一次调用，想省钱/提速可以换小模型）。
+  - 模型挂了、超时、没配 key 都静默退回原句关键词（`via: search-fallback`），不会让对话卡住。
+  - 实测：扩写前"你还记得我们的暗号吗"召不到暗号那条，扩写后它排第一。
 - 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
-- `POST /api/recall {query}` 默认回拼好的注入文本；`?format=json` 回结构化。MCP 工具 `auto_recall` 也能调，主要给调试。
+- `POST /api/recall {query}` 默认回拼好的注入文本；`?format=json` 回结构化（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
 - 配套钩子在 `hooks/user-prompt-recall.ps1`（Windows），跟 `hooks/prune-injections.py`（阅后即焚，`[muwen:recall]` 只留最新一条）一起用。
 
 ### 召回（先觉察，后想起）
