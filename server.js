@@ -167,8 +167,9 @@ app.post('/api/recall', async (req, res) => {
       context: context || ''
     });
     if ((req.query.format || req.body.format) === 'json') return res.json(result);
-    res.type('text/plain').send(mw.recall.formatInjection(result));
-  } catch (e) { res.status(500).type('text/plain').send(''); } // 失败静默，别把错误注进辞的 context
+    // 显式写死 charset，别让客户端猜——PowerShell 5.1 猜不到就会按 latin1 解，中文直接烂掉
+    res.set('Content-Type', 'text/plain; charset=utf-8').send(mw.recall.formatInjection(result));
+  } catch (e) { res.status(500).set('Content-Type', 'text/plain; charset=utf-8').send(''); } // 失败静默，别把错误注进辞的 context
 });
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
