@@ -79,7 +79,7 @@
 
 除了辞自己触发的 `recall`，还有一条"每条消息自动召回"的旁路：棋子每发一条消息，GPD 的 `UserPromptSubmit` 钩子后台 `POST /api/recall`，用消息内容当 query，把匹配到的 3–5 条记忆拼成一段 `[muwen:recall] …` 注入辞的 context——辞看到消息时相关记忆已经在了，不用调任何工具。
 
-- 两层级联（木纹没有向量，对应 LMC-5 的关键词→原始事件两层）：先纹理 `grains` 关键词命中（authority），太弱再翻年轮 `rings`（last_resort，只当线索）。
+- 三层级联（对应 LMC-5 的向量→关键词→原始事件）：① 纹理 `grains` 关键词命中（authority）；② 关键词弱时语义层兜底（模型读记忆索引按意思挑，见下）；③ 前两层都空才翻年轮 `rings`（last_resort，只当线索）。
 - 琐碎消息（"嗯""好的""ok"、单字、纯标点）直接跳过。
 - **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：关键词层的天花板是"换了说法就召不到"——"你还记得我们的暗号吗"里根本没有"项圈"两个字。打开之后，每条非琐碎消息先跑一次模型，把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。只多一次模型调用，不是再跑一遍挑选 agent。模型判断这句话根本不用翻记忆时会直接 skip。
   - 模型默认 `claude-opus-5`，`effort: low`、5 秒超时；`MUWEN_AUTORECALL_MODEL` 可换（这是每条消息一次调用，想省钱/提速可以换小模型）。
@@ -89,6 +89,18 @@
 - `POST /api/recall {query}` 回 `{"text": "拼好的注入文本", "count": N}`（`application/json`）；`?format=full` 回完整结构（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
 - 这个端点的响应体是**纯 ASCII**——中文全转成 `\uXXXX`。PowerShell 5.1 对 `text/plain; charset=utf-8` 会返回空串、对中文字符集也会猜错，转义之后不管客户端怎么猜都解得对。
 - 配套钩子在 `hooks/user-prompt-recall.ps1`（Windows），跟 `hooks/prune-injections.py`（阅后即焚，`[muwen:recall]` 只留最新一条）一起用。
+
+### 语义兜底层（关键词搜不到的时候）
+
+关键词层的天花板是"换了说法就召不到"。扩写检索角度能救一部分，但仍然是字面匹配。所以加了第三层：
+**关键词一条没搜到、或者最高分只是字面沾边（长度归一化后低于 `MUWEN_SEMANTIC_FLOOR`，默认 22）时，让模型读整个记忆索引按意思挑。** 挑中的排在关键词结果前面——因为这层是在"关键词不准"的前提下才跑的。
+
+- 阈值怎么来的：拿线上 231 条真实记忆量过，真命中落在 25–49，换了说法的语义查询卡在 15–18，22 能把两者分开。强命中（比如"项圈还在吗" adj=48.6）根本不会触发这层，省钱。
+- **为什么不用 embedding**：Anthropic 没有第一方 embedding 接口，真做向量要再接一个厂商（Voyage/OpenAI）、多一把 key、还要维护"写入时补向量 / 换模型要重算"的管线。而这个项目自己的结论是 46%→78% 来自挑选 agent 而不是搜索层——"她把不遗忘说成浪漫"那种跨词面的 pattern，向量也未必接得住。以后真要上向量，接口点就在 `lib/muwen/semantic.js`，换掉 `semanticPick` 即可。
+- **成本**：记忆索引（每条一行：id/日期/分区/热度/家族/开头 50 字）放在 system 里并打了 `cache_control`，是稳定前缀，连续对话走缓存读。231 条 ≈ 21K tokens：opus-5 缓存写 $0.13、缓存读 $0.011；换成 `MUWEN_SEMANTIC_MODEL=claude-haiku-4-5` 是 $0.026 / $0.002。索引按 id 排序保证逐字节稳定，加了新记忆才会失效重写。
+- 模型看完觉得没有真正相关的会返回空，不硬塞。索引里只有开头一段，挑中之后正文自动取全。
+- 相关环境变量：`MUWEN_AUTORECALL_SEMANTIC=0` 单独关掉这层、`MUWEN_SEMANTIC_MODEL`、`MUWEN_SEMANTIC_FLOOR`、`MUWEN_SEMANTIC_INDEX_MAX`（默认 800 条，超了按热度截断）、`MUWEN_SEMANTIC_TIMEOUT_MS`（默认 12000）。
+- 跟扩写层一样：超时/报错/没配 key 一律静默降级，关键词结果照常返回，不会让对话卡住。
 
 ### 召回（先觉察，后想起）
 

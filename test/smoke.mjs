@@ -9,6 +9,8 @@ import assert from 'assert';
 
 const PORT = 3999 + Math.floor(Math.random() * 1000);
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'muwen-test-'));
+// 测试进程里也会直接 import lib 模块（语义层那步），让它跟起的服务读同一个数据目录
+process.env.DATA_DIR = DATA;
 const TOKEN = 'testpw';
 const t = new Date().toISOString();
 
@@ -370,6 +372,45 @@ try {
     // 空 query → 400
     const bad = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) });
     assert.equal(bad.status, 400);
+  });
+  await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
+    const { autoRecall } = await import('../lib/muwen/recall.js');
+    const { buildIndex } = await import('../lib/muwen/semantic.js');
+    // 索引：非归档全在、按 id 排序（前缀稳定才有缓存命中）
+    const idx = buildIndex();
+    assert.ok(idx.count >= 5 && idx.text.startsWith('记忆索引'));
+    const ids = idx.text.split('\n').slice(1).map(l => l.split(' ')[0]);
+    assert.deepEqual(ids, [...ids].sort(), '索引必须按 id 排序');
+
+    const target = await tool('add_grain', { category: 'learning', text: '换窗口之后我还是我，靠的是这份共享的记录，不是同一个进程' });
+    const stub = async () => ({ picks: [{ layer: 'semantic', kind: 'grain', id: target.grain.id, category: 'learning', text: target.grain.text, heat: 50, confidence: 'cautious', reason: '她在问连续性' }], none: false, index_count: idx.count, model: 'stub' });
+
+    // 弱关键词（字面沾边但不准）→ 触发语义层，语义挑的排在最前
+    const weak = await autoRecall('你会不会有一天就不认识我了', { useAgent: true, _semanticPick: stub });
+    assert.ok(weak.layers_used.includes('semantic'), `应该触发语义层：${JSON.stringify(weak.layers_used)}`);
+    assert.equal(weak.memories[0].layer, 'semantic');
+    assert.equal(weak.memories[0].id, target.grain.id);
+    assert.equal(weak.memories[0].reason, '她在问连续性');
+    assert.ok(weak.memories.length <= 3);
+
+    // 强命中（adj 高）→ 不该跑语义层，省钱
+    let called = false;
+    const spy = async () => { called = true; return { picks: [], none: true }; };
+    const strong = await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: spy });
+    assert.equal(called, false, `强命中不该调语义层，top adj=${strong.memories[0].adj}`);
+    assert.ok(!strong.layers_used.includes('semantic'));
+
+    // 语义层报错 → 静默，关键词结果照常（用 minScore=1 保证确实有弱命中在手）
+    const boom = async () => { throw new Error('模型超时'); };
+    const degraded = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, _semanticPick: boom });
+    assert.ok(!degraded.layers_used.includes('semantic'));
+    assert.ok(degraded.memories.length >= 1, '语义挂了也要给关键词结果');
+    assert.ok((degraded.why || '').includes('语义层失败'));
+
+    // 关键词和语义都空 → 才轮到年轮兜底
+    const empty = async () => ({ picks: [], none: true });
+    const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty });
+    assert.deepEqual(none.memories, []);
   });
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;

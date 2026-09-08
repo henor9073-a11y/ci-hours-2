@@ -166,11 +166,12 @@ app.post('/api/recall', async (req, res) => {
   // 默认回 { text, count }——text 就是拼好的注入文本，钩子取 .text 打到 stdout 就行。
   // ?format=full（旧名 json 也认）回完整结构，带 via / angles / matched_angles，用来看是哪个角度召回的。
   try {
-    const { query, max_return, use_agent, context, queries } = req.body || {};
+    const { query, max_return, use_agent, use_semantic, context, queries } = req.body || {};
     if (!query || !String(query).trim()) return jsonAscii(res, { error: 'query 不能为空' }, 400);
     const result = await mw.recall.autoRecall(String(query), {
       maxReturn: Number(max_return) || 3,
       useAgent: use_agent === undefined ? null : !!use_agent,
+      useSemantic: use_semantic === undefined ? null : !!use_semantic,
       queries: Array.isArray(queries) && queries.length ? queries : null,
       context: context || ''
     });
