@@ -697,9 +697,11 @@ try {
     await tool('move_to_archive', { id: arch.grain.id });
     const noArch = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
     assert.ok(!noArch.memories.some(m => m.id === arch.grain.id), '归档的不该被自动召回');
-    // 但手动搜还是搜得到（那是辞明确要找）
-    assert.ok((await tool('search_grains', { query: kw, limit: 20 })).some(g => g.id === arch.grain.id),
-      '手动 search_grains 还是要能搜到归档的');
+    // 手动搜也一样，除非明确传 status='archived'——代码跟工具说明对齐
+    assert.ok(!(await tool('search_grains', { query: kw, limit: 20 })).some(g => g.id === arch.grain.id),
+      '手动 search_grains 默认也不该搜到归档的');
+    assert.ok((await tool('search_grains', { query: kw, limit: 20, status: 'archived' })).some(g => g.id === arch.grain.id),
+      '明确传 status=archived 才搜得到');
 
     // 相关性下限：分不够的一条都不给，宁可少给
     const floored = await autoRecall(kw, { useAgent: true, maxReturn: 3, minScore: 1,
