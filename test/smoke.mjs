@@ -412,7 +412,7 @@ try {
     const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty });
     assert.deepEqual(none.memories, []);
   });
-  await step('年轮索引：新存自动进索引、推关键词、语义兜底只在关键词全空时跑', async () => {
+  await step('年轮索引：新存自动进索引、推关键词、弱命中就放行年轮层、强命中不跑', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');
     const ringIndex = await import('../lib/muwen/ring-index.js');
 
@@ -433,7 +433,7 @@ try {
     const ids = idx.text.split('\n').slice(1).map(l => l.split(' ')[0]);
     assert.deepEqual(ids, [...ids].sort(), '年轮索引必须按 id 排序');
 
-    // 纹理、语义、年轮关键词全空 → 才轮到年轮语义层，结果算 last_resort 不算权威
+    // 前两层弱（不必空手）→ 就该放行年轮层，结果算 last_resort 不算权威
     const emptySemantic = async () => ({ picks: [], none: true });
     const pick = async () => ({ picks: [{ id: ring.id, reason: '她像是在问那次胡扯' }], none: false, index_count: idx.count, model: 'stub' });
     const r = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick });
@@ -448,6 +448,21 @@ try {
     const spy = async () => { called = true; return { picks: [], none: true }; };
     await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy });
     assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
+
+    // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行，并且给它留出位置。
+    // 这是这一层的关键：库里纹理一多，中文按字匹配几乎总能搜出点沾边的，
+    // 用"必须一条都没搜到"当门槛的话年轮层等于永远不触发。
+    const weak = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick });
+    assert.ok(weak.memories.some(m => m.layer === 'authority'), '弱命中的纹理还是要给');
+    const ringHit = weak.memories.find(m => m.layer === 'last_resort');
+    assert.ok(ringHit && ringHit.id === ring.id, `弱命中时年轮线索也要挤进来：${JSON.stringify(weak.layers_used)}`);
+    assert.ok(weak.memories.length <= 3, 'maxReturn 还是要守住');
+
+    // 强命中纹理（adj 过线）→ 年轮层一步都不该走
+    let ringCalled = false;
+    const ringSpy = async () => { ringCalled = true; return { picks: [], none: true }; };
+    await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: emptySemantic, _pickRings: ringSpy });
+    assert.equal(ringCalled, false, '强命中不该翻年轮');
 
     // 语义层报错 → 静默降级，不炸整个召回
     const boom = async () => { throw new Error('模型超时'); };
