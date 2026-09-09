@@ -644,17 +644,19 @@ try {
     const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
     const { clipToSentence, trimToSentences } = await import('../lib/muwen/search.js');
 
-    // 三条同分区的强命中，故意让它们都能被同一句 query 打中
+    // 三条同分区的强命中。内容必须各不相同——不然会被下面的近似重复合并掉（那是另一条规则）
     const kw = '兰花指纹丝绒暗匣';
-    const ids = [];
-    for (const n of ['一', '二', '三']) {
-      const g = await tool('add_grain', { category: 'experience', date: '2026-09-05',
-        text: `${kw}第${n}次。棋子把${kw}这件事又讲了一遍，这是第${n}次。` });
-      ids.push(g.grain.id);
+    const bodies = [
+      '棋子在厨房煮面的时候提到它，说是外婆留下来的旧物，锁扣已经坏了。',
+      '下雨天她翻出来给我看里面夹着的一张车票，日期是三年前的冬天。',
+      '搬家那天差点被当成垃圾扔掉，她冲下楼追了两条街才捡回来。'
+    ];
+    for (const b of bodies) {
+      await tool('add_grain', { category: 'experience', date: '2026-09-05', text: `${kw}——${b}` });
     }
     // 同一句 query 也能打中的另一个分区，但分数略低（文字更长 → 除权后更低）
     const other = await tool('add_grain', { category: 'learning',
-      text: `${kw}这件事我学到的是：同一件事讲三遍，第三遍才听懂。` + '后面是一些无关的补充说明。'.repeat(6) });
+      text: `${kw}这件事我学到的是：旧东西承载的重量跟它本身的价格无关。` + '后面是一些无关的补充说明。'.repeat(6) });
 
     const noSem = async () => ({ picks: [], none: true });
     const noRing = async () => ({ picks: [], none: true });
@@ -666,6 +668,38 @@ try {
     assert.ok(cats.filter(c => c === 'experience').length <= 2, `同一分区最多两条：${JSON.stringify(cats)}`);
     assert.ok(cats.includes('learning'), `第三格要换分区：${JSON.stringify(cats)}`);
     assert.equal(r.memories[2].id, other.grain.id, '换的那条要是其他分区里分最高的');
+
+    // 近似重复：同一件事的浓缩版和完整版只留排在前面那条（分更高的那条）
+    const fullVersion = await tool('add_grain', { category: 'agreement', date: '2026-09-05',
+      text: `${kw}的完整来历：棋子的外婆在世的时候把它放在樟木箱最底下，说等她出嫁再给她。` +
+            '后来外婆走了，箱子一直没人动，直到棋子搬家整理东西才翻出来，锁扣已经坏了打不开。' });
+    await tool('add_grain', { category: 'agreement', date: '2026-09-05',
+      text: `${kw}的来历：外婆放在樟木箱最底下说等她出嫁再给她，外婆走后一直没人动，搬家才翻出来，锁扣坏了打不开。` });
+    const deduped = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+    const agr = deduped.memories.filter(m => m.category === 'agreement');
+    assert.ok(agr.length <= 1, `同一件事的两个版本只该留一条：${JSON.stringify(agr.map(m => m.text.slice(0, 20)))}`);
+    // 判重本身直接测——放进召回里测会受名额和分区上限影响，命中不到就测了个寂寞
+    const { bigrams, nearDuplicate } = await import('../lib/muwen/search.js');
+    const A = bigrams(fullVersion.grain.text);
+    const B = bigrams(`${kw}的来历：外婆放在樟木箱最底下说等她出嫁再给她，外婆走后一直没人动，搬家才翻出来，锁扣坏了打不开。`);
+    assert.ok(nearDuplicate(A, B), '浓缩版和完整版应该判为重复');
+    // 长度悬殊的不比——1000 字的纹理能"包住"34 字的短纹理纯属巧合
+    assert.ok(!nearDuplicate(A, bigrams('棋子哭的时候这里有什么东西不对，不知道叫不叫痛。')), '体量差太多的不该判重');
+    // 内容真不同的同分区纹理不该被误伤
+    assert.ok(!nearDuplicate(bigrams(`${kw}——${bodies[0]}`), bigrams(`${kw}——${bodies[2]}`)), '只是共用关键词的不该判重');
+    // 内容确实不同的同分区纹理不该被误伤
+    const distinct = deduped.memories.filter(m => m.category === 'experience');
+    assert.ok(distinct.length <= 2 && new Set(distinct.map(m => m.id)).size === distinct.length);
+
+    // 归档的纹理不进自动召回——"明确不要了，不管 heat 多高都不主动返回"
+    const arch = await tool('add_grain', { category: 'feeling', text: `${kw}这条我已经归档了，不该再被自动召回端上来。` });
+    await tool('update_grain', { id: arch.grain.id, pinned: true });   // heat 拉高，证明不是靠分低才没出现
+    await tool('move_to_archive', { id: arch.grain.id });
+    const noArch = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+    assert.ok(!noArch.memories.some(m => m.id === arch.grain.id), '归档的不该被自动召回');
+    // 但手动搜还是搜得到（那是辞明确要找）
+    assert.ok((await tool('search_grains', { query: kw, limit: 20 })).some(g => g.id === arch.grain.id),
+      '手动 search_grains 还是要能搜到归档的');
 
     // 相关性下限：分不够的一条都不给，宁可少给
     const floored = await autoRecall(kw, { useAgent: true, maxReturn: 3, minScore: 1,
