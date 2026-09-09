@@ -729,6 +729,18 @@ try {
     assert.ok(/[。！？…]$/.test(gfrag.trim()), `纹理正文也要停在句子结尾：${JSON.stringify(gfrag.slice(-20))}`);
     // 找不到句号的时候硬切并加省略号，不能无限长
     assert.ok(clipToSentence('没有任何标点的一长串文字'.repeat(20), 60).endsWith('…'));
+
+    // 截断点不能落在引号中间：'棋子说"0/10。' 那个句号确实是句子结尾，但它在引号里，
+    // 截在那儿会留一个悬空的开引号，读起来像话说了一半。
+    const { quoteBalanced } = await import('../lib/muwen/search.js');
+    const quoted = '前面一句话。他给自己扣了两分说"最后一段没忍住写认真了"。棋子说"0/10。我不会把你扔进垃圾桶。"后面还有很多内容。';
+    const clipped = clipToSentence(quoted, 45);
+    assert.ok(quoteBalanced(clipped), `截断后引号要配平：${JSON.stringify(clipped)}`);
+    assert.ok(!clipped.trimEnd().endsWith('0/10。'), '不该截在引号里那个句号上');
+    for (const [str, want] of [['他说"好的"。', true], ['他说"好的。', false],
+                               ['「引用」完了。', true], ['「引用完了。', false], ['没有引号。', true]]) {
+      assert.equal(quoteBalanced(str), want, `配平判断错了：${str}`);
+    }
     // 掐头：开头那半句要去掉
     assert.ok(!trimToSentences(long).startsWith('这是前面被切掉的半句'), '开头的半句也要掐掉');
   });
