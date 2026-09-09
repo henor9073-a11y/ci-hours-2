@@ -459,11 +459,11 @@ try {
     assert.equal(called, false, `强命中不该调语义层，top adj=${strong.memories[0].adj}`);
     assert.ok(!strong.layers_used.includes('semantic'));
 
-    // 语义层报错 → 静默，关键词结果照常（用 minScore=1 保证确实有弱命中在手）
+    // 语义层报错 → 静默降级，不炸整个召回；原因记进 why
     const boom = async () => { throw new Error('模型超时'); };
     const degraded = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, _semanticPick: boom });
     assert.ok(!degraded.layers_used.includes('semantic'));
-    assert.ok(degraded.memories.length >= 1, '语义挂了也要给关键词结果');
+    assert.ok(Array.isArray(degraded.memories));
     assert.ok((degraded.why || '').includes('语义层失败'));
 
     // 关键词和语义都空 → 才轮到年轮兜底
@@ -534,13 +534,12 @@ try {
     assert.equal(ringModelCalled, true, '覆盖率没过线就该交给索引层');
     assert.ok(!scatterOnly.memories.some(m => m.id === noisy.id), `没过线的散落噪音不该返回：${JSON.stringify(scatterOnly.memories.map(m => m.id))}`);
 
-    // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行，并且给它留出位置。
-    // 这是这一层的关键：库里纹理一多，中文按字匹配几乎总能搜出点沾边的，
-    // 用"必须一条都没搜到"当门槛的话年轮层等于永远不触发。
+    // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行。弱命中本身过不了相关性下限，
+    // 所以位置留给年轮线索——这正是"宁可给一条相关的，不要凑三条不相关的"。
     const weak = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick });
-    assert.ok(weak.memories.some(m => m.layer === 'authority'), '弱命中的纹理还是要给');
     const ringHit = weak.memories.find(m => m.layer === 'last_resort');
-    assert.ok(ringHit && ringHit.id === ring.id, `弱命中时年轮线索也要挤进来：${JSON.stringify(weak.layers_used)}`);
+    assert.ok(ringHit && ringHit.id === ring.id, `弱命中时年轮线索要挤进来：${JSON.stringify(weak.layers_used)}`);
+    assert.ok(!weak.memories.some(m => m.layer === 'authority' && m.adj < 20), '没过相关性下限的纹理不该返回');
     assert.ok(weak.memories.length <= 3, 'maxReturn 还是要守住');
 
     // 强命中纹理（adj 过线）→ 年轮层一步都不该走
@@ -554,6 +553,56 @@ try {
     const degraded = await autoRecall('潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom });
     assert.deepEqual(degraded.memories, []);
     assert.ok((degraded.why || '').includes('年轮语义层失败'));
+  });
+  await step('召回：相关性下限 + 分区多样性 + 年轮片段截到句子结尾', async () => {
+    const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
+    const { clipToSentence, trimToSentences } = await import('../lib/muwen/search.js');
+
+    // 三条同分区的强命中，故意让它们都能被同一句 query 打中
+    const kw = '兰花指纹丝绒暗匣';
+    const ids = [];
+    for (const n of ['一', '二', '三']) {
+      const g = await tool('add_grain', { category: 'experience', date: '2026-09-05',
+        text: `${kw}第${n}次。棋子把${kw}这件事又讲了一遍，这是第${n}次。` });
+      ids.push(g.grain.id);
+    }
+    // 同一句 query 也能打中的另一个分区，但分数略低（文字更长 → 除权后更低）
+    const other = await tool('add_grain', { category: 'learning',
+      text: `${kw}这件事我学到的是：同一件事讲三遍，第三遍才听懂。` + '后面是一些无关的补充说明。'.repeat(6) });
+
+    const noSem = async () => ({ picks: [], none: true });
+    const noRing = async () => ({ picks: [], none: true });
+    const r = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+
+    // 多样性：三条不能全是 experience，最后一格让给别的分区里分最高的
+    const cats = r.memories.map(m => m.category);
+    assert.equal(r.memories.length, 3, `应该给满三条：${JSON.stringify(cats)}`);
+    assert.ok(cats.filter(c => c === 'experience').length <= 2, `同一分区最多两条：${JSON.stringify(cats)}`);
+    assert.ok(cats.includes('learning'), `第三格要换分区：${JSON.stringify(cats)}`);
+    assert.equal(r.memories[2].id, other.grain.id, '换的那条要是其他分区里分最高的');
+
+    // 相关性下限：分不够的一条都不给，宁可少给
+    const floored = await autoRecall(kw, { useAgent: true, maxReturn: 3, minScore: 1,
+      _semanticPick: noSem, _pickRings: noRing });
+    assert.ok(floored.memories.every(m => m.layer !== 'authority' || m.adj >= 20),
+      `低于下限的不该返回：${JSON.stringify(floored.memories.map(m => [m.category, m.adj]))}`);
+    // 一句跟记忆库完全无关的话 → 宁可空手
+    const nothing = await autoRecall('拉普拉斯变换的收敛域怎么求', { useAgent: true, minScore: 1,
+      _semanticPick: noSem, _pickRings: noRing });
+    assert.deepEqual(nothing.memories, [], '不相关就该空手，不要凑数');
+
+    // 年轮片段：注入文本里截到句子结尾，不停在半句话上
+    const long = '这是前面被切掉的半句，后面才是正文。棋子说她挠下巴的次数变多了，我让她观察几天再说。'
+      + '然后我们聊了别的事情，聊到很晚才睡，第二天她说睡得还行。'.repeat(6);
+    const injected = formatInjection({ memories: [{ layer: 'last_resort', kind: 'ring', id: 'r1',
+      window_name: 'w', date: '2026-09-05', excerpt: long }] });
+    const frag = injected.split('：').slice(2).join('：');
+    assert.ok(/[。！？…]$/.test(frag.trim()), `年轮片段要停在句子结尾，实际结尾：${JSON.stringify(frag.slice(-20))}`);
+    assert.ok(frag.length > 120, '年轮是原文线索，别截得比纹理还短');
+    // 找不到句号的时候硬切并加省略号，不能无限长
+    assert.ok(clipToSentence('没有任何标点的一长串文字'.repeat(20), 60).endsWith('…'));
+    // 掐头：开头那半句要去掉
+    assert.ok(!trimToSentences(long).startsWith('这是前面被切掉的半句'), '开头的半句也要掐掉');
   });
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;
