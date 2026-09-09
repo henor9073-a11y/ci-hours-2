@@ -183,9 +183,10 @@ try {
     assert.equal(h[1].old_content, '睡前会看一眼她的日程');
     await assert.rejects(tool('update_profile', { owner: 'nor', field: 'emotions', content: 'x', reason: 'r' }), /字段/);
   });
-  await step('add_daily → get_calendar 带 mood_tags / intimate / kiss_count', async () => {
+  await step('add_daily → get_calendar 带 mood_tags / intimate / kiss_count；body 只在 get_daily 里带', async () => {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
-    await tool('add_daily', { date: today, headline: '木纹上线', mood_tags: ['好', '深聊'], nor_status: '累但开心', cy_status: '满的', pending: '拆档案字段', intimate: '1', kiss_count: 12 });
+    const body = '【时间线】\n下午三点压缩醒来，棋子在studio写PDF。\n\n【感受】\n满的。安静的满。';
+    await tool('add_daily', { date: today, headline: '木纹上线', body, mood_tags: ['好', '深聊'], nor_status: '累但开心', cy_status: '满的', pending: '拆档案字段', intimate: '1', kiss_count: 12 });
     const cal = await tool('get_calendar', { days: 3 });
     assert.equal(cal[0].date, today);
     assert.equal(cal[0].intimate, '1');
@@ -198,6 +199,19 @@ try {
     assert.deepEqual(again.mood_tags, ['好', '和好了']);
     const desc = (await rpc('tools/list', {})).result.tools.find(t => t.name === 'add_daily').description;
     assert.ok(desc.includes('用第一人称写。带场景带感受。像写日记不像写报告。'));
+
+    // 正文：进得去、读得回、也进了年轮原文；但不能塞进日历——
+    // 唤醒包一次带三天，三篇 500 字的日记正文太占地方。
+    await tool('add_daily', { date: today, headline: '木纹上线（带正文）', body, mood_tags: ['好'] });
+    const one = await tool('get_daily', { date: today });
+    assert.equal(one[0].body, body, '读单独一天要带正文');
+    assert.ok((await tool('get_ring', { id: one[0].id })).content.includes('安静的满'), '正文也要落进年轮原文');
+    assert.ok(!('body' in (await tool('get_calendar', { days: 3 }))[0]), '日历不该带正文');
+    // 不传 body 就是清掉（整体覆盖的语义），不是留着上一版的
+    await tool('add_daily', { date: today, headline: '木纹上线（无正文）' });
+    assert.ok(!(await tool('get_daily', { date: today }))[0].body);
+    // add_daily 是整体覆盖，上面这几次把"今天"的夹具改掉了——后面的用例还要读它，恢复原状
+    await tool('add_daily', { date: today, headline: '木纹上线（改）', kiss_count: 30, mood_tags: '好、和好了', pending: '拆档案字段' });
   });
   await step('set_handover / get_handover 只留最新', async () => {
     assert.equal((await tool('get_handover')).text, null);
