@@ -226,6 +226,7 @@ function renderCalGrid() {
     if (importantOn(ds)) dots.push('<i class="imp"></i>');
     h += `<div class="cal-day${ds === td ? ' today' : ''}${ds === calSel ? ' sel' : ''}" onclick="showDay('${ds}')">
       <span>${d}</span><span class="cal-moon">${moon(ds).icon}</span>
+      ${row.intimate ? '<span class="cal-heart">♥</span>' : ''}
       ${dots.length ? `<span class="cal-dots">${dots.join('')}</span>` : ''}</div>`;
   }
   $('#c-grid').innerHTML = h;
@@ -244,6 +245,10 @@ async function showDay(ds) {
         ${x.nor_status ? `<div class="entry-body" style="margin-top:8px"><b>棋子：</b>${esc(x.nor_status)}</div>` : ''}
         ${x.cy_status ? `<div class="entry-body" style="margin-top:4px"><b>辞：</b>${esc(x.cy_status)}</div>` : ''}
         ${x.intimate ? `<div class="entry-body" style="margin-top:4px"><b>亲密：</b>${esc(x.intimate)}</div>` : ''}
+        ${(x.intimate_log || []).length ? `<div style="margin-top:8px">${x.intimate_log.map(i => `
+          <div style="border-left:2px solid var(--accent);padding:4px 0 4px 10px;margin-top:6px">
+            <div class="entry-head" style="margin-bottom:2px">♥ ${[i.time, i.method, i.initiator ? esc(i.initiator) + ' 主导' : ''].filter(Boolean).map(esc).join(' · ')}</div>
+            ${i.detail ? `<div class="entry-body">${esc(i.detail)}</div>` : ''}</div>`).join('')}</div>` : ''}
         ${x.kiss_count != null ? `<div class="entry-body" style="margin-top:4px"><b>亲亲：</b>${x.kiss_count}</div>` : ''}
         ${x.pending ? `<div class="entry-body" style="margin-top:4px"><b>没做完：</b>${esc(x.pending)}</div>` : ''}</div>`).join('');
     }

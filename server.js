@@ -339,8 +339,18 @@ app.get('/api/calendar', (req, res) => {
   const daily = getDailySummariesByMonth(month);
   const schedule = getScheduleByMonth(month);
   const byDate = {};
-  const bucket = d => (byDate[d] = byDate[d] || { date: d, daily: [], schedule: [] });
-  daily.forEach(x => bucket(x.date).daily.push(x));
+  const bucket = d => (byDate[d] = byDate[d] || { date: d, daily: [], schedule: [], intimate: false, kiss_count: null });
+  daily.forEach(x => {
+    const b = bucket(x.date);
+    b.daily.push(x);
+    // 月历要在有亲密记录的那天画一颗小爱心，所以这里把标记带上（正文不带，太占地方）
+    let d0 = null;
+    try { d0 = mw.rings.getDaily(x.date)[0]; } catch { d0 = null; }
+    if (d0) {
+      if (d0.has_intimate) b.intimate = true;
+      if (typeof d0.kiss_count === 'number') b.kiss_count = (b.kiss_count || 0) + d0.kiss_count;
+    }
+  });
   schedule.forEach(x => bucket(x.date).schedule.push(x));
   res.json(Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)));
 });

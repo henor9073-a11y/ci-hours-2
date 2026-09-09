@@ -275,8 +275,9 @@ async function loadLife() {
   }).catch(() => $('#l-fish').textContent = '读不到');
   rest('/api/schedule').then(s => $('#l-sched').textContent = `${s.filter(x => x.status === 'pending').length} 条待办`).catch(() => $('#l-sched').textContent = '—');
   rest('/api/health/sleep').then(s => $('#l-sleep').textContent = s.length ? `昨晚 ${s[0].sleepTime}→${s[0].wakeTime}` : '还没记').catch(() => {});
-  rest('/api/health/cycle').then(c => $('#l-cycle').textContent = c.length ? `上次 ${c[0].date}` : '还没记').catch(() => {});
-  rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? oneLine(n[0].text).slice(0, 28) : '还没记').catch(() => {});
+  rest('/api/health/cycle').then(c => { $('#l-cycle').textContent = cycleStatus(c).short; }).catch(() => {});
+  // 健康备注是"某天记过什么"，不是当前状态——带上日期，免得一条旧的看起来像今天的
+  rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? `${n[0].date}：${oneLine(n[0].text).slice(0, 22)}` : '还没记').catch(() => {});
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
   rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张 · 点开可以传新的`).catch(() => {});
 }
@@ -306,19 +307,64 @@ async function openSleep() {
       + s.map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.date)}</span><span>${esc(x.sleepTime)} → ${esc(x.wakeTime)}</span><span>${x.hours}h</span></div>${x.note ? `<div class="entry-body">${esc(x.note)}</div>` : ''}</div>`).join(''));
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
+// 从"开始/结束"记录还原成一段一段的周期，再判断现在是不是还在经期。
+// 以前直接拿最近一条记录的日期当"上次"，而且身体状况卡片显示的是最新一条健康备注——
+// 8/31 明明记了结束，卡片上却还挂着 8/28 那条"生理期第三天"，看起来像还没结束。
+function cyclePeriods(entries) {
+  const asc = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const isStart = n => /开始|来了|第一天|来 ?了/.test(n || '');
+  const isEnd = n => /结束|干净|走了|没了|完了/.test(n || '');
+  const periods = [];
+  let cur = null;
+  for (const e of asc) {
+    if (isEnd(e.note)) { if (cur) { cur.end = e.date; periods.push(cur); cur = null; } continue; }
+    // 明确写了开始、或者没写但离上一段挺远了，都当新的一段
+    if (isStart(e.note) || !cur) { if (cur) periods.push(cur); cur = { start: e.date, end: null, notes: [] }; }
+    cur.notes.push(e);
+  }
+  if (cur) periods.push(cur);
+  return periods;
+}
+function cycleStatus(entries) {
+  if (!entries || !entries.length) return { short: '还没记', ongoing: false, periods: [] };
+  const d = today();
+  const periods = cyclePeriods(entries);
+  const last = periods[periods.length - 1];
+  const starts = periods.map(p => p.start);
+  const gaps = [];
+  for (let i = 1; i < starts.length; i++) { const g = daysBetween(starts[i - 1], starts[i]); if (g > 10 && g < 60) gaps.push(g); }
+  const avg = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null;
+  const nextDate = avg ? (() => { const x = new Date(last.start + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + avg); return x.toISOString().slice(0, 10); })() : null;
+  if (!last.end) {
+    const day = daysBetween(last.start, d) + 1;
+    return { short: `进行中 · 第 ${day} 天（${last.start.slice(5)} 开始）`, ongoing: true, day, last, avg, nextDate, periods };
+  }
+  const len = daysBetween(last.start, last.end) + 1;
+  const since = daysBetween(last.end, d);
+  return {
+    short: `已结束 · 上次 ${last.start.slice(5)}–${last.end.slice(5)}（${len}天）`,
+    ongoing: false, last, len, since, avg, nextDate, periods
+  };
+}
 async function openCycle() {
   sheetLoading('生理期');
   try {
     const c = await rest('/api/health/cycle');
     if (!c.length) return sheetSet('<div class="empty">还没记过</div>');
-    const sorted = [...c].sort((a, b) => b.date.localeCompare(a.date));
-    const gaps = [];
-    for (let i = 0; i + 1 < sorted.length; i++) { const g = daysBetween(sorted[i + 1].date, sorted[i].date); if (g > 10 && g < 60) gaps.push(g); }
-    const avg = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null;
-    const next = avg ? (() => { const d = new Date(sorted[0].date + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + avg); return d.toISOString().slice(0, 10); })() : null;
-    sheetSet(`<div class="card"><div class="card-title">上次 ${esc(sorted[0].date)}</div>
-      <div class="card-desc">${avg ? `周期约 ${avg} 天 · 下次大概 ${next}` : '记录还不够算周期'}</div></div>`
-      + sorted.map(x => `<div class="entry"><div class="entry-head">${esc(x.date)}</div><div class="entry-body">${esc(x.note || '')}</div></div>`).join(''));
+    const st = cycleStatus(c);
+    const daysToNext = st.nextDate ? daysBetween(today(), st.nextDate) : null;
+    sheetSet(`<div class="card">
+        <div class="card-title">${st.ongoing ? `现在是第 ${st.day} 天` : '已经结束了'}</div>
+        <div class="card-desc" style="margin-top:4px">${esc(st.short)}${!st.ongoing && st.since != null ? ` · 结束 ${st.since} 天了` : ''}</div>
+        <div class="card-desc" style="margin-top:4px">${st.avg ? `周期约 ${st.avg} 天 · 下次大概 ${st.nextDate}${daysToNext != null ? `（还有 ${daysToNext} 天）` : ''}` : '记录还不够算周期'}</div>
+      </div>
+      <div class="section-title">每一段</div>
+      ${st.periods.slice().reverse().map(p => `<div class="entry">
+        <div class="entry-head"><span>${esc(p.start)} → ${p.end ? esc(p.end) : '还没结束'}</span>${p.end ? `<span class="tag plain">${daysBetween(p.start, p.end) + 1} 天</span>` : '<span class="tag">进行中</span>'}</div>
+        ${p.notes.filter(n => n.note).map(n => `<div class="entry-body" style="font-size:13px">${esc(n.date.slice(5))} ${esc(n.note)}</div>`).join('')}
+      </div>`).join('')}
+      <div class="section-title">原始记录</div>
+      ${[...c].sort((a, b) => b.date.localeCompare(a.date)).map(x => `<div class="entry"><div class="entry-head">${esc(x.date)}</div><div class="entry-body">${esc(x.note || '（没写备注）')}</div></div>`).join('')}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function openHealth() {

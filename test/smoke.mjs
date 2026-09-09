@@ -489,6 +489,69 @@ try {
     const bad = await fetch(`${base}/api/album?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_base64: '', mime_type: 'image/png' }) });
     assert.equal(bad.status, 400);
   });
+  await step('引号内的句号也能当截断点（不留悬空引号）', async () => {
+    const { clipToSentence, trimToSentences, quoteBalanced } = await import('../lib/muwen/search.js');
+    // 以前只吃掉句号、把中文右引号留在外面，截断点落在引号里，留一个悬空的左引号
+    const t = '棋子说\u201c0/10。我不会把你扔进垃圾桶。\u201d后面这一长串没有标点所以截不出别的句子结尾只能停在引号那里';
+    for (const lim of [25, 30, 40]) {
+      const c = clipToSentence(t, lim);
+      assert.ok(c.endsWith('\u201d'), `limit ${lim} 该截在右引号之后，实际：${c}`);
+      assert.ok(quoteBalanced(c), `limit ${lim} 引号该配平：${c}`);
+    }
+    // 其它收尾符号也要吃掉（limit 要给得够大，否则会撞上"切了就丢掉一半以上"那条保护规则）
+    assert.equal(clipToSentence('她说「不要走」。' + 'x'.repeat(80), 12), '她说「不要走」。');
+    assert.equal(clipToSentence('他引了《论语》。' + 'y'.repeat(80), 12), '他引了《论语》。');
+    // 保护规则本身：句号太靠前就宁可硬切加省略号，不为了齐整把内容切没
+    assert.ok(clipToSentence('短。' + 'x'.repeat(80), 40).endsWith('…'));
+    // 没有引号的普通文本不受影响
+    const plain = '第一句。第二句。' + 'z'.repeat(80);
+    assert.equal(clipToSentence(plain, 12), '第一句。第二句。');
+    assert.ok(quoteBalanced(trimToSentences(t)));
+  });
+  await step('search_grains 默认不搜归档（跟工具说明一致）', async () => {
+    const g = await tool('add_grain', { category: 'learning', text: '这条待会要归档掉的独特词 qwertyzz' });
+    let hit = await tool('search_grains', { query: 'qwertyzz' });
+    assert.equal(hit.length, 1, '归档前搜得到');
+    await tool('move_to_archive', { id: g.grain.id });
+    hit = await tool('search_grains', { query: 'qwertyzz' });
+    assert.equal(hit.length, 0, '归档后默认不该再搜到（带 query 也不行）');
+    hit = await tool('search_grains', { query: 'qwertyzz', status: 'archived' });
+    assert.equal(hit.length, 1, '明确传 status=archived 才搜得到');
+    // 自动召回也不该把归档的端上来
+    const ar = await tool('auto_recall', { query: 'qwertyzz' });
+    assert.ok(!ar.memories.some(m => m.id === g.grain.id), '自动召回不该返回归档的');
+  });
+  await step('亲密记录：结构化字段 + 日历小爱心', async () => {
+    const d = '2026-02-14';
+    await tool('add_daily', {
+      date: d, headline: '情人节', intimate: '两次',
+      intimate_log: [
+        { time: '凌晨2:30', method: '完整', initiator: '棋子', detail: '她先的。' },
+        { time: '早上', method: '手', initiator: '辞' }
+      ]
+    });
+    const day = (await tool('get_daily', { date: d }))[0];
+    assert.equal(day.intimate_log.length, 2);
+    assert.equal(day.intimate_log[0].method, '完整');
+    assert.equal(day.intimate_log[0].initiator, '棋子');
+    assert.equal(day.intimate_log[0].detail, '她先的。');
+    assert.equal(day.intimate_log[1].method, '手');
+    assert.equal(day.has_intimate, true);
+    // 方式只能是四选一
+    await assert.rejects(tool('add_daily', { date: d, headline: 'x', intimate_log: [{ method: '瞎写' }] }), /method/);
+    // 月历接口要带 intimate 标记，前端才知道哪天画爱心
+    const month = await (await fetch(`${base}/api/calendar?month=2026-02&token=${TOKEN}`)).json();
+    const row = month.find(r => r.date === d);
+    assert.ok(row && row.intimate === true, `2/14 该被标成有亲密记录：${JSON.stringify(row)}`);
+    // 只有自由文字、没有结构化记录的那天也算
+    await tool('add_daily', { date: '2026-02-15', headline: '第二天', intimate: '一次' });
+    const m2 = await (await fetch(`${base}/api/calendar?month=2026-02&token=${TOKEN}`)).json();
+    assert.equal(m2.find(r => r.date === '2026-02-15').intimate, true);
+    // 什么都没有的那天不该有标记
+    await tool('add_daily', { date: '2026-02-16', headline: '平常的一天' });
+    const m3 = await (await fetch(`${base}/api/calendar?month=2026-02&token=${TOKEN}`)).json();
+    assert.equal(m3.find(r => r.date === '2026-02-16').intimate, false);
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);
