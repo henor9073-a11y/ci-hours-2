@@ -183,7 +183,39 @@ async function saveHandover() {
 }
 
 // ================= Tab 历 =================
-let calLoaded = false, calMonth = null, calData = {}, calSel = null;
+let calLoaded = false, calMonth = null, calData = {}, calSel = null, calMode = 'all';
+function setCalMode(m) {
+  calMode = m;
+  $('#cal-mode-all').classList.toggle('on', m === 'all');
+  $('#cal-mode-int').classList.toggle('on', m === 'intimate');
+  renderCalGrid();
+  if (calMode === 'intimate') renderIntimateList(); else if (calSel) showDay(calSel);
+}
+// 亲密视图：把这个月有记录的那几天列出来，点开看细节
+async function renderIntimateList() {
+  const box = $('#c-detail');
+  const days = Object.values(calData).filter(r => r.intimate).map(r => r.date).sort().reverse();
+  if (!days.length) { box.innerHTML = '<div class="empty">这个月还没有记录</div>'; return; }
+  box.innerHTML = `<div class="section-title">这个月 ${days.length} 天有记录</div><div class="loading">…</div>`;
+  try {
+    const rows = await Promise.all(days.map(d => rest(`/api/calendar/day?date=${d}`).catch(() => null)));
+    let kiss = 0, count = 0;
+    const cards = rows.filter(Boolean).map(r => {
+      const st = (r.structured || []).filter(x => x.intimate || (x.intimate_log || []).length);
+      st.forEach(x => { if (typeof x.kiss_count === 'number') kiss += x.kiss_count; count += (x.intimate_log || []).length || 1; });
+      return st.map(x => `<div class="entry" onclick="setCalMode('all');showDay('${r.date}')">
+        <div class="entry-head"><span>${esc(r.date)}</span><span>${moon(r.date).icon}</span>${x.kiss_count != null ? `<span class="tag">亲亲 ${x.kiss_count}</span>` : ''}</div>
+        ${x.intimate ? `<div class="entry-body" style="font-size:13px">${esc(x.intimate)}</div>` : ''}
+        ${(x.intimate_log || []).map(i => `<div style="border-left:2px solid var(--accent);padding:3px 0 3px 10px;margin-top:6px">
+          <div class="entry-head" style="margin:0">♥ ${[i.time, i.method, i.initiator ? esc(i.initiator) + ' 主导' : ''].filter(Boolean).map(esc).join(' · ')}</div>
+          ${i.detail ? `<div class="entry-body" style="font-size:13px">${esc(i.detail)}</div>` : ''}</div>`).join('')}</div>`).join('');
+    }).join('');
+    box.innerHTML = `<div class="card"><div class="summary-meta" style="border:none;padding:0;margin:0">
+        <div class="meta-item"><div class="meta-value">${days.length}</div><div class="meta-label">天</div></div>
+        <div class="meta-item"><div class="meta-value">${count}</div><div class="meta-label">次</div></div>
+        <div class="meta-item"><div class="meta-value">${kiss}</div><div class="meta-label">亲亲</div></div></div></div>${cards}`;
+  } catch (e) { fail(box, e); }
+}
 function monthStr(d) { return d.slice(0, 7); }
 function calToday() { calMonth = monthStr(today()); calSel = today(); loadCalendar(); }
 function calMove(n) {
@@ -202,7 +234,8 @@ async function loadCalendar() {
     calData = {}; rows.forEach(r => calData[r.date] = r);
   } catch { calData = {}; }
   renderCalGrid();
-  if (calSel) showDay(calSel);
+  if (calMode === 'intimate') renderIntimateList();
+  else if (calSel) showDay(calSel);
 }
 function importantOn(dateStr) {
   const md = dateStr.slice(5);
@@ -219,6 +252,11 @@ function renderCalGrid() {
   for (let d = 1; d <= days; d++) {
     const ds = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const row = calData[ds] || {};
+    if (calMode === 'intimate' && !row.intimate) {
+      // 亲密视图下没记录的那天淡出，一眼看得到分布
+      h += `<div class="cal-day${ds === td ? ' today' : ''}" style="opacity:.28" onclick="showDay('${ds}')"><span>${d}</span></div>`;
+      continue;
+    }
     const hasDaily = (row.daily || []).length, hasSched = (row.schedule || []).length;
     const dots = [];
     if (hasDaily) dots.push('<i></i>');
@@ -606,10 +644,17 @@ async function doUpload(input) {
   closeSheet(); loadAlbum();
 }
 
-function toggleAlbumMode() { albumMode = albumMode === 'date' ? 'tag' : 'date'; $('#a-mode').textContent = albumMode === 'date' ? '按日期' : '按标签'; renderAlbum(); }
+const ALBUM_MODES = [['date', '按日期'], ['tag', '按标签'], ['timeline', '时间线']];
+function toggleAlbumMode() {
+  const i = ALBUM_MODES.findIndex(m => m[0] === albumMode);
+  const next = ALBUM_MODES[(i + 1) % ALBUM_MODES.length];
+  albumMode = next[0]; $('#a-mode').textContent = next[1];
+  renderAlbum();
+}
 function renderAlbum() {
   const list = albumTag ? albumPhotos.filter(p => (p.tags || []).includes(albumTag)) : albumPhotos;
   if (!list.length) { $('#a-body').innerHTML = '<div class="empty">还没有照片</div>'; return; }
+  if (albumMode === 'timeline') return renderTimeline(list);
   const groups = {};
   list.forEach(p => {
     const keys = albumMode === 'date' ? [p.date || '未标日期'] : ((p.tags || []).length ? p.tags : ['未分类']);
@@ -619,6 +664,21 @@ function renderAlbum() {
     `<div class="section-title">${esc(k)} <span style="color:var(--text-light);font-weight:400">${groups[k].length}</span></div>
      <div class="album-grid">${groups[k].map(p => `<div class="album-item" onclick="openPhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}" alt=""></div>`).join('')}</div>`).join('');
 }
+// 时间线：按月分段，每张一行，带 caption——翻的是"什么时候拍的"不是"有哪些图"
+function renderTimeline(list) {
+  const sorted = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const byMonth = {};
+  sorted.forEach(p => { const k = (p.date || '未标日期').slice(0, 7); (byMonth[k] = byMonth[k] || []).push(p); });
+  $('#a-body').innerHTML = Object.keys(byMonth).sort().reverse().map(mo => `
+    <div class="section-title">${esc(mo)} <span style="color:var(--text-light);font-weight:400">${byMonth[mo].length} 张</span></div>
+    <div class="tl">${byMonth[mo].map(p => `<div class="tl-row" onclick="openPhoto('${p.id}')">
+      <div class="tl-date">${esc((p.date || '').slice(5) || '—')}</div>
+      <div class="tl-line"><i></i></div>
+      <img class="tl-img" loading="lazy" src="${imageUrl(p.id)}">
+      <div class="tl-cap">${esc(p.caption || '（没写标注）')}${(p.tags || []).length ? `<div style="margin-top:3px">${p.tags.map(t => `<span class="tag plain">${esc(t)}</span>`).join('')}</div>` : ''}</div>
+    </div>`).join('')}</div>`).join('');
+}
+
 function openPhoto(id) {
   const p = albumPhotos.find(x => x.id === id) || {};
   openSheet('照片', `<img src="${imageUrl(id)}" style="width:100%;border-radius:var(--radius);margin-top:8px">

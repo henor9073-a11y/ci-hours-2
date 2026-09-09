@@ -46,6 +46,10 @@
     <button onclick="calToday()">回到今天</button>
     <button onclick="calMove(1)">下月 ›</button>
   </div>
+  <div class="chip-row" style="margin-top:8px">
+    <div class="chip on" id="cal-mode-all" onclick="setCalMode('all')">日常</div>
+    <div class="chip" id="cal-mode-int" onclick="setCalMode('intimate')">亲密</div>
+  </div>
   <div class="cal-grid" id="c-grid"></div>
   <div id="c-detail"></div>
 </div>

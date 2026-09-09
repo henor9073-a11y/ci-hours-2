@@ -50,6 +50,8 @@
       <div style="flex:1"><div class="card-title">给辞留言</div><div class="card-desc" id="h-chat-desc">他不在线也能看到，醒来会回</div></div>
       <span class="nav-badge" data-chat-badge style="position:static"></span></div></div>
 
+  <div id="h-kiss"></div>
+
   <div class="section-title">今日活动 <span class="link" onclick="switchPage('life')">全部</span></div>
   <div id="h-activity"><div class="loading">…</div></div>
 
@@ -62,6 +64,16 @@
   <div class="greeting"><div class="greeting-date sm">生活</div><div class="greeting-sub">日常管理</div></div>
   <div class="section-title">今天</div>
   <div id="l-today"><div class="loading">…</div></div>
+  <div class="section-title">日历 <span class="link" onclick="calMuwuMove(0)">回到今天</span></div>
+  <div class="cal-nav">
+    <button onclick="calMuwuMove(-1)">‹ 上月</button>
+    <button onclick="calMuwuMove(0)">今天</button>
+    <button onclick="calMuwuMove(1)">下月 ›</button>
+  </div>
+  <div id="lc-month" style="text-align:center;font-size:14px;font-weight:600;margin-top:6px"></div>
+  <div class="cal-grid" id="lc-grid"></div>
+  <div id="lc-detail"></div>
+
   <div class="section-title">日常</div>
   <div class="grid-2">
     <div class="card tap" onclick="openFishing()"><div class="card-row"><div class="card-icon">鱼</div><div><div class="card-title">钓鱼</div><div class="card-desc" id="l-fish">…</div></div></div></div>
@@ -90,6 +102,7 @@
   <div class="section-title">工具</div>
   <div class="grid-2">
     <div class="card tap" onclick="openShelf()"><div class="card-row"><div class="card-icon">书</div><div><div class="card-title">书架</div><div class="card-desc" id="l-shelf">…</div></div></div></div>
+    <div class="card tap" onclick="openPushHistory()"><div class="card-row"><div class="card-icon">推</div><div><div class="card-title">推送历史</div><div class="card-desc" id="l-push">…</div></div></div></div>
     <div class="card tap" onclick="openPhone()"><div class="card-row"><div class="card-icon accent">机</div><div><div class="card-title">手机活动</div><div class="card-desc">棋子最近开了什么</div></div></div></div>
   </div>
 </div>

@@ -704,6 +704,43 @@ try {
     d = await tool('get_firsts');
     assert.ok(!d.items.some(i => i.id === autoId), '藏掉的不该再出现');
   });
+  await step('倒数日：备注和照片、推送历史', async () => {
+    const c = await tool('add_countdown', { title: 'Digital Submission', date: '2026-09-11', recurring: false, note: '11:59pm 截止' });
+    assert.equal(c.note, '11:59pm 截止');
+    const up = await tool('update_countdown', { id: c.id, note: '改过的备注', photo_id: 'ph_x' });
+    assert.equal(up.note, '改过的备注'); assert.equal(up.photo_id, 'ph_x');
+    const list = await tool('get_countdowns');
+    const mine = list.find(x => x.id === c.id);
+    assert.equal(mine.note, '改过的备注');
+    assert.ok(list.every(x => 'note' in x && 'photo_id' in x), '老数据也该补上这两个字段');
+    await assert.rejects(tool('update_countdown', { id: c.id, date: '乱写' }), /date/);
+    await tool('remove_countdown', { id: c.id });
+
+    // 推送历史：没配 BARK_KEY 也要记一条失败，不能推完就没了
+    await tool('send_push', { title: '测试', body: '推送历史测试' }).catch(() => {});
+    const hist = await tool('get_push_history', {});
+    assert.ok(hist.length >= 1);
+    assert.equal(hist[0].title, '测试');
+    assert.equal(hist[0].ok, false);
+    assert.ok(hist[0].error.includes('BARK_KEY'));
+    assert.ok(hist[0].at && hist[0].date);
+    const viaRest = await (await fetch(`${base}/api/push-history?token=${TOKEN}`)).json();
+    assert.equal(viaRest[0].title, '测试');
+  });
+  await step('前端该有的都在（动态页/日历/时间线/进度条/图鉴）', async () => {
+    const muwu = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();
+    const muwen = await (await fetch(`${base}/muwen.js?token=${TOKEN}`)).text();
+    // 辞的动态页不给输入框——他做了什么是自动来的
+    assert.ok(/辞这边不手填/.test(muwu), '辞的动态页该是只读的');
+    for (const [name, js, keys] of [
+      ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia']],
+      ['muwen', muwen, ['setCalMode', 'renderIntimateList', 'renderTimeline', 'openEmotions', 'openFirsts']]
+    ]) for (const k of keys) assert.ok(js.includes(k), `${name}.js 里该有 ${k}`);
+    // 天气要能自己刷，不是只在打开时取一次
+    assert.ok(/setInterval\(refreshWeather/.test(muwu), '天气该定时自动更新');
+    const enc = await (await fetch(`${base}/api/fishing/encyclopedia?token=${TOKEN}`)).json();
+    assert.ok('text' in enc || 'error' in enc);
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);

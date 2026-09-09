@@ -209,3 +209,13 @@ button.btn.ghost { background: var(--card); color: var(--text); box-shadow: var(
 .cx-clear { font-size: 11px; margin-left: 10px; opacity: .6; cursor: pointer; }
 .nav-badge { position: absolute; top: 1px; right: 6px; min-width: 15px; height: 15px; border-radius: 8px; background: #E06B6B; color: #fff; font-size: 9px; display: none; align-items: center; justify-content: center; padding: 0 4px; font-weight: 600; }
 .nav-item { position: relative; }
+
+/* 相册时间线 */
+.tl { position: relative; }
+.tl-row { display: grid; grid-template-columns: 40px 14px 56px 1fr; align-items: center; gap: 8px; padding: 8px 0; cursor: pointer; }
+.tl-date { font-size: 11px; color: var(--text-light); text-align: right; }
+.tl-line { position: relative; align-self: stretch; display: flex; justify-content: center; }
+.tl-line::before { content: ''; position: absolute; top: -8px; bottom: -8px; width: 1px; background: var(--border); }
+.tl-line i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); z-index: 1; }
+.tl-img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; display: block; }
+.tl-cap { font-size: 13px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; }

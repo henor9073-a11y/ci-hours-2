@@ -153,6 +153,22 @@ app.get('/api/profiles/:owner/:field/history', (req, res) => {
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.get('/api/countdowns', (_, res) => res.json(mw.countdowns.getCountdowns()));
+app.post('/api/countdowns', (req, res) => {
+  try { const b = req.body || {}; res.json(mw.countdowns.addCountdown(b.title, b.date, b.recurring, { note: b.note, photo_id: b.photo_id })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/countdowns/:id', (req, res) => {
+  try { const c = mw.countdowns.updateCountdown(req.params.id, req.body || {}); if (!c) return res.status(404).json({ error: '找不到' }); res.json(c); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/push-history', async (req, res) => {
+  const { getPushHistory } = await import('./lib/bark.js');
+  res.json(getPushHistory(Number(req.query.limit) || 100));
+});
+app.get('/api/fishing/encyclopedia', async (_, res) => {
+  try { res.json({ text: await playFishing('encyclopedia') }); }
+  catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
 app.get('/api/moods', (req, res) => res.json(mw.moods.getMoods({ limit: Number(req.query.limit) || 50 })));
 app.get('/api/album', (req, res) => res.json(mw.album.listPhotos({ limit: Number(req.query.limit) || 100 })));
 app.get('/api/album/:id/image', (req, res) => {

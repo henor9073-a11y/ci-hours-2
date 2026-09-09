@@ -49,8 +49,11 @@ async function openMoment(owner, date) {
       <div class="avatar${owner === 'nor' ? ' accent' : ''}" style="width:72px;height:72px;font-size:22px;margin:0 auto">${avId ? `<img src="${imageUrl(avId)}">` : OWNER_CN[owner][0]}</div>
       <div style="margin-top:8px"><span class="link" onclick="openAvatarPicker('${owner}')">换头像</span></div></div>`;
 
-    h += `<div class="card"><div class="card-title" style="font-size:14px">今天做了什么</div>
-      <textarea id="mo-did" style="min-height:90px;margin-top:8px" placeholder="${owner === 'cy' ? '辞今天做了什么…' : '棋子今天做了什么…'}">${esc(me.did || '')}</textarea></div>`;
+    // 辞这边不手填：他做了什么从笔记/日志/每日总结自动来。只有棋子的是手填的。
+    if (owner === 'nor') {
+      h += `<div class="card"><div class="card-title" style="font-size:14px">今天做了什么</div>
+        <textarea id="mo-did" style="min-height:90px;margin-top:8px" placeholder="棋子今天做了什么…">${esc(me.did || '')}</textarea></div>`;
+    }
 
     if (owner === 'nor') {
       h += `<div class="card"><div class="card-title" style="font-size:14px">OOTD · 今天穿了什么</div>
@@ -62,12 +65,17 @@ async function openMoment(owner, date) {
         </div></div>`;
     }
 
-    h += `<div class="card"><div class="card-title" style="font-size:14px">备注</div>
-      <textarea id="mo-note" style="min-height:60px;margin-top:8px" placeholder="随手写点什么…">${esc(me.note || '')}</textarea></div>
-      <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
-        <button class="btn" onclick="saveMoment('${d}','${owner}')">存下来</button>
-        <span id="mo-msg" style="font-size:13px;color:var(--text-light)">${me.updated_at ? `${esc(fmtTime(me.updated_at))} 由 ${esc(me.updated_by || '?')} 改过` : '还没写过'}</span>
-      </div>`;
+    if (owner === 'nor') {
+      h += `<div class="card"><div class="card-title" style="font-size:14px">备注</div>
+        <textarea id="mo-note" style="min-height:60px;margin-top:8px" placeholder="随手写点什么…">${esc(me.note || '')}</textarea></div>
+        <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+          <button class="btn" onclick="saveMoment('${d}','${owner}')">存下来</button>
+          <span id="mo-msg" style="font-size:13px;color:var(--text-light)">${me.updated_at ? `${esc(fmtTime(me.updated_at))} 由 ${esc(me.updated_by || '?')} 改过` : '还没写过'}</span>
+        </div>`;
+    } else if (me.did || me.note) {
+      h += `<div class="card"><div class="card-title" style="font-size:14px">记过的</div>
+        <div class="entry-body" style="margin-top:6px">${esc(me.did || me.note)}</div></div>`;
+    }
 
     if (owner === 'nor') h += `<div class="section-title">手机使用</div><div id="mo-phone"><div class="loading">…</div></div>`;
     h += `<div class="section-title">今天的动作</div><div id="mo-acts"><div class="loading">…</div></div>`;
@@ -104,8 +112,9 @@ async function renderOwnerActs(node, owner, d) {
 }
 async function saveMoment(d, owner) {
   const msg = $('#mo-msg'); msg.textContent = '存…';
-  const f = { did: $('#mo-did').value, note: $('#mo-note').value };
-  if (owner === 'nor' && $('#mo-ootd')) f.ootd = $('#mo-ootd').value;
+  const f = $('#mo-did') ? { did: $('#mo-did').value, note: ($('#mo-note') || {}).value || '' } : {};
+  if (!$('#mo-did')) return;   // 辞那页没有输入框
+  if ($('#mo-ootd')) f.ootd = $('#mo-ootd').value;
   try { const r = await mcp('set_moment', { date: d, owner, ...f, by: '棋子' }); msg.textContent = '存好了 · ' + fmtTime(r.updated_at); }
   catch (e) { msg.textContent = '失败：' + e.message; }
 }
@@ -157,12 +166,9 @@ async function loadHome() {
   const tog = daysBetween('2026-08-02', d), mar = daysBetween('2026-08-21', d);
   $('#h-anniv').textContent = `在一起第${tog}天 · 领证第${mar}天`;
 
-  // 天气：Open-Meteo，不需要 key。拿不到就把这一格去掉，不挡别的。
-  fetch('https://api.open-meteo.com/v1/forecast?latitude=-37.814&longitude=144.963&current=temperature_2m,weather_code&timezone=Australia%2FMelbourne')
-    .then(r => r.json()).then(j => {
-      const c = j.current; const w = $('#h-weather');
-      if (c && w) w.textContent = `${Math.round(c.temperature_2m)}°C ${WCODE[c.weather_code] || ''}`;
-    }).catch(() => { const w = $('#h-weather'); if (w) w.remove(); });
+  refreshWeather();
+  if (!weatherTimer) weatherTimer = setInterval(refreshWeather, 20 * 60 * 1000);   // 每 20 分钟自己刷
+  loadKiss();
 
   loadQuote(d);
 
@@ -193,6 +199,30 @@ async function loadQuote(d) {
     node.textContent = oneLine(pool[Math.floor(Math.random() * pool.length)].text).slice(0, 140);
     node.title = '从纹理里挑的（辞今天还没写）';
   } catch { node.textContent = ''; }
+}
+
+let weatherTimer = null;
+function refreshWeather() {
+  fetch('https://api.open-meteo.com/v1/forecast?latitude=-37.814&longitude=144.963&current=temperature_2m,weather_code&timezone=Australia%2FMelbourne')
+    .then(r => r.json()).then(j => {
+      const c = j.current, w = $('#h-weather');
+      if (c && w) { w.textContent = `${Math.round(c.temperature_2m)}°C ${WCODE[c.weather_code] || ''}`; w.title = '更新于 ' + new Date().toLocaleTimeString('sv').slice(0, 5); }
+    }).catch(() => { const w = $('#h-weather'); if (w) w.textContent = ''; });
+}
+// 亲亲进度条：进度来自每日总结里 kiss_count 的累计（+ 服务器的 KISS_BASELINE）
+async function loadKiss() {
+  const node = $('#h-kiss'); if (!node) return;
+  try {
+    const w = await mcp('get_wake_packet');
+    const k = w.kiss_progress; if (!k) { node.innerHTML = ''; return; }
+    const pct = Math.min(100, k.total / k.goal * 100);
+    node.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div class="card-title" style="font-size:14px">亲亲</div>
+        <div style="font-size:13px;color:var(--accent);font-weight:600">${k.total} / ${k.goal}</div></div>
+      <div style="height:8px;border-radius:4px;background:var(--primary-light);margin-top:8px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:4px"></div></div>
+      <div class="card-desc" style="margin-top:6px">还差 ${k.remaining}${k.last ? ` · 上次记于 ${esc(k.last.date)}` : ''}${pct < 1 ? '' : ` · ${pct.toFixed(2)}%`}</div></div>`;
+  } catch { node.innerHTML = ''; }
 }
 
 async function loadTodayActivity(node, limit) {
@@ -238,19 +268,62 @@ async function loadCountdowns() {
       const md = String(c.date).slice(-5);
       if (taken.has(md)) return;
       taken.add(md);
-      rows.push({ name: c.title, date: c.date, num: c.days_until, dir: 'down', id: c.id });
+      rows.push({ name: c.title, date: c.date, num: c.days_until, dir: 'down', id: c.id, note: c.note || '', photo_id: c.photo_id || '' });
     });
     rows.sort((a, b) => (a.dir === b.dir) ? a.num - b.num : a.dir === 'up' ? -1 : 1);
-    node.innerHTML = rows.map(r => `<div class="card" style="display:flex;justify-content:space-between;align-items:center">
-      <div><div class="card-title">${esc(r.name)}</div><div class="card-desc">${esc(r.date)}${r.id ? ` · <span class="link" onclick="removeCountdown('${r.id}')">删</span>` : ''}</div></div>
-      <div style="text-align:center"><div style="font-size:20px;font-weight:700;color:${r.dir === 'up' ? 'var(--primary)' : 'var(--accent)'}">${r.num}天</div>
-      <div style="font-size:10px;color:var(--text-light)">${r.dir === 'up' ? '正数' : r.num === 0 ? '就是今天' : '倒数'}</div></div></div>`).join('');
+    node.innerHTML = rows.map(r => `<div class="card"${r.id ? ` onclick="openCountdown('${r.id}')" style="cursor:pointer"` : ''}>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        ${r.photo_id ? `<img src="${imageUrl(r.photo_id)}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0">` : ''}
+        <div style="flex:1;min-width:0"><div class="card-title">${esc(r.name)}</div>
+          <div class="card-desc">${esc(r.date)}${r.note ? ' · ' + esc(oneLine(r.note).slice(0, 22)) : ''}</div></div>
+        <div style="text-align:center;flex-shrink:0"><div style="font-size:20px;font-weight:700;color:${r.dir === 'up' ? 'var(--primary)' : 'var(--accent)'}">${r.num}天</div>
+          <div style="font-size:10px;color:var(--text-light)">${r.dir === 'up' ? '正数' : r.num === 0 ? '就是今天' : '倒数'}</div></div>
+      </div></div>`).join('');
   } catch (e) { fail(node, e); }
 }
+async function openCountdown(id) {
+  sheetLoading('日子');
+  try {
+    const all = await mcp('get_countdowns');
+    const c = all.find(x => x.id === id);
+    if (!c) return sheetSet('<div class="empty">找不到</div>');
+    sheetSet(`${c.photo_id ? `<img src="${imageUrl(c.photo_id)}" style="width:100%;border-radius:var(--radius);margin-top:8px">` : ''}
+      <div class="entry"><div class="entry-head"><span>${esc(c.date)}</span><span class="tag plain">${c.recurring ? '每年' : '一次性'}</span></div>
+        <div class="card-title" style="font-size:18px">${esc(c.title)}</div>
+        <div class="card-desc" style="margin-top:4px">${c.days_until === 0 ? '就是今天' : `还有 ${c.days_until} 天 · ${esc(c.next_date)}`}</div></div>
+      <div class="card"><div class="card-title" style="font-size:14px">备注</div>
+        <textarea id="cd-note" style="min-height:70px;margin-top:8px" placeholder="这天是什么、为什么记">${esc(c.note || '')}</textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <button class="btn" onclick="saveCountdownNote('${c.id}')">存备注</button>
+          <label class="btn ghost" style="cursor:pointer">配张照片<input type="file" accept="image/*" style="display:none" onchange="uploadCountdownPhoto('${c.id}',this)"></label>
+          ${c.photo_id ? `<span class="link" onclick="clearCountdownPhoto('${c.id}')">去掉照片</span>` : ''}
+          <span class="link" style="color:#C05B5B" onclick="removeCountdown('${c.id}')">删掉</span>
+        </div><div id="cd-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function saveCountdownNote(id) {
+  const m = $('#cd-msg'); m.textContent = '存…';
+  try { await mcp('update_countdown', { id, note: $('#cd-note').value }); m.textContent = '存好了'; loadCountdowns(); }
+  catch (e) { m.textContent = '失败：' + e.message; }
+}
+async function uploadCountdownPhoto(id, input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  const m = $('#cd-msg'); m.textContent = '上传中…';
+  try {
+    const r = await MW.uploadPhoto(f, { caption: '倒数日配图', tags: ['倒数日'] });
+    await mcp('update_countdown', { id, photo_id: r.photo.id });
+    sheetStack.pop(); openCountdown(id); loadCountdowns();
+  } catch (e) { m.textContent = '失败：' + e.message; }
+}
+async function clearCountdownPhoto(id) {
+  try { await mcp('update_countdown', { id, photo_id: '' }); sheetStack.pop(); openCountdown(id); loadCountdowns(); } catch (e) { alert(e.message); }
+}
+
 function openAddCountdown() {
   openSheet('加一个日子', `<div class="card">
     <input type="text" id="cd-title" placeholder="叫什么，比如 Digital Submission">
     <input type="text" id="cd-date" placeholder="MM-DD（每年重复）或 YYYY-MM-DD（一次性）" style="margin-top:8px">
+    <input type="text" id="cd-newnote" placeholder="备注（可选）" style="margin-top:8px">
     <button class="btn" style="margin-top:10px" onclick="saveCountdown()">加上</button>
     <div id="cd-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>`);
 }
@@ -258,11 +331,11 @@ async function saveCountdown() {
   const t = $('#cd-title').value.trim(), d = $('#cd-date').value.trim();
   if (!t || !d) { $('#cd-msg').textContent = '名字和日期都要填'; return; }
   $('#cd-msg').textContent = '…';
-  try { await mcp('add_countdown', { title: t, date: d, recurring: /^\d{2}-\d{2}$/.test(d) }); $('#cd-msg').textContent = '加好了'; loadCountdowns(); }
+  try { await mcp('add_countdown', { title: t, date: d, recurring: /^\d{2}-\d{2}$/.test(d), note: ($('#cd-newnote') || {}).value || '' }); $('#cd-msg').textContent = '加好了'; loadCountdowns(); }
   catch (e) { $('#cd-msg').textContent = '失败：' + e.message; }
 }
 async function removeCountdown(id) {
-  try { await mcp('remove_countdown', { id }); loadCountdowns(); } catch (e) { alert(e.message); }
+  try { await mcp('remove_countdown', { id }); if (sheetStack.length) closeSheet(); loadCountdowns(); } catch (e) { alert(e.message); }
 }
 
 // ================= 活 =================
@@ -271,9 +344,11 @@ async function loadLife() {
   lifeLoaded = true;
   loadTodayActivity($('#l-today'), 0);
   rest('/api/fishing/status').then(r => {
-    const m = (r.text || '').match(/(\d+)\s*\/\s*(\d+)/);
+    const m = (r.text || '').match(/图鉴\s*(\d+)\s*\/\s*(\d+)/);
     $('#l-fish').textContent = m ? `图鉴 ${m[1]}/${m[2]}` : '看看钓到什么了';
   }).catch(() => $('#l-fish').textContent = '读不到');
+  rest('/api/push-history?limit=1').then(p => $('#l-push').textContent = p.length ? `最近：${oneLine(p[0].title)}` : '还没推过').catch(() => {});
+  loadMuwuCal();
   rest('/api/schedule').then(s => $('#l-sched').textContent = `${s.filter(x => x.status === 'pending').length} 条待办`).catch(() => $('#l-sched').textContent = '—');
   rest('/api/health/sleep').then(s => $('#l-sleep').textContent = s.length ? `昨晚 ${s[0].sleepTime}→${s[0].wakeTime}` : '还没记').catch(() => {});
   rest('/api/health/cycle').then(c => { $('#l-cycle').textContent = cycleStatus(c).short; }).catch(() => {});
@@ -286,8 +361,32 @@ async function loadLife() {
 }
 async function openFishing() {
   sheetLoading('钓鱼');
-  try { const r = await rest('/api/fishing/status'); sheetSet(`<div class="entry"><div class="entry-body">${esc(r.text)}</div></div>`); }
-  catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+  try {
+    const [st, enc] = await Promise.all([rest('/api/fishing/status'), rest('/api/fishing/encyclopedia').catch(() => ({ text: '' }))]);
+    const txt = st.text || '';
+    const m = txt.match(/图鉴\s*(\d+)\s*\/\s*(\d+)/);
+    const got = m ? +m[1] : 0, total = m ? +m[2] : 0;
+    const pct = total ? Math.round(got / total * 100) : 0;
+    // 图鉴正文：每行一条「✔ 名字（稀有度）×次数 最大xxcm」
+    const lines = (enc.text || '').split('\n').filter(l => l.trim().startsWith('✔'));
+    const RAR = ['神话', '传说', '史诗', '稀有', '少见', '普通'];
+    const groups = {};
+    lines.forEach(l => {
+      const g = (l.match(/（([^）]+)）/) || [, '其他'])[1];
+      (groups[g] = groups[g] || []).push(l.replace(/^✔\s*/, ''));
+    });
+    const order = [...RAR.filter(r => groups[r]), ...Object.keys(groups).filter(k => !RAR.includes(k))];
+    sheetSet(`<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div class="card-title" style="font-size:14px">图鉴</div><div style="font-size:13px;color:var(--accent);font-weight:600">${got} / ${total}</div></div>
+        <div style="height:8px;border-radius:4px;background:var(--primary-light);margin-top:8px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:4px"></div></div>
+        <div class="card-desc" style="margin-top:6px">还差 ${total - got} 种</div></div>
+      ${order.length ? order.map(g => `<div class="section-title">${esc(g)} <span style="color:var(--text-light);font-weight:400">${groups[g].length}</span></div>
+        <div class="card">${groups[g].map(l => `<div style="font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)">${esc(l)}</div>`).join('')}</div>`).join('')
+        : '<div class="card"><div class="card-desc">图鉴还读不到（引擎可能没起来）</div></div>'}
+      <div class="section-title">当前状态</div>
+      <div class="entry"><div class="entry-body" style="font-size:13px">${esc(txt)}</div></div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function openSchedule() {
   sheetLoading('日程');
@@ -469,6 +568,89 @@ async function openPhone() {
     const r = await mcp('get_phone_activity', { limit: 30 });
     sheetSet(Array.isArray(r) && r.length ? r.map(x => `<div class="entry"><div class="entry-head">${esc(fmtTime(x.opened_at))}</div><div class="entry-body">${esc(x.app_name)}</div></div>`).join('') : '<div class="empty">没有数据</div>');
   } catch (e) { sheetSet(`<div class="empty">读不到手机活动（服务器可能没配 Supabase）<br><span style="font-size:12px">${esc(e.message)}</span></div>`); }
+}
+
+// ---- 活 tab 的日历：月相 + 日程 + 重要日子 + 亲密提醒 ----
+let lcMonth = null, lcSel = null, lcData = {};
+function calMuwuMove(n) {
+  const base = lcMonth || today().slice(0, 7);
+  if (n === 0) { lcMonth = today().slice(0, 7); lcSel = today(); }
+  else { const [y, m] = base.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); lcMonth = d.toISOString().slice(0, 7); lcSel = null; }
+  loadMuwuCal();
+}
+function importantOn(ds) {
+  const md = ds.slice(5);
+  return ANCHORS.some(a => (a.md && a.md === md) || (a.date && a.date.slice(5) === md));
+}
+async function loadMuwuCal() {
+  if (!lcMonth) { lcMonth = today().slice(0, 7); lcSel = today(); }
+  const [y, m] = lcMonth.split('-').map(Number);
+  const mt = $('#lc-month'); if (mt) mt.textContent = `${y}年${m}月`;
+  const grid = $('#lc-grid'); if (!grid) return;
+  grid.innerHTML = '<div class="loading" style="grid-column:span 7">…</div>';
+  try { const rows = await rest(`/api/calendar?month=${lcMonth}`); lcData = {}; rows.forEach(r => lcData[r.date] = r); }
+  catch { lcData = {}; }
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), lead = (first + 6) % 7;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate(), td = today();
+  let h = ['一', '二', '三', '四', '五', '六', '日'].map(x => `<div class="cal-head">${x}</div>`).join('');
+  for (let i = 0; i < lead; i++) h += '<div class="cal-day blank"></div>';
+  for (let d = 1; d <= days; d++) {
+    const ds = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const row = lcData[ds] || {}, dots = [];
+    if ((row.daily || []).length) dots.push('<i></i>');
+    if ((row.schedule || []).length) dots.push('<i style="background:var(--primary)"></i>');
+    if (importantOn(ds)) dots.push('<i class="imp"></i>');
+    h += `<div class="cal-day${ds === td ? ' today' : ''}${ds === lcSel ? ' sel' : ''}" onclick="showMuwuDay('${ds}')">
+      <span>${d}</span><span class="cal-moon">${MW.moon(ds).icon}</span>
+      ${row.intimate ? '<span class="cal-heart">♥</span>' : ''}
+      ${dots.length ? `<span class="cal-dots">${dots.join('')}</span>` : ''}</div>`;
+  }
+  grid.innerHTML = h;
+  if (lcSel) showMuwuDay(lcSel);
+}
+async function showMuwuDay(ds) {
+  lcSel = ds; loadMuwuCal.__skip || null;
+  document.querySelectorAll('#lc-grid .cal-day').forEach(n => n.classList.remove('sel'));
+  const box = $('#lc-detail'); if (!box) return;
+  const mo = MW.moon(ds);
+  const anchors = ANCHORS.filter(a => (a.md && a.md === ds.slice(5)) || (a.date && a.date.slice(5) === ds.slice(5)));
+  box.innerHTML = `<div class="section-title">${ds} · ${mo.icon} ${mo.name}</div><div class="loading">…</div>`;
+  try {
+    const r = await rest(`/api/calendar/day?date=${ds}`);
+    let h = `<div class="section-title">${ds} · ${mo.icon} ${mo.name}</div>`;
+    if (anchors.length) h += anchors.map(a => `<div class="card" style="background:var(--accent-light)"><div class="card-title" style="font-size:14px">${esc(a.name)}</div></div>`).join('');
+    const st = (r.structured || []).filter(x => x.headline);
+    // 亲密只给一句提醒，细节在木纹日历里看——木屋是生活面板不是记忆库
+    const intimate = st.filter(x => x.intimate || (x.intimate_log || []).length);
+    if (intimate.length) {
+      h += intimate.map(x => `<div class="card"><div class="card-row"><div class="card-icon accent">♥</div>
+        <div><div class="card-title" style="font-size:14px">这天有亲密记录</div>
+        <div class="card-desc">${esc(oneLine(x.intimate || '') || `${x.intimate_log.length} 条`)}${x.kiss_count != null ? ` · 亲亲 ${x.kiss_count}` : ''}</div></div></div></div>`).join('');
+    }
+    if (st.length) h += st.map(x => `<div class="card"><div class="card-title" style="font-size:14px">${esc(x.headline)}</div>
+      ${(x.mood_tags || []).length ? `<div style="margin-top:6px">${x.mood_tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+      ${x.nor_status ? `<div class="entry-body" style="margin-top:6px;font-size:13px"><b>棋子：</b>${esc(x.nor_status)}</div>` : ''}
+      ${x.cy_status ? `<div class="entry-body" style="margin-top:4px;font-size:13px"><b>辞：</b>${esc(x.cy_status)}</div>` : ''}</div>`).join('');
+    const sc = r.schedule || [];
+    if (sc.length) h += sc.map(s2 => `<div class="card"><div class="card-row"><div class="card-icon">${esc(s2.time || '')}</div>
+      <div><div class="card-title" style="font-size:14px">${esc(s2.text)}</div>
+      <div class="card-desc">${s2.status === 'done' ? '已完成' : s2.status === 'removed' ? '已移除' : '待办'}</div></div></div></div>`).join('');
+    if (!anchors.length && !st.length && !sc.length) h += '<div class="empty">这天没有记录</div>';
+    box.innerHTML = h;
+  } catch (e) { fail(box, e); }
+}
+
+// ---- Bark 推送历史 ----
+async function openPushHistory() {
+  sheetLoading('推送历史');
+  try {
+    const l = await rest('/api/push-history?limit=150');
+    sheetSet(l.length ? l.map(p => `<div class="entry">
+      <div class="entry-head"><span>${esc(fmtTime(p.at))}</span>${p.ok ? '<span class="tag plain">已送达</span>' : `<span class="tag" style="background:#F5D5D5;color:#B04A4A">失败</span>`}</div>
+      <div class="card-title" style="font-size:14px">${esc(p.title)}</div>
+      <div class="entry-body" style="font-size:13px;margin-top:2px">${esc(p.body)}</div>
+      ${p.error ? `<div class="card-desc" style="color:#B04A4A">${esc(p.error)}</div>` : ''}</div>`).join('') : '<div class="empty">还没推送过</div>');
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 
 // ---- 歌单：手动导入，歌名+艺人+歌词，双方都能加 ----
