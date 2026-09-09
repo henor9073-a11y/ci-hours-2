@@ -627,6 +627,19 @@ try {
     assert.deepEqual(degraded.memories, []);
     assert.ok((degraded.why || '').includes('年轮语义层失败'));
   });
+  await step('fallbacks 只发给支持它的模型（换成 sonnet/haiku 省钱时不能 400）', async () => {
+    const { fallbackOpts } = await import('../lib/muwen/common.js');
+    // 模型是环境变量可换的，换成便宜的很常规。Sonnet/Haiku 收到 fallbacks 会直接 400：
+    // 'claude-sonnet-5' does not support the `fallbacks` parameter —— 意图扩写、语义兜底、
+    // 年轮索引三层会一起哑掉，而且是静默降级，从返回值上看只是"没召回到"。
+    for (const m of ['claude-opus-5', 'claude-fable-5-1']) {
+      assert.equal(fallbackOpts(m).fallbacks, 'default', `${m} 应该带 fallbacks`);
+      assert.ok(fallbackOpts(m).betas.includes('server-side-fallback-2026-07-01'));
+    }
+    for (const m of ['claude-sonnet-5', 'claude-haiku-4-5', 'claude-opus-4-8', '', undefined]) {
+      assert.deepEqual(fallbackOpts(m), {}, `${m} 不该带 fallbacks`);
+    }
+  });
   await step('召回：相关性下限 + 分区多样性 + 年轮片段截到句子结尾', async () => {
     const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
     const { clipToSentence, trimToSentences } = await import('../lib/muwen/search.js');
