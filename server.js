@@ -156,6 +156,27 @@ app.get('/api/album/:id/image', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+app.get('/api/moment', (req, res) => res.json(mw.moments.getMoment(req.query.date)));
+app.post('/api/moment', (req, res) => {
+  try {
+    const { date, owner, by, ...fields } = req.body || {};
+    res.json(mw.moments.setMoment(date, owner, fields, by || ''));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/moments', (req, res) => res.json(mw.moments.recentMoments(Number(req.query.limit) || 14)));
+app.get('/api/prefs', (_, res) => res.json(mw.prefs.getPrefs()));
+app.post('/api/prefs', (req, res) => {
+  try { const { key, value, by } = req.body || {}; res.json(mw.prefs.setPref(key, value, by)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/daily-quote', (_, res) => res.json(mw.quote.latestQuote() || { text: null }));
+// 相册上传：前端（手机）直接传 base64 进来，后端自动压缩
+app.post('/api/album', async (req, res) => {
+  try {
+    const { image_base64, mime_type, caption, date, tags } = req.body || {};
+    res.json(await mw.album.savePhoto({ image_base64, mime_type, caption, date, tags }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 app.get('/api/wake-status', (req, res) => res.json(mw.wake.getWakeStatus({ logLimit: Number(req.query.limit) || 20 })));
 app.post('/api/wake-ping', (req, res) => {
   // 给 GPD 上的 ScheduleWakeup / CyHeartbeat 报到用：POST {layer, note}
@@ -430,6 +451,15 @@ cron.schedule('0 4 * * *', () => {
     const r = mw.dream.dream();
     console.log('[muwen] 梦境任务：', JSON.stringify({ decay: r.decay, crossed: r.crossed_cautious.length, reminders: r.reminders }));
   } catch (e) { console.error('[muwen] 梦境任务失败：', e.message || e); }
+}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+
+// 每天墨尔本 9:00 写一条"今日一句"：读昨天的每日总结，写一句话存成 note(kind=write)。
+// 放在 8:00 的自动总结之后，这样读到的是刚写好的昨天。木屋首页显示的就是这句。
+cron.schedule('0 9 * * *', async () => {
+  try {
+    const r = await mw.quote.writeDailyQuote();
+    console.log('[muwen] 今日一句：', JSON.stringify(r).slice(0, 200));
+  } catch (e) { console.error('[muwen] 今日一句失败：', e.message || e); }
 }, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
 
 const PORT = process.env.PORT || 3000;

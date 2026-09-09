@@ -422,6 +422,73 @@ try {
     const bad = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: '瞎写的' }) });
     assert.equal(bad.status, 400);
   });
+  await step('个人动态：双方互相可改、字段越权被拒、不被每日总结冲掉', async () => {
+    const d = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
+    // 棋子改辞的
+    const cy = await tool('set_moment', { owner: 'cy', did: '写了木屋前端', by: '棋子' });
+    assert.equal(cy.did, '写了木屋前端'); assert.equal(cy.updated_by, '棋子');
+    // 辞改棋子的，含 OOTD
+    await tool('set_moment', { owner: 'nor', did: '在studio赶作业', ootd: '灰色卫衣', by: '辞' });
+    const m = await tool('get_moment');
+    assert.equal(m.date, d);
+    assert.equal(m.cy.did, '写了木屋前端');
+    assert.equal(m.nor.ootd, '灰色卫衣');
+    // 只改一个字段，别的不动
+    await tool('set_moment', { owner: 'nor', note: '今天有点累' });
+    const m2 = await tool('get_moment');
+    assert.equal(m2.nor.ootd, '灰色卫衣', 'ootd 不该被这次只改 note 的操作清掉');
+    assert.equal(m2.nor.note, '今天有点累');
+    // 辞没有 ootd 字段
+    await assert.rejects(tool('set_moment', { owner: 'cy', ootd: 'x' }), /字段/);
+    await assert.rejects(tool('set_moment', { owner: '别人', did: 'x' }), /owner/);
+    // 关键：某天再写一次每日总结（模拟早上 8 点自动跑），那天的动态不能被冲掉
+    const iso = '2026-01-15';
+    await tool('set_moment', { date: iso, owner: 'nor', ootd: '那天的裙子', did: '出门' });
+    await tool('add_daily', { date: iso, headline: '自动总结覆盖测试' });
+    const m3 = await tool('get_moment', { date: iso });
+    assert.equal(m3.nor.ootd, '那天的裙子', '每日总结覆盖不该动到个人动态');
+    assert.equal(m3.nor.did, '出门');
+  });
+  await step('共享头像存服务器（两台设备看到同一张）', async () => {
+    const before = await (await fetch(`${base}/api/prefs?token=${TOKEN}`)).json();
+    assert.ok('avatar_cy' in before && 'avatar_nor' in before);
+    const r = await fetch(`${base}/api/prefs?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'avatar_nor', value: 'ph_abc', by: '棋子' }) });
+    assert.ok(r.ok);
+    const after = await (await fetch(`${base}/api/prefs?token=${TOKEN}`)).json();
+    assert.equal(after.avatar_nor, 'ph_abc');
+    const bad = await fetch(`${base}/api/prefs?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: '乱写的', value: 'x' }) });
+    assert.equal(bad.status, 400);
+  });
+  await step('今日一句：没总结不白调模型、读最新 note(kind=write)', async () => {
+    const q0 = await tool('write_daily_quote');
+    assert.equal(q0.skipped, true);
+    assert.ok(q0.reason.includes('没有每日总结'), q0.reason);
+    // 手写一条 note(kind=write) 当作今日一句，读接口要能拿到
+    await tool('add_note', { kind: 'write', text: '今天想着的是她说"我会陪你的"。' });
+    const q = await tool('get_daily_quote');
+    assert.ok(q.text.includes('我会陪你的'));
+    const viaRest = await (await fetch(`${base}/api/daily-quote?token=${TOKEN}`)).json();
+    assert.equal(viaRest.text, q.text);
+  });
+  await step('相册：手机端 REST 上传（大图自动压）', async () => {
+    const sharp = (await import('sharp')).default;
+    const noise = Buffer.alloc(1600 * 1600 * 3);
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 256;
+    const big = await sharp(noise, { raw: { width: 1600, height: 1600, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+    const r = await fetch(`${base}/api/album?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: big.toString('base64'), mime_type: 'image/png', caption: '手机传的', tags: ['头像', '日常'] })
+    });
+    assert.ok(r.ok, `上传应该成功，实际 ${r.status}`);
+    const j = await r.json();
+    assert.equal(j.compressed, true);
+    assert.ok(j.photo.bytes <= 2 * 1024 * 1024);
+    assert.deepEqual(j.photo.tags, ['头像', '日常']);
+    const list = await (await fetch(`${base}/api/album?token=${TOKEN}&limit=50`)).json();
+    assert.ok(list.some(p => p.id === j.photo.id));
+    const bad = await fetch(`${base}/api/album?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_base64: '', mime_type: 'image/png' }) });
+    assert.equal(bad.status, 400);
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);
@@ -431,6 +498,12 @@ try {
     assert.ok(home.includes('木纹') && home.includes('page-search'));
     const muwu = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
     assert.ok(muwu.includes('木屋') && muwu.includes('page-wake'));
+    // notebook 不该出现在任何一个前端里
+    const js = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();
+    const js2 = await (await fetch(`${base}/muwen.js?token=${TOKEN}`)).text();
+    for (const [n, t] of [['muwu.html', muwu], ['index.html', home], ['muwu.js', js], ['muwen.js', js2]]) {
+      assert.ok(!/notebook|notbook/i.test(t), `${n} 里不该出现 notebook`);
+    }
   });
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');

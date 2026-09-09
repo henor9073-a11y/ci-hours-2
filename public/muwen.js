@@ -424,6 +424,30 @@ async function loadAlbum() {
   } catch (e) { fail($('#a-body'), e); }
 }
 function setAlbumTag(t) { albumTag = t; loadAlbum(); }
+function openUpload() {
+  openSheet('传照片', `<div class="card">
+    <input type="text" id="up-cap" placeholder="描述：谁、在干嘛、当时什么感觉">
+    <input type="text" id="up-tags" placeholder="标签，逗号分开（比如 日常,头像）" style="margin-top:8px">
+    <input type="text" id="up-date" placeholder="日期 YYYY-MM-DD，留空就是今天" style="margin-top:8px">
+    <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选照片并上传<input type="file" accept="image/*" multiple style="display:none" onchange="doUpload(this)"></label>
+    <div id="up-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)">大图会自动压缩，不用自己先处理</div></div>`);
+}
+async function doUpload(input) {
+  const files = [...(input.files || [])]; if (!files.length) return;
+  const msg = $('#up-msg');
+  const caption = $('#up-cap').value.trim();
+  const tags = $('#up-tags').value.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  const date = $('#up-date').value.trim() || undefined;
+  let done = 0;
+  for (const f of files) {
+    msg.textContent = `上传中 ${done + 1}/${files.length}…`;
+    try { await MW.uploadPhoto(f, { caption, tags, date }); done++; }
+    catch (e) { msg.textContent = `第 ${done + 1} 张失败：${e.message}`; return; }
+  }
+  msg.textContent = `传好了 ${done} 张`;
+  closeSheet(); loadAlbum();
+}
+
 function toggleAlbumMode() { albumMode = albumMode === 'date' ? 'tag' : 'date'; $('#a-mode').textContent = albumMode === 'date' ? '按日期' : '按标签'; renderAlbum(); }
 function renderAlbum() {
   const list = albumTag ? albumPhotos.filter(p => (p.tags || []).includes(albumTag)) : albumPhotos;
@@ -501,12 +525,12 @@ async function doRecall(q) {
 }
 
 // ================= 头像 / 档案 =================
-function avatarKey(who) { return 'muwen-avatar-' + who; }
-function applyAvatars() {
+async function applyAvatars() {
+  const p = await MW.loadPrefs(true).catch(() => ({}));
   ['cy', 'nor'].forEach(w => {
-    const id = localStorage.getItem(avatarKey(w));
+    const id = p['avatar_' + w];
     const node = $('#av-' + w);
-    if (id) node.innerHTML = `<img src="${imageUrl(id)}" alt="">`;
+    if (node) node.innerHTML = id ? `<img src="${imageUrl(id)}" alt="">` : (w === 'cy' ? '辞' : '棋');
   });
 }
 async function openProfile(owner) {
@@ -521,16 +545,28 @@ async function openProfile(owner) {
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function pickAvatar(owner) {
-  sheetLoading('挑头像');
+  sheetLoading('换头像');
   try {
     if (!albumPhotos.length) albumPhotos = await rest('/api/album?limit=500');
     const av = albumPhotos.filter(p => (p.tags || []).includes('头像'));
     const list = av.length ? av : albumPhotos;
-    sheetSet(list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="setAvatar('${owner}','${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>`
-      : '<div class="empty">相册里还没有照片。存一张并打上「头像」标签就能用。</div>');
+    sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">从手机传一张</div>
+      <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选择照片<input type="file" accept="image/*" style="display:none" onchange="uploadAvatar('${owner}',this)"></label>
+      <div id="av-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
+      <div class="section-title">或者从相册里挑</div>
+      ${list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="setAvatar('${owner}','${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">相册还是空的</div>'}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-function setAvatar(owner, id) { localStorage.setItem(avatarKey(owner), id); applyAvatars(); closeSheet(); }
+async function uploadAvatar(owner, input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  const m = $('#av-msg'); m.textContent = '上传中…';
+  try { const r = await MW.uploadPhoto(f, { caption: (owner === 'cy' ? '辞' : '棋子') + '的头像', tags: ['头像'] }); await setAvatar(owner, r.photo.id); }
+  catch (e) { m.textContent = '上传失败：' + e.message; }
+}
+async function setAvatar(owner, id) {
+  try { await MW.setAvatar(owner, id); albumPhotos = []; await applyAvatars(); closeSheet(); }
+  catch (e) { const m = $('#av-msg'); if (m) m.textContent = '失败：' + e.message; }
+}
 
 // ---------- 启动 ----------
 applyAvatars(); renderRecent(); loadToday();

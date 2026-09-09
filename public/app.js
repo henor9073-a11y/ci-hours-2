@@ -103,5 +103,46 @@
   function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? String(iso).slice(0, 16) : d.toLocaleString('sv', { timeZone: TZ }).slice(0, 16); }
   function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? String(iso).slice(0, 10) : d.toLocaleDateString('en-CA', { timeZone: TZ }); }
 
-  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate };
+  // ---- 头像：存在服务器（/api/prefs），两个人两台设备看到的是同一张 ----
+  let prefsCache = null;
+  async function loadPrefs(force) {
+    if (prefsCache && !force) return prefsCache;
+    try { prefsCache = await rest('/api/prefs'); } catch { prefsCache = {}; }
+    return prefsCache;
+  }
+  async function setAvatar(owner, photoId, by) {
+    const r = await fetch(url('/api/prefs'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
+      body: JSON.stringify({ key: 'avatar_' + owner, value: photoId, by: by || '' })
+    });
+    if (!r.ok) throw new Error('存头像失败');
+    prefsCache = null;
+    return r.json();
+  }
+
+  // ---- 手机直接传照片：读成 base64 交给后端，后端自己压缩 ----
+  function fileToBase64(file) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result).replace(/^data:[^;]+;base64,/, ''));
+      fr.onerror = () => rej(new Error('读不了这个文件'));
+      fr.readAsDataURL(file);
+    });
+  }
+  async function uploadPhoto(file, meta = {}) {
+    const image_base64 = await fileToBase64(file);
+    const r = await fetch(url('/api/album'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
+      body: JSON.stringify({
+        image_base64, mime_type: file.type || 'image/jpeg',
+        caption: meta.caption || '', date: meta.date || undefined,
+        tags: meta.tags || []
+      })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || '上传失败');
+    return j;
+  }
+
+  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64 };
 })(window);

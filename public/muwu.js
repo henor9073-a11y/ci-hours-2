@@ -22,13 +22,129 @@ function closeSheet() { sheetStack.pop(); if (sheetStack.length) { const s = she
 function sheetLoading(t) { openSheet(t, '<div class="loading">读取中…</div>'); }
 function sheetSet(h) { $('#sheet-body').innerHTML = h; if (sheetStack.length) sheetStack[sheetStack.length - 1].h = h; }
 
-// ---------- 头像（跟木纹共用同一份 localStorage）----------
-function applyAvatars() {
+// ---------- 头像：存服务器，两个人看到同一张；点开是今日动态 ----------
+async function applyAvatars() {
+  const p = await MW.loadPrefs(true).catch(() => ({}));
   ['cy', 'nor'].forEach(w => {
-    const id = localStorage.getItem('muwen-avatar-' + w);
+    const id = p['avatar_' + w];
     const label = w === 'cy' ? '辞' : '棋';
     [$('#av-' + w), $('#big-' + w)].forEach(n => { if (n) n.innerHTML = id ? `<img src="${imageUrl(id)}" alt="">` : label; });
   });
+}
+['cy', 'nor'].forEach(w => {
+  ['#av-' + w, '#big-' + w].forEach(sel => { const n = $(sel); if (n) n.onclick = () => openMoment(w); });
+});
+
+// ---------- 个人今日动态 ----------
+const OWNER_CN = { cy: '辞', nor: '棋子' };
+async function openMoment(owner, date) {
+  const d = date || today();
+  sheetLoading(`${OWNER_CN[owner]} · ${d === today() ? '今天' : d}`);
+  try {
+    const [m, prefs] = await Promise.all([mcp('get_moment', { date: d }), MW.loadPrefs()]);
+    const me = m[owner] || {};
+    const avId = prefs['avatar_' + owner];
+    let h = `<div style="text-align:center;padding:6px 0 2px">
+      <div class="avatar${owner === 'nor' ? ' accent' : ''}" style="width:72px;height:72px;font-size:22px;margin:0 auto">${avId ? `<img src="${imageUrl(avId)}">` : OWNER_CN[owner][0]}</div>
+      <div style="margin-top:8px"><span class="link" onclick="openAvatarPicker('${owner}')">换头像</span></div></div>`;
+
+    h += `<div class="card"><div class="card-title" style="font-size:14px">今天做了什么</div>
+      <textarea id="mo-did" style="min-height:90px;margin-top:8px" placeholder="${owner === 'cy' ? '辞今天做了什么…' : '棋子今天做了什么…'}">${esc(me.did || '')}</textarea></div>`;
+
+    if (owner === 'nor') {
+      h += `<div class="card"><div class="card-title" style="font-size:14px">OOTD · 今天穿了什么</div>
+        <textarea id="mo-ootd" style="min-height:60px;margin-top:8px" placeholder="今天穿了什么…">${esc(me.ootd || '')}</textarea>
+        <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+          ${me.ootd_photo ? `<img src="${imageUrl(me.ootd_photo)}" style="width:64px;height:64px;object-fit:cover;border-radius:10px">` : ''}
+          <label class="btn ghost" style="cursor:pointer">选一张照片<input type="file" accept="image/*" style="display:none" onchange="uploadOotd('${d}',this)"></label>
+          ${me.ootd_photo ? `<span class="link" onclick="clearOotdPhoto('${d}')">去掉</span>` : ''}
+        </div></div>`;
+    }
+
+    h += `<div class="card"><div class="card-title" style="font-size:14px">备注</div>
+      <textarea id="mo-note" style="min-height:60px;margin-top:8px" placeholder="随手写点什么…">${esc(me.note || '')}</textarea></div>
+      <div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+        <button class="btn" onclick="saveMoment('${d}','${owner}')">存下来</button>
+        <span id="mo-msg" style="font-size:13px;color:var(--text-light)">${me.updated_at ? `${esc(fmtTime(me.updated_at))} 由 ${esc(me.updated_by || '?')} 改过` : '还没写过'}</span>
+      </div>`;
+
+    if (owner === 'nor') h += `<div class="section-title">手机使用</div><div id="mo-phone"><div class="loading">…</div></div>`;
+    h += `<div class="section-title">今天的动作</div><div id="mo-acts"><div class="loading">…</div></div>`;
+    sheetSet(h);
+
+    if (owner === 'nor') {
+      mcp('get_phone_activity', { limit: 20 }).then(r => {
+        const n = $('#mo-phone'); if (!n) return;
+        const list = (Array.isArray(r) ? r : []).filter(x => MW.fmtDate(x.opened_at) === d);
+        n.innerHTML = list.length ? `<div class="card">${list.map(x => `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;display:flex;justify-content:space-between"><span>${esc(x.app_name)}</span><span style="color:var(--text-light);font-size:12px">${esc(fmtTime(x.opened_at).slice(11))}</span></div>`).join('')}</div>`
+          : '<div class="empty" style="padding:14px">今天没有手机记录</div>';
+      }).catch(e => { const n = $('#mo-phone'); if (n) n.innerHTML = `<div class="empty" style="padding:14px">读不到手机活动<br><span style="font-size:12px">${esc(e.message)}</span></div>`; });
+    }
+    renderOwnerActs($('#mo-acts'), owner, d);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function renderOwnerActs(node, owner, d) {
+  if (!node) return;
+  try {
+    const [notes, log, cal] = await Promise.all([
+      rest('/api/notes').catch(() => []), rest('/api/log').catch(() => []),
+      mcp('get_calendar', { days: 14 }).catch(() => [])
+    ]);
+    const items = [];
+    if (owner === 'cy') {
+      notes.filter(n => MW.fmtDate(n.at) === d).forEach(n => items.push({ at: n.at, text: ({ write: '写了点东西', reflect: '回看', read: '读书笔记' }[n.kind] || n.kind) + '：' + oneLine(n.text).slice(0, 50) }));
+      log.filter(l => MW.fmtDate(l.at) === d && l.type === 'wake').forEach(l => items.push({ at: l.at, text: '醒来 · ' + (l.action || '') }));
+    }
+    const day = cal.find(c => c.date === d);
+    const st = day ? (owner === 'cy' ? day.cy_status : day.nor_status) : '';
+    if (st) items.push({ at: d, text: '每日总结里写的：' + oneLine(st).slice(0, 80) });
+    node.innerHTML = items.length ? `<div class="card">${items.map(i => `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><div style="font-size:11px;color:var(--text-light)">${esc(fmtTime(i.at).slice(11) || '')}</div><div style="font-size:14px">${esc(i.text)}</div></div>`).join('')}</div>` : '<div class="empty" style="padding:14px">今天还没有记录</div>';
+  } catch (e) { node.innerHTML = ''; }
+}
+async function saveMoment(d, owner) {
+  const msg = $('#mo-msg'); msg.textContent = '存…';
+  const f = { did: $('#mo-did').value, note: $('#mo-note').value };
+  if (owner === 'nor' && $('#mo-ootd')) f.ootd = $('#mo-ootd').value;
+  try { const r = await mcp('set_moment', { date: d, owner, ...f, by: '棋子' }); msg.textContent = '存好了 · ' + fmtTime(r.updated_at); }
+  catch (e) { msg.textContent = '失败：' + e.message; }
+}
+async function uploadOotd(d, input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const msg = $('#mo-msg'); msg.textContent = '上传中…';
+  try {
+    const r = await MW.uploadPhoto(file, { caption: `OOTD ${d}`, date: d, tags: ['OOTD'] });
+    await mcp('set_moment', { date: d, owner: 'nor', ootd_photo: r.photo.id, by: '棋子' });
+    msg.textContent = '传好了';
+    sheetStack.pop(); openMoment('nor', d);
+  } catch (e) { msg.textContent = '上传失败：' + e.message; }
+}
+async function clearOotdPhoto(d) {
+  try { await mcp('set_moment', { date: d, owner: 'nor', ootd_photo: '', by: '棋子' }); sheetStack.pop(); openMoment('nor', d); } catch (e) { alert(e.message); }
+}
+async function openAvatarPicker(owner) {
+  sheetLoading('换头像');
+  try {
+    const photos = await rest('/api/album?limit=300');
+    const av = photos.filter(p => (p.tags || []).includes('头像'));
+    const list = av.length ? av : photos;
+    sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">从手机传一张</div>
+      <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选择照片<input type="file" accept="image/*" style="display:none" onchange="uploadAvatar('${owner}',this)"></label>
+      <div id="av-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
+      <div class="section-title">或者从相册里挑</div>
+      ${list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="chooseAvatar('${owner}','${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">相册还是空的</div>'}`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function uploadAvatar(owner, input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const msg = $('#av-msg'); msg.textContent = '上传中…';
+  try {
+    const r = await MW.uploadPhoto(file, { caption: `${OWNER_CN[owner]}的头像`, tags: ['头像'] });
+    await chooseAvatar(owner, r.photo.id);
+  } catch (e) { msg.textContent = '上传失败：' + e.message; }
+}
+async function chooseAvatar(owner, id) {
+  try { await MW.setAvatar(owner, id, '棋子'); await applyAvatars(); closeSheet(); }
+  catch (e) { const m = $('#av-msg'); if (m) m.textContent = '失败：' + e.message; }
 }
 
 // ================= 家 =================
@@ -47,15 +163,7 @@ async function loadHome() {
       if (c && w) w.textContent = `${Math.round(c.temperature_2m)}°C ${WCODE[c.weather_code] || ''}`;
     }).catch(() => { const w = $('#h-weather'); if (w) w.remove(); });
 
-  // 今日一句：从「给自己」和「学到的」里按日期挑一条，每天固定一句
-  mcp('search_grains', { category: 'to_self', limit: 60 }).then(gs => {
-    if (!gs.length) return mcp('search_grains', { category: 'learning', limit: 60 });
-    return gs;
-  }).then(gs => {
-    if (!gs || !gs.length) { $('#h-quote').textContent = '今天还没有话。'; return; }
-    const seed = Number(d.replace(/-/g, '')) % gs.length;
-    $('#h-quote').textContent = oneLine(gs[seed].text).slice(0, 120);
-  }).catch(() => { $('#h-quote').textContent = ''; });
+  loadQuote(d);
 
   loadTodayActivity($('#h-activity'), 4);
   loadCountdowns();
@@ -64,6 +172,26 @@ async function loadHome() {
     const p = w.today_plan || {};
     $('#cy-state').textContent = (p.pendingWakes || []).length ? '待醒 ' + p.pendingWakes[0] : (p.doneWakes || []).length ? '今天醒过' : '在线';
   }).catch(() => {});
+}
+
+// 今日一句：优先读辞最新写的那条（服务器每天 9:00 自动写一条 note(kind=write)）；
+// 当天没写就从纹理里随机挑一条热度高的顶上。
+async function loadQuote(d) {
+  const node = $('#h-quote');
+  try {
+    const q = await mcp('get_daily_quote').catch(() => null);
+    if (q && q.text && String(q.at || '').slice(0, 10) === d) {
+      node.textContent = oneLine(q.text);
+      node.title = '辞今天写的';
+      return;
+    }
+    const gs = await mcp('search_grains', { limit: 60 });
+    const hot = gs.filter(g => g.heat >= 55 && g.text.length < 220);
+    const pool = hot.length ? hot : gs.filter(g => g.text.length < 300);
+    if (!pool.length) { node.textContent = q && q.text ? oneLine(q.text) : '今天还没有话。'; return; }
+    node.textContent = oneLine(pool[Math.floor(Math.random() * pool.length)].text).slice(0, 140);
+    node.title = '从纹理里挑的（辞今天还没写）';
+  } catch { node.textContent = ''; }
 }
 
 async function loadTodayActivity(node, limit) {
@@ -150,6 +278,7 @@ async function loadLife() {
   rest('/api/health/cycle').then(c => $('#l-cycle').textContent = c.length ? `上次 ${c[0].date}` : '还没记').catch(() => {});
   rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? oneLine(n[0].text).slice(0, 28) : '还没记').catch(() => {});
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
+  rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张 · 点开可以传新的`).catch(() => {});
 }
 async function openFishing() {
   sheetLoading('钓鱼');
@@ -208,6 +337,53 @@ async function openShelf() {
       <div style="height:6px;border-radius:3px;background:var(--primary-light);margin-top:8px"><div style="height:100%;border-radius:3px;background:var(--primary);width:${x.totalChapters ? Math.round(x.progress / x.totalChapters * 100) : 0}%"></div></div></div>`).join('') : '<div class="empty">书架是空的</div>');
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
+// 相册：手机上直接传照片，带描述和标签
+let albumCache = [];
+async function openAlbum(tag) {
+  sheetLoading('相册');
+  try {
+    albumCache = await rest('/api/album?limit=500');
+    const tags = [...new Set(albumCache.flatMap(p => p.tags || []))];
+    const list = tag ? albumCache.filter(p => (p.tags || []).includes(tag)) : albumCache;
+    sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">传一张新的</div>
+        <input type="text" id="up-cap" placeholder="描述：谁、在干嘛、当时什么感觉" style="margin-top:8px">
+        <input type="text" id="up-tags" placeholder="标签，逗号分开（比如 日常,lolita）" style="margin-top:8px">
+        <input type="text" id="up-date" placeholder="日期 YYYY-MM-DD，留空就是今天" style="margin-top:8px">
+        <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选照片并上传<input type="file" accept="image/*" multiple style="display:none" onchange="doUpload(this)"></label>
+        <div id="up-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
+      <div class="chip-row" style="margin-top:12px">
+        <div class="chip${!tag ? ' on' : ''}" onclick="reopenAlbum('')">全部 ${albumCache.length}</div>
+        ${tags.map(t => `<div class="chip${tag === t ? ' on' : ''}" onclick="reopenAlbum('${esc(t)}')">${esc(t)}</div>`).join('')}</div>
+      ${list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="openOnePhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">还没有照片</div>'}`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function reopenAlbum(tag) { sheetStack.pop(); openAlbum(tag || undefined); }
+async function doUpload(input) {
+  const files = [...(input.files || [])]; if (!files.length) return;
+  const msg = $('#up-msg');
+  const caption = $('#up-cap').value.trim();
+  const tags = $('#up-tags').value.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  const date = $('#up-date').value.trim() || undefined;
+  let done = 0;
+  for (const f of files) {
+    msg.textContent = `上传中 ${done + 1}/${files.length}…`;
+    try {
+      const r = await MW.uploadPhoto(f, { caption, tags, date });
+      done++;
+      if (r.warnings && r.warnings.length) msg.textContent = r.warnings[0];
+    } catch (e) { msg.textContent = `第 ${done + 1} 张失败：${e.message}`; return; }
+  }
+  msg.textContent = `传好了 ${done} 张`;
+  sheetStack.pop(); openAlbum();
+}
+function openOnePhoto(id) {
+  const p = albumCache.find(x => x.id === id) || {};
+  openSheet('照片', `<img src="${imageUrl(id)}" style="width:100%;border-radius:var(--radius);margin-top:8px">
+    <div class="entry"><div class="entry-head"><span>${esc(p.date || '')}</span>${p.width ? `<span>${p.width}×${p.height}</span>` : ''}${p.compressed ? '<span class="tag plain">压缩过</span>' : ''}</div>
+    <div class="entry-body">${esc(p.caption || '（没写描述）')}</div>
+    ${(p.tags || []).length ? `<div style="margin-top:6px">${p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}</div>`);
+}
+
 async function openPhone() {
   sheetLoading('手机活动');
   try {
