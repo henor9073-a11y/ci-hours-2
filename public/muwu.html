@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>木屋 Muwu</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">木屋 <span>Muwu · <a href="./">木纹</a></span></div>
+    <div class="avatars">
+      <div class="avatar" id="av-cy"></div>
+      <div class="avatar accent" id="av-nor"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 家 -->
+<div class="page active" id="page-home">
+  <div style="text-align:center;padding:18px 0 4px">
+    <div style="display:flex;justify-content:center;gap:18px;align-items:center">
+      <div style="text-align:center">
+        <div class="avatar" id="big-cy" style="width:56px;height:56px;font-size:18px;margin:0 auto">辞</div>
+        <div style="font-size:11px;color:var(--text-light);margin-top:4px" id="cy-state">—</div>
+      </div>
+      <div style="font-size:20px;color:var(--accent)">♡</div>
+      <div style="text-align:center">
+        <div class="avatar accent" id="big-nor" style="width:56px;height:56px;font-size:18px;margin:0 auto">棋</div>
+        <div style="font-size:11px;color:var(--text-light);margin-top:4px" id="nor-state">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-card" style="margin-top:12px">
+    <div style="font-size:22px;font-weight:700;text-align:center" id="h-date">—</div>
+    <div style="display:flex;justify-content:center;gap:14px;margin-top:8px;font-size:13px;color:var(--text-secondary);flex-wrap:wrap" id="h-info"></div>
+    <div style="text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;color:var(--accent);font-weight:600" id="h-anniv"></div>
+  </div>
+
+  <div class="card" style="background:var(--accent-light)">
+    <div style="font-size:12px;color:var(--accent);margin-bottom:4px">💭 今日一句</div>
+    <div style="font-size:14px;line-height:1.6;font-style:italic" id="h-quote">…</div>
+  </div>
+
+  <div class="section-title">今日活动 <span class="link" onclick="switchPage('life')">全部</span></div>
+  <div id="h-activity"><div class="loading">…</div></div>
+
+  <div class="section-title">倒数 / 正数 <span class="link" onclick="openAddCountdown()">+ 加一个</span></div>
+  <div id="h-countdowns"><div class="loading">…</div></div>
+</div>
+
+<!-- 活 -->
+<div class="page" id="page-life">
+  <div class="greeting"><div class="greeting-date sm">生活</div><div class="greeting-sub">日常管理</div></div>
+  <div class="section-title">今天</div>
+  <div id="l-today"><div class="loading">…</div></div>
+  <div class="section-title">日常</div>
+  <div class="grid-2">
+    <div class="card tap" onclick="openFishing()"><div class="card-row"><div class="card-icon">鱼</div><div><div class="card-title">钓鱼</div><div class="card-desc" id="l-fish">…</div></div></div></div>
+    <div class="card tap" onclick="openSchedule()"><div class="card-row"><div class="card-icon accent">程</div><div><div class="card-title">日程</div><div class="card-desc" id="l-sched">…</div></div></div></div>
+  </div>
+  <div class="section-title">身体</div>
+  <div class="grid-2">
+    <div class="card tap" onclick="openSleep()"><div class="card-row"><div class="card-icon">眠</div><div><div class="card-title">睡眠</div><div class="card-desc" id="l-sleep">…</div></div></div></div>
+    <div class="card tap" onclick="openCycle()"><div class="card-row"><div class="card-icon accent">期</div><div><div class="card-title">生理期</div><div class="card-desc" id="l-cycle">…</div></div></div></div>
+  </div>
+  <div class="card tap" onclick="openHealth()"><div class="card-row"><div class="card-icon accent">健</div><div style="flex:1"><div class="card-title">身体状况</div><div class="card-desc" id="l-health">…</div></div></div></div>
+  <div class="section-title">工具</div>
+  <div class="grid-2">
+    <div class="card tap" onclick="openShelf()"><div class="card-row"><div class="card-icon">书</div><div><div class="card-title">书架</div><div class="card-desc" id="l-shelf">…</div></div></div></div>
+    <div class="card tap" onclick="openPhone()"><div class="card-row"><div class="card-icon accent">机</div><div><div class="card-title">手机活动</div><div class="card-desc">棋子最近开了什么</div></div></div></div>
+  </div>
+</div>
+
+<!-- 搜 -->
+<div class="page" id="page-search">
+  <div class="greeting"><div class="greeting-date sm">搜索</div><div class="greeting-sub">在木屋和木纹中找</div></div>
+  <div class="search-box"><span style="color:var(--text-light)">🔍</span>
+    <input id="s-input" type="search" placeholder="搜日程、睡眠、健康、记忆…" enterkeyhint="search"></div>
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+    <span style="font-size:13px;color:var(--text-secondary)">也搜记忆</span>
+    <span class="chip on" id="s-toggle" onclick="toggleMemSearch()">开</span>
+  </div>
+  <div id="s-body"></div>
+</div>
+
+<!-- 醒 -->
+<div class="page" id="page-wake">
+  <div class="greeting"><div class="greeting-date sm">苏醒系统</div><div class="greeting-sub">三层架构</div></div>
+  <div id="w-body"><div class="loading">…</div></div>
+</div>
+
+<!-- 设 -->
+<div class="page" id="page-settings">
+  <div class="greeting"><div class="greeting-date sm">设置</div><div class="greeting-sub">木屋装修 · 改完立刻生效，木纹也跟着变</div></div>
+  <div class="section-title">配色预设</div>
+  <div id="st-presets" class="grid-2"></div>
+  <div class="section-title">单独调色 <span class="link" onclick="resetCustom()">清掉自定义</span></div>
+  <div id="st-colors"></div>
+  <div class="section-title">壁纸</div>
+  <div class="grid-3" id="st-wall"></div>
+  <div class="card"><div class="card-title" style="font-size:13px">自定义壁纸（图片 URL）</div>
+    <input type="text" id="st-wall-url" placeholder="https://… 留空就是不用" style="margin-top:8px">
+    <button class="btn" style="margin-top:8px" onclick="setWallpaperUrl()">用这张</button></div>
+  <div class="section-title">外观</div>
+  <div id="st-sliders"></div>
+  <div class="card tap" onclick="resetAll()" style="margin-top:16px"><div class="card-title" style="color:#C05B5B">全部恢复默认</div></div>
+</div>
+
+<div class="sheet" id="sheet"><div class="sheet-head"><button class="sheet-back" onclick="closeSheet()">‹ 返回</button><div class="sheet-title" id="sheet-title"></div></div><div id="sheet-body"></div></div>
+
+<div class="bottom-nav">
+  <div class="nav-item active" data-p="home"><div class="nav-icon">家</div><div class="nav-label">首页</div></div>
+  <div class="nav-item" data-p="life"><div class="nav-icon">活</div><div class="nav-label">生活</div></div>
+  <div class="nav-item" data-p="search"><div class="nav-icon">搜</div><div class="nav-label">搜索</div></div>
+  <div class="nav-item" data-p="wake"><div class="nav-icon">醒</div><div class="nav-label">苏醒</div></div>
+  <div class="nav-item" data-p="settings"><div class="nav-icon">设</div><div class="nav-label">设置</div></div>
+</div>
+
+<script src="app.js"></script>
+<script src="muwu.js"></script>
+</body>
+</html>

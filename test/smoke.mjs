@@ -373,6 +373,51 @@ try {
     const bad = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) });
     assert.equal(bad.status, 400);
   });
+  await step('日历带月相 / search_all 分类标签 / 苏醒状态三层', async () => {
+    const today2 = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
+    const cal = await tool('get_calendar', { days: 3 });
+    assert.ok(cal[0].moon && cal[0].moon.icon && cal[0].moon.name, `每日总结要带月相：${JSON.stringify(cal[0].moon)}`);
+    assert.ok(cal[0].moon.illumination >= 0 && cal[0].moon.illumination <= 100);
+    // 月相是算出来的，不是随口给的：满月那天照度该接近 100
+    const { moonPhase } = await import('../lib/muwen/common.js');
+    assert.equal(moonPhase('2026-01-03').index, moonPhase('2026-01-03').index);
+    const full = [...Array(30)].map((_, i) => moonPhase(`2026-03-${String(i + 1).padStart(2, '0')}`)).find(m => m.name === '满月');
+    assert.ok(full && full.illumination > 90, `满月照度该 >90，实际 ${full && full.illumination}`);
+
+    // search_all 每条都要有 category + label，前端才好分组
+    const sa = await tool('search_all', { query: '摆摊' });
+    assert.ok(sa.results.length);
+    for (const r of sa.results) { assert.ok(r.category, `缺 category: ${JSON.stringify(r)}`); assert.ok(r.label, `缺 label: ${JSON.stringify(r)}`); }
+    const g = sa.results.find(r => r.layer === 'grains');
+    assert.equal(g.label, '经历');
+
+    // 苏醒状态：三层都在，没 ping 过的如实说未接入
+    let w = await tool('get_wake_status');
+    assert.equal(w.layers.length, 3);
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'ci_hours', 'heartbeat']);
+    assert.equal(w.layers[0].connected, false);
+    assert.ok(w.layers[0].status.includes('未接入'));
+    assert.equal(w.layers[1].connected, true);   // 第二层是服务器自己的，永远看得到
+    // ping 之后就该变成已接入
+    const pr = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: 'heartbeat', note: '测试' }) });
+    assert.ok(pr.ok);
+    w = await tool('get_wake_status');
+    const hb = w.layers.find(l => l.key === 'heartbeat');
+    assert.equal(hb.connected, true);
+    assert.equal(hb.status, '活跃');
+    const bad = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: '瞎写的' }) });
+    assert.equal(bad.status, 400);
+  });
+  await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
+    for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js']) {
+      const r = await fetch(`${base}${p}?token=${TOKEN}`);
+      assert.equal(r.status, 200, `${p} 应该 200，实际 ${r.status}`);
+    }
+    const home = await (await fetch(`${base}/?token=${TOKEN}`)).text();
+    assert.ok(home.includes('木纹') && home.includes('page-search'));
+    const muwu = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
+    assert.ok(muwu.includes('木屋') && muwu.includes('page-wake'));
+  });
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');
     const { buildIndex } = await import('../lib/muwen/semantic.js');

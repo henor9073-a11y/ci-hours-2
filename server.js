@@ -41,6 +41,8 @@ app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol �
 app.use(express.json({ limit: '40mb' })); // 相册的原图走 /mcp 的 base64：20MB 上限的图编码后约 27MB，留出余量，
 // 好让超限时报的是 album.js 里那句人话（'先在手机上裁一下'），而不是 express 的 413 HTML。后端会再自动压到 2MB 存
 app.use(express.static(path.join(__dirname, 'public')));
+// 两个前端：/ = 木纹（记忆），/muwu = 木屋（生活）。共用同一套后端和 /mcp。
+app.get('/muwu', (_, res) => res.sendFile(path.join(__dirname, 'public', 'muwu.html')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
 // ---- 跨域许可：给浏览器里直接发请求的场景用（比如调试面板、未来的网页小工具）----
 // 放在密码校验前面，让 OPTIONS 预检请求不会被密码卡住。
@@ -154,6 +156,12 @@ app.get('/api/album/:id/image', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+app.get('/api/wake-status', (req, res) => res.json(mw.wake.getWakeStatus({ logLimit: Number(req.query.limit) || 20 })));
+app.post('/api/wake-ping', (req, res) => {
+  // 给 GPD 上的 ScheduleWakeup / CyHeartbeat 报到用：POST {layer, note}
+  try { res.json(mw.wake.wakePing((req.body || {}).layer, (req.body || {}).note)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 // 响应体里的非 ASCII 全部转成 \uXXXX——JSON 转义序列本身是纯 ASCII，
 // 不管客户端怎么猜字符集都不会解错。PS 5.1 在中文这件事上翻过两次车了，这里一劳永逸。
 function jsonAscii(res, obj, status = 200) {

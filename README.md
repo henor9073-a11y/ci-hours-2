@@ -61,7 +61,7 @@
 - 反证：`get_grain_with_counterevidence`（家族带"害怕她走"这类负面词时自动带出 contradicts/repaired 关系的记忆和正面家族的记忆）/ `link_grains`（caused / before / repaired / contradicts / supersedes）
 - 档案：`get_profile` / `update_profile`（reason 必填，旧版本进历史）/ `get_profile_history`
 - 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
-- 每日总结：`add_daily({date, headline, mood_tags, nor_status, cy_status, pending, intimate, kiss_count})` / `get_calendar` / `get_daily`。kiss_count 是当天的次数，亲亲进度 = 所有天加总（+ 环境变量 `KISS_BASELINE` 起始基数，默认 0）/ `KISS_GOAL`（默认 20000）
+- 每日总结：`add_daily({date, headline, mood_tags, nor_status, cy_status, pending, intimate, kiss_count})` / `get_calendar`（每天带月相）/ `get_daily`。kiss_count 是当天的次数，亲亲进度 = 所有天加总（+ 环境变量 `KISS_BASELINE` 起始基数，默认 0）/ `KISS_GOAL`（默认 20000）
 - 交接条：`set_handover` / `get_handover`（独立存 `handover.json`，只留最新一条）
 - 相册：`save_photo`（base64，**大图后端自动压，不用自己先处理**）/ `list_photos` / `get_photo` / `delete_photo`
   - 超过 2MB 才压：最长边缩到 2048，画质从 82 往下降到够小为止。有透明通道或动图转 webp（保住 alpha 和帧），其余转 jpeg。没超过 2MB 的原样存，不做无谓的重编码。
@@ -70,10 +70,48 @@
   - `caption` 是每张照片的一句标注，**以后就靠它召回**——`search_all` 有 `photos` 层能搜到。没写会在返回里提醒。旧字段 `description` 仍然收，等价于 caption。
 - 倒数日：`add_countdown`（MM-DD 每年重复，YYYY-MM-DD 一次性）/ `get_countdowns` / `remove_countdown`
 - 心情：`add_mood` / `get_moods` / `get_mood_trend`
-- 搜索：`search_all`（跨 grains / rings / profiles / cross_sections / photos，标注来源）
+- 搜索：`search_all`（跨 grains / rings / profiles / cross_sections / photos，每条带 `category` + 中文 `label`，前端直接按它分组）
 - 召回：`recall({notice, context_summary?})` / `auto_recall({query})`（自动召回，每条消息注入用）/ `get_recall_logs`
 - 梦境：`dream` / `get_dream_report`
+- 苏醒：`get_wake_status`（三层状态 + 最近苏醒记录）
 - 截面：`get_summary` / `update_summary_section({section, text, source_ids?})` / `get_summary_history`
+
+
+## 两个前端：木纹（记忆）+ 木屋（生活）
+
+手机优先，纯 HTML/CSS/vanilla JS，没有框架和构建步骤。都跟服务器同源，数据一律走 `/mcp`（JSON-RPC）——
+所有 MCP 工具立刻可用，加了新工具前端不用改后端路由。
+
+| 地址 | 是什么 | 五个 tab |
+|---|---|---|
+| `/` | **木纹 Muwen** — 记忆系统 | 今 / 历 / 忆 / 册 / 搜 |
+| `/muwu` | **木屋 Muwu** — 生活系统 | 家 / 活 / 搜 / 醒 / 设 |
+
+文件：`public/app.js`（共用底座：调后端、主题、日期月相）、`public/style.css`（共用样式，配色全走 CSS 变量）、
+`public/index.html` + `muwen.js`（木纹）、`public/muwu.html` + `muwu.js`（木屋）。
+
+**打开方式**：`https://<地址>/?token=<ACCESS_PASSWORD>`。token 第一次带上之后记在 localStorage，之后直接开根路径就行。
+本地开发可以加 `?api=https://ci-hours-2.onrender.com` 让页面打线上数据（CORS 是开的）。
+
+### 木纹
+- **今**：两个头像（点进去是各自档案，可以从相册挑「头像」标签的照片换）、摘要（默认收起，可展开六段）、亲亲/在一起天数/今天新记忆、最近心情、写日记/写交接/纹理/年轮四个快捷入口、最近三条记忆
+- **历**：月历带每天月相，绿点=有每日总结、主色点=有日程、红点=重要日子；点某天展开当天的 headline / 心情标签 / 双方状态 / 亲密 / 亲亲数 / 没做完的事 + 日程
+- **忆**：核心（纹理按 category 切、年轮、家族）+ 档案九类（身份/感受/经历/学习/给自己/约定/事实/巧合/证据）+ 记录（日记/每日总结/文字记录/笔记）+ 管理（前台后台归档切换、摘要历史，默认折叠）。点开一条纹理能看反证、溯源回年轮、改 status、pin
+- **册**：照片网格，按日期或标签分组，点开看大图和 caption
+- **搜**：`search_all` 按分类折叠聚合，最近搜索存本地；搜不到还能「让辞想一想」走语义召回
+
+### 木屋
+- **家**：大头像、日期 + 月相 + 天气（Open-Meteo，墨尔本，不需要 key）+ 行星日、在一起/领证天数、今日一句（每天从「给自己」里定一条）、今日活动（双向）、倒数正数日
+- **活**：今天做了什么（双向）、钓鱼图鉴、日程、睡眠（带柱状图）、生理期（自动算周期和下次）、身体状况、书架、手机活动
+- **搜**：木屋数据（日程/睡眠/生理期/身体/书架）+ 可开关的木纹记忆，同样分类聚合
+- **醒**：苏醒三层状态、最近苏醒记录、手动往今天加一个苏醒时刻
+- **设**：7 套预设配色 + 9 个颜色单独调 + 壁纸 + 圆角/字号/行距/透明度/模糊，实时生效并存 localStorage，**木纹和木屋共用同一份设置**
+
+### 苏醒三层状态怎么来的
+服务器只直接知道第二层（ci-hours 自己的排班）。第一层 ScheduleWakeup 和第三层 CyHeartbeat 跑在 GPD 上，
+服务器看不见——所以留了 `POST /api/wake-ping {layer, note}` 让它们主动报到（layer 取
+`schedule_wakeup` / `ci_hours` / `heartbeat`）。**没接入就如实显示「未接入」，不假装知道。**
+想让这两层亮起来，在 GPD 的脚本里各加一行 POST 就行。
 
 ### 自动召回注入（参考 LMC-5）
 
