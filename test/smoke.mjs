@@ -449,17 +449,31 @@ try {
     await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy });
     assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
 
-    // 长的年轮靠零散双字刷分不该挡住索引层。这是实测踩到的：十几万字的窗口原文
-    // 原始分能盖过真正记着这件事的短记录，然后把索引层挡在外面。除权 + 过线才算命中。
-    // 十万字的窗口转储，里面确实出现过一次这句话，但整段并不是在说这件事
-    const noise = '棋子和辞聊了很多别的事情，天气、作业、狗、吃饭、睡觉。'.repeat(4000)
-      + '棋子和辞在这段记录里聊了非常多的事情，';
-    const long = await tool('add_ring', { window_name: '很长的噪音窗口', date: '2026-09-02', title: '很长的噪音窗口原文', content: noise });
+    // ---- 段级打分：整篇沾边不算命中，得有某一段真的在说这件事 ----
+    // 实测踩到的：十几万字的窗口转储，query 的词散落全篇各处刷出高的整篇分，
+    // 盖过真正记着这件事的短记录，还把索引层挡在外面。
+    const filler = '今天天气不错我们随便聊聊别的东西说了一会儿话就散了。'.repeat(20);  // 约 500 字
+    // 散落型：每个词之间隔着几百字的废话，整篇每个词都有，但没有任何一段集中
+    const scattered = ['我家', '狗要', '打麻', '药洗', '洗牙'].map(w => w + filler).join('');
+    const noisy = await tool('add_ring', { window_name: '散落噪音窗口', date: '2026-09-02', title: '散落噪音窗口', content: scattered });
+    // 集中型：同样的词全挤在一段话里
+    const focused = filler + '我家狗要打麻药洗牙这件事我一直没定下来。' + filler;
+    const real = await tool('add_ring', { window_name: '真的在说这件事', date: '2026-09-02', title: '真的在说这件事', content: focused });
+
+    const q = '我家狗要打麻药洗牙';
+    const found = await tool('search_rings', { query: q, limit: 5 });
+    const idx1 = found.findIndex(x => x.id === real.id), idx2 = found.findIndex(x => x.id === noisy.id);
+    assert.ok(idx1 !== -1 && (idx2 === -1 || idx1 < idx2), `集中的那条要排在散落的前面：${JSON.stringify(found.map(f => [f.title, f.score, f.coverage]))}`);
+    assert.ok(found[idx1].coverage >= 0.4, `真命中的覆盖率要过线，实际 ${found[idx1].coverage}`);
+    assert.ok(found[idx1].excerpt.includes('我家狗要打麻药洗牙这件事'), `摘录要给出命中处前后几句话，实际：${found[idx1].excerpt.slice(0, 60)}`);
+    if (idx2 !== -1) assert.ok(found[idx2].coverage < 0.4, `散落的覆盖率不该过线，实际 ${found[idx2].coverage}`);
+
+    // 只有散落噪音、没有真命中的时候 → 关键词层空手，索引层接手
     let ringModelCalled = false;
     const pick2 = async () => { ringModelCalled = true; return { picks: [{ id: ring.id, reason: '索引层挑的' }], none: false, index_count: 1, model: 'stub' }; };
-    const noisy = await autoRecall('棋子和辞在这段记录里聊了非常多的事情', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2 });
-    assert.equal(ringModelCalled, true, '长年轮刷出来的高分不该挡住索引层');
-    assert.ok(!noisy.memories.some(m => m.id === long.id), `除权后没过线的长年轮不该返回：${JSON.stringify(noisy.memories.map(m => m.id))}`);
+    const scatterOnly = await autoRecall('我家狗要不要打麻药洗牙那件事后来怎么样了', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2 });
+    assert.equal(ringModelCalled, true, '覆盖率没过线就该交给索引层');
+    assert.ok(!scatterOnly.memories.some(m => m.id === noisy.id), `没过线的散落噪音不该返回：${JSON.stringify(scatterOnly.memories.map(m => m.id))}`);
 
     // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行，并且给它留出位置。
     // 这是这一层的关键：库里纹理一多，中文按字匹配几乎总能搜出点沾边的，
