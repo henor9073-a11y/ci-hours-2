@@ -685,6 +685,12 @@ try {
     const frag = injected.split('：').slice(2).join('：');
     assert.ok(/[。！？…]$/.test(frag.trim()), `年轮片段要停在句子结尾，实际结尾：${JSON.stringify(frag.slice(-20))}`);
     assert.ok(frag.length > 120, '年轮是原文线索，别截得比纹理还短');
+    // 纹理正文也一样，不能硬切在半句话上
+    const grainInj = formatInjection({ memories: [{ layer: 'authority', kind: 'grain', id: 'g1',
+      category: 'experience', heat: 60, confidence: 'cite', date: '2026-09-05',
+      text: '棋子说了一句很长的话。' + '后面还有很多内容需要被截断掉才行。'.repeat(20) }] });
+    const gfrag = grainInj.split('] ').slice(1).join('] ');
+    assert.ok(/[。！？…]$/.test(gfrag.trim()), `纹理正文也要停在句子结尾：${JSON.stringify(gfrag.slice(-20))}`);
     // 找不到句号的时候硬切并加省略号，不能无限长
     assert.ok(clipToSentence('没有任何标点的一长串文字'.repeat(20), 60).endsWith('…'));
     // 掐头：开头那半句要去掉
