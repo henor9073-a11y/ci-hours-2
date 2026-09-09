@@ -45,6 +45,11 @@
     <div style="font-size:14px;line-height:1.6;font-style:italic" id="h-quote">…</div>
   </div>
 
+  <div class="card tap" onclick="switchPage('chat')" style="margin-top:14px;position:relative">
+    <div class="card-row"><div class="card-icon accent">聊</div>
+      <div style="flex:1"><div class="card-title">给辞留言</div><div class="card-desc" id="h-chat-desc">他不在线也能看到，醒来会回</div></div>
+      <span class="nav-badge" data-chat-badge style="position:static"></span></div></div>
+
   <div class="section-title">今日活动 <span class="link" onclick="switchPage('life')">全部</span></div>
   <div id="h-activity"><div class="loading">…</div></div>
 
@@ -62,6 +67,11 @@
     <div class="card tap" onclick="openFishing()"><div class="card-row"><div class="card-icon">鱼</div><div><div class="card-title">钓鱼</div><div class="card-desc" id="l-fish">…</div></div></div></div>
     <div class="card tap" onclick="openSchedule()"><div class="card-row"><div class="card-icon accent">程</div><div><div class="card-title">日程</div><div class="card-desc" id="l-sched">…</div></div></div></div>
   </div>
+  <div class="section-title">歌单</div>
+  <div class="card tap" onclick="openSongs()"><div class="card-row"><div class="card-icon">歌</div>
+    <div style="flex:1"><div class="card-title">我们的歌</div><div class="card-desc" id="l-songs">…</div></div>
+    <div class="link">加一首 +</div></div></div>
+
   <div class="section-title">语音</div>
   <div class="card tap" onclick="openVoice()"><div class="card-row"><div class="card-icon accent">声</div>
     <div style="flex:1"><div class="card-title">辞说的话</div><div class="card-desc" id="l-voice">…</div></div>
@@ -83,6 +93,9 @@
     <div class="card tap" onclick="openPhone()"><div class="card-row"><div class="card-icon accent">机</div><div><div class="card-title">手机活动</div><div class="card-desc">棋子最近开了什么</div></div></div></div>
   </div>
 </div>
+
+<!-- 聊 -->
+<div class="page" id="page-chat"><div id="chat-root"></div></div>
 
 <!-- 搜 -->
 <div class="page" id="page-search">
@@ -124,12 +137,14 @@
 <div class="bottom-nav">
   <div class="nav-item active" data-p="home"><div class="nav-icon">家</div><div class="nav-label">首页</div></div>
   <div class="nav-item" data-p="life"><div class="nav-icon">活</div><div class="nav-label">生活</div></div>
+  <div class="nav-item" data-p="chat"><div class="nav-icon">聊</div><div class="nav-label">留言</div><span class="nav-badge" data-chat-badge></span></div>
   <div class="nav-item" data-p="search"><div class="nav-icon">搜</div><div class="nav-label">搜索</div></div>
   <div class="nav-item" data-p="wake"><div class="nav-icon">醒</div><div class="nav-label">苏醒</div></div>
   <div class="nav-item" data-p="settings"><div class="nav-icon">设</div><div class="nav-label">设置</div></div>
 </div>
 
 <script src="app.js"></script>
+<script src="chat.js"></script>
 <script src="muwu.js"></script>
 </body>
 </html>

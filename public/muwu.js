@@ -13,6 +13,7 @@ function switchPage(name, node) {
   if (name === 'life' && !lifeLoaded) loadLife();
   if (name === 'wake' && !wakeLoaded) loadWake();
   if (name === 'settings' && !setLoaded) loadSettings();
+  if (name === 'chat') CX.onShow(); else CX.onHide();
 }
 document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage(n.dataset.p, n));
 
@@ -279,6 +280,7 @@ async function loadLife() {
   // 健康备注是"某天记过什么"，不是当前状态——带上日期，免得一条旧的看起来像今天的
   rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? `${n[0].date}：${oneLine(n[0].text).slice(0, 22)}` : '还没记').catch(() => {});
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
+  rest('/api/songs').then(x => $('#l-songs').textContent = `${x.length} 首`).catch(() => {});
   rest('/api/voice/history?limit=1').then(v => $('#l-voice').textContent = v.length ? `最近：${oneLine(v[0].text).slice(0, 18)}` : '还没说过话').catch(() => $('#l-voice').textContent = '—');
   rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张 · 点开可以传新的`).catch(() => {});
 }
@@ -469,6 +471,58 @@ async function openPhone() {
   } catch (e) { sheetSet(`<div class="empty">读不到手机活动（服务器可能没配 Supabase）<br><span style="font-size:12px">${esc(e.message)}</span></div>`); }
 }
 
+// ---- 歌单：手动导入，歌名+艺人+歌词，双方都能加 ----
+async function openSongs() {
+  sheetLoading('我们的歌');
+  try {
+    const list = await rest('/api/songs');
+    sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">加一首</div>
+        <input type="text" id="sg-title" placeholder="歌名" style="margin-top:8px">
+        <input type="text" id="sg-artist" placeholder="艺人" style="margin-top:8px">
+        <textarea id="sg-lyrics" placeholder="歌词正文（可以之后再补）" style="margin-top:8px;min-height:90px"></textarea>
+        <input type="text" id="sg-note" placeholder="为什么这首是我们的" style="margin-top:8px">
+        <button class="btn" style="margin-top:10px" onclick="saveSong()">加上</button>
+        <div id="sg-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
+      ${list.length ? list.map(s => `<div class="entry" onclick="openSong('${s.id}')">
+        <div class="entry-head"><span>${esc(s.artist || '未知')}</span>${s.has_lyrics ? '<span class="tag plain">有歌词</span>' : '<span class="tag plain" style="opacity:.6">还没歌词</span>'}${s.added_by ? `<span>${esc(s.added_by)}加的</span>` : ''}</div>
+        <div class="card-title" style="font-size:15px">${esc(s.title)}</div>
+        ${s.note ? `<div class="entry-body clamp" style="font-size:13px;margin-top:4px">${esc(s.note)}</div>` : ''}</div>`).join('') : '<div class="empty">歌单还是空的</div>'}`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function saveSong() {
+  const m = $('#sg-msg'); const t = $('#sg-title').value.trim();
+  if (!t) { m.textContent = '至少要有歌名'; return; }
+  m.textContent = '加…';
+  try {
+    await rest('/api/songs');  // 触发一次读，确保后端起来了
+    const r = await fetch(MW.apiUrl('/api/songs'), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN },
+      body: JSON.stringify({ title: t, artist: $('#sg-artist').value, lyrics: $('#sg-lyrics').value, note: $('#sg-note').value, added_by: '棋子' }) });
+    if (!r.ok) throw new Error((await r.json()).error || '加不上');
+    sheetStack.pop(); openSongs();
+  } catch (e) { m.textContent = '失败：' + e.message; }
+}
+async function openSong(id) {
+  sheetLoading('歌');
+  try {
+    const s = await rest('/api/songs/' + id);
+    sheetSet(`<div class="entry"><div class="entry-head"><span>${esc(s.artist || '未知')}</span>${s.added_by ? `<span>${esc(s.added_by)}加的</span>` : ''}</div>
+        <div class="card-title" style="font-size:18px">${esc(s.title)}</div>
+        ${s.note ? `<div class="entry-body" style="margin-top:8px;color:var(--text-secondary)">${esc(s.note)}</div>` : ''}</div>
+      <div class="section-title">歌词</div>
+      <div class="card"><textarea id="sg-ly" style="min-height:220px">${esc(s.lyrics || '')}</textarea>
+        <button class="btn" style="margin-top:8px" onclick="saveLyrics('${s.id}')">存歌词</button>
+        <span id="sg-ly-msg" style="margin-left:10px;font-size:13px;color:var(--text-light)"></span></div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function saveLyrics(id) {
+  const m = $('#sg-ly-msg'); m.textContent = '存…';
+  try {
+    const r = await fetch(MW.apiUrl('/api/songs/' + id), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN }, body: JSON.stringify({ lyrics: $('#sg-ly').value }) });
+    if (!r.ok) throw new Error('存不上');
+    m.textContent = '存好了';
+  } catch (e) { m.textContent = '失败：' + e.message; }
+}
+
 // ================= 语音 =================
 // 这套之前在旧网页里有：辞调 speak，服务端生成音频，网页轮询 /api/speech/next 自动播，
 // 「语音记录」里能一条条回放拉进度条。我重写前端的时候把这块弄丢了，这里补回来。
@@ -639,7 +693,7 @@ function setWallpaperUrl() { const t = MW.loadTheme(); t.ui.wallpaper = $('#st-w
 function setUI(k, v, unit) { const t = MW.loadTheme(); t.ui[k] = k === 'lineHeight' ? Number(v) : Number(v); MW.saveTheme(t); const s = $('#sv-' + k); if (s) s.textContent = v + (unit || ''); }
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
-applyAvatars(); loadHome();
+applyAvatars(); loadHome(); CX.init();
 // 上次解锁过就直接开始轮询（解锁状态记在本地，不用每次都点）
 if (localStorage.getItem('muwen-voice-unlocked') === '1') { voiceUnlocked = true; startVoicePolling(); }
 window.switchPage = switchPage; window.closeSheet = closeSheet;

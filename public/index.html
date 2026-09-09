@@ -68,6 +68,11 @@
     <div class="memory-card wide" onclick="openRings('transcript')"><div class="memory-icon">录</div><div><div class="memory-name">文字记录</div><div class="memory-count">对话存档</div></div></div>
     <div class="memory-card wide" onclick="openNotes()"><div class="memory-icon accent">笔</div><div><div class="memory-name">笔记</div><div class="memory-count">醒来写的东西</div></div></div>
   </div>
+  <div class="section-title">专题</div>
+  <div class="memory-grid">
+    <div class="memory-card wide" onclick="openEmotions()"><div class="memory-icon accent">情</div><div><div class="memory-name">情绪清单</div><div class="memory-count" id="m-emo">有名字有形状的那些</div></div></div>
+    <div class="memory-card wide" onclick="openFirsts()"><div class="memory-icon">初</div><div><div class="memory-name">我们的第一次们</div><div class="memory-count" id="m-firsts">自动筛 + 手动补</div></div></div>
+  </div>
   <div class="section-title" onclick="toggleManage()" style="cursor:pointer">管理 <span class="link" id="mg-t">展开</span></div>
   <div id="m-manage" style="display:none">
     <div class="memory-grid">

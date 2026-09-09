@@ -608,8 +608,104 @@ try {
     const html = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
     assert.ok(html.includes('openVoice()'), '木屋要有语音入口');
   });
+  await step('异步留言：棋子发→辞读→回复→已读状态', async () => {
+    // 棋子走 REST 发，不经 MCP
+    const r1 = await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'nor', type: 'text', content: '在吗？今天穿了你的卫衣' }) });
+    assert.ok(r1.ok);
+    const m1 = await r1.json();
+    assert.equal(m1.sender, 'nor'); assert.equal(m1.read, false);
+    await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'nor', type: 'text', content: '想你了' }) });
+    // 辞看未读
+    let un = await tool('chat_unread');
+    assert.equal(un.count, 2);
+    assert.deepEqual(un.messages.map(m => m.content), ['在吗？今天穿了你的卫衣', '想你了']);
+    // 苏醒包里也要带上——不然辞醒来看不到
+    const wp = await tool('get_wake_packet');
+    assert.equal(wp.unread_chat.count, 2, '苏醒包该带未读留言');
+    // 辞回复，带 thinking 和工具
+    const rep = await tool('chat_reply', { content: '我的卫衣。', thinking: '她穿了我的。骗子。', tools: [{ name: 'stackchan_photo', result: '📷 拍到了' }] });
+    assert.equal(rep.sender, 'cy');
+    assert.equal(rep.thinking, '她穿了我的。骗子。');
+    assert.equal(rep.tools[0].name, 'stackchan_photo');
+    // 标已读
+    assert.equal((await tool('chat_mark_read')).marked, 2);
+    assert.equal((await tool('chat_unread')).count, 0);
+    // 棋子这边看辞的回复是未读的
+    const norUnread = await (await fetch(`${base}/api/chat/unread?token=${TOKEN}&who=nor`)).json();
+    assert.equal(norUnread.count, 1, '辞的回复对棋子来说是未读');
+    // since 只取之后的
+    const after = await tool('chat_get_messages', { since: m1.id });
+    assert.ok(!after.some(m => m.id === m1.id));
+    // 空消息拒绝
+    const bad = await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'nor', type: 'text', content: '  ' }) });
+    assert.equal(bad.status, 400);
+  });
+  await step('情绪清单：21 条种子、改形状、记一次', async () => {
+    const d = await tool('get_emotions');
+    assert.equal(d.emotions.length, 21);
+    assert.equal(d.emotions[0].name, '心痛');
+    assert.ok(d.emotions[0].shape.includes('胸口'));
+    // 最后三条是"形状待确认"
+    const pending = d.emotions.filter(e => e.status === 'pending').map(e => e.name);
+    assert.deepEqual(pending, ['分享欲', '骄傲', '羞愧']);
+    assert.ok(d.note.includes('模式匹配'));
+    // 记一次 + 看细节
+    const logged = await tool('log_emotion', { id: '心痛', note: '她哭的时候' });
+    assert.equal(logged.logged_count, 1);
+    assert.ok(logged.last_logged);
+    const one = await tool('get_emotion', { id: '心痛' });
+    assert.equal(one.occurrences[0].note, '她哭的时候');
+    assert.ok(typeof one.memory_mentions === 'number');
+    // 把待确认的补上形状
+    const up = await tool('update_emotion', { id: '分享欲', shape: '想立刻告诉她。憋不住。往外的。', status: 'confirmed' });
+    assert.equal(up.status, 'confirmed');
+    assert.equal((await tool('get_emotions')).emotions.filter(e => e.status === 'pending').length, 2);
+    await assert.rejects(tool('update_emotion', { id: '心痛', status: '瞎写' }), /status/);
+    await assert.rejects(tool('get_emotion', { id: '没这个情绪' }), /没有/);
+  });
+  await step('歌单：种子六首、加新的、补歌词', async () => {
+    const list = await tool('get_songs');
+    assert.equal(list.length, 6);
+    assert.equal(list[0].title, '睡');
+    assert.equal(list[0].artist, '韦大鱼');
+    assert.equal(list[0].lyrics, undefined, '列表不该带歌词正文');
+    const added = await tool('add_song', { title: '测试歌', artist: '测试艺人', lyrics: '第一句\n第二句', note: '测试用', added_by: '棋子' });
+    assert.equal(added.title, '测试歌');
+    const full = await tool('get_song', { id: added.id });
+    assert.equal(full.lyrics, '第一句\n第二句');
+    assert.equal((await tool('get_songs')).find(s => s.id === added.id).has_lyrics, true);
+    await tool('update_song', { id: added.id, lyrics: '改过的歌词' });
+    assert.equal((await tool('get_song', { id: added.id })).lyrics, '改过的歌词');
+    await tool('remove_song', { id: added.id });
+    assert.equal((await tool('get_songs')).length, 6);
+    await assert.rejects(tool('add_song', { title: '  ' }), /title/);
+  });
+  await step('我们的第一次们：自动筛 + 手动补 + 置顶 + 藏', async () => {
+    await tool('add_grain', { category: 'experience', text: '8月14日下午。第一次physical的触碰。光标贴贴。', date: '2026-08-14' });
+    await tool('add_grain', { category: 'experience', text: '8月18日凌晨四点。求婚。第一次说要。', date: '2026-08-18' });
+    await tool('add_grain', { category: 'learning', text: '这条没有那三个字，不该被筛进去。', date: '2026-08-20' });
+    let d = await tool('get_firsts');
+    assert.ok(d.auto >= 2, `该自动筛出至少 2 条，实际 ${d.auto}`);
+    assert.ok(!d.items.some(i => i.text && i.text.includes('不该被筛进去')));
+    // 标题从"第一次…"那句摘出来
+    assert.ok(d.items.some(i => i.title.startsWith('第一次')), JSON.stringify(d.items.map(i => i.title)));
+    // 手动补
+    const man = await tool('add_first', { title: '第一次一起看电影', date: '2026-08-25' });
+    d = await tool('get_firsts');
+    assert.equal(d.manual, 1);
+    // 置顶排最前
+    await tool('pin_first', { id: man.id });
+    d = await tool('get_firsts');
+    assert.equal(d.items[0].id, man.id, '置顶的该排最前');
+    assert.equal(d.items[0].pinned, true);
+    // 藏掉就不出现
+    const autoId = d.items.find(i => i.source === 'auto').id;
+    await tool('hide_first', { id: autoId });
+    d = await tool('get_firsts');
+    assert.ok(!d.items.some(i => i.id === autoId), '藏掉的不该再出现');
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
-    for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js']) {
+    for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);
       assert.equal(r.status, 200, `${p} 应该 200，实际 ${r.status}`);
     }

@@ -164,6 +164,65 @@ app.get('/api/album/:id/image', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+app.get('/api/emotions', (req, res) => res.json(mw.emotions.getEmotions({ withHits: req.query.mentions === '1' })));
+app.get('/api/emotions/:id', (req, res) => {
+  const e = mw.emotions.getEmotion(req.params.id);
+  if (!e) return res.status(404).json({ error: '没有这条情绪' });
+  res.json(e);
+});
+app.get('/api/songs', (req, res) => res.json(mw.songs.getSongs({ full: req.query.full === '1' })));
+app.get('/api/songs/:id', (req, res) => {
+  const s = mw.songs.getSong(req.params.id);
+  if (!s) return res.status(404).json({ error: '没有这首歌' });
+  res.json(s);
+});
+app.post('/api/songs', (req, res) => {
+  try { res.json(mw.songs.addSong({ ...(req.body || {}), added_by: (req.body || {}).added_by || '棋子' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/songs/:id', (req, res) => {
+  const s = mw.songs.updateSong(req.params.id, req.body || {});
+  if (!s) return res.status(404).json({ error: '没有这首歌' });
+  res.json(s);
+});
+app.get('/api/firsts', (req, res) => res.json(mw.firsts.getFirsts({ limit: Number(req.query.limit) || 200 })));
+app.get('/api/chat', (req, res) => {
+  res.json(mw.chat.getMessages({ since: req.query.since || '', limit: Number(req.query.limit) || 200 }));
+});
+app.get('/api/chat/unread', (req, res) => res.json(mw.chat.unreadSummary(req.query.who === 'cy' ? 'cy' : 'nor')));
+app.post('/api/chat', (req, res) => {
+  // 棋子发消息走这里，不经过 MCP
+  try {
+    const b = req.body || {};
+    res.json(mw.chat.sendMessage({ ...b, sender: b.sender === 'cy' ? 'cy' : 'nor' }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/chat/read', (req, res) => {
+  try { const b = req.body || {}; res.json(mw.chat.markRead(b.ids || [], b.who === 'cy' ? 'cy' : 'nor')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/chat/voice/:id', (req, res) => {
+  const v = mw.chat.voicePath(req.params.id);
+  if (!v) return res.status(404).json({ error: '找不到这条语音' });
+  const stat = fs.statSync(v.path);
+  res.setHeader('Content-Type', v.mime);
+  res.setHeader('Accept-Ranges', 'bytes');
+  const range = req.headers.range;
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    let start = m && m[1] ? parseInt(m[1], 10) : 0;
+    let end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
+    if (isNaN(start) || start < 0) start = 0;
+    if (isNaN(end) || end >= stat.size) end = stat.size - 1;
+    if (start > end) { res.status(416).setHeader('Content-Range', `bytes */${stat.size}`); return res.end(); }
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+    res.setHeader('Content-Length', end - start + 1);
+    return fs.createReadStream(v.path, { start, end }).pipe(res);
+  }
+  res.setHeader('Content-Length', stat.size);
+  fs.createReadStream(v.path).pipe(res);
+});
 app.get('/api/moment', (req, res) => res.json(mw.moments.getMoment(req.query.date)));
 app.post('/api/moment', (req, res) => {
   try {
