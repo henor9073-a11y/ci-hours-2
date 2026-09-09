@@ -412,6 +412,49 @@ try {
     const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty });
     assert.deepEqual(none.memories, []);
   });
+  await step('年轮索引：新存自动进索引、推关键词、语义兜底只在关键词全空时跑', async () => {
+    const { autoRecall } = await import('../lib/muwen/recall.js');
+    const ringIndex = await import('../lib/muwen/ring-index.js');
+
+    // 新存一条年轮 → 自动记进索引，关键词先空着等推上来
+    const ring = await tool('add_ring', { window_name: '索引测试窗口', date: '2026-09-01', title: '关于渐近自由的胡扯', content: '这条是给年轮索引测试用的，内容跟记忆库里别的东西都不沾边。' });
+    assert.ok(ringIndex.pendingIds(50).includes(ring.id), '新存的年轮应该在待补关键词列表里');
+
+    // 推关键词：已有条目补上，缺 keywords 的推送不该把已有关键词洗掉
+    const merged = ringIndex.merge({ [ring.id]: { date: '2026-09-01', title: '关于渐近自由的胡扯', keywords: ['渐近自由', '胡扯', '索引测试'] } });
+    assert.equal(merged.updated, 1);
+    assert.ok(!ringIndex.pendingIds(50).includes(ring.id));
+    ringIndex.merge({ [ring.id]: { title: '关于渐近自由的胡扯' } });
+    assert.deepEqual(ringIndex.buildIndex().text.match(/渐近自由、胡扯、索引测试/g).length, 1, '没带 keywords 的推送不该洗掉已有关键词');
+
+    // 索引按 id 排序（前缀稳定才有缓存命中）
+    const idx = ringIndex.buildIndex();
+    assert.ok(idx.text.startsWith('原始记录索引'));
+    const ids = idx.text.split('\n').slice(1).map(l => l.split(' ')[0]);
+    assert.deepEqual(ids, [...ids].sort(), '年轮索引必须按 id 排序');
+
+    // 纹理、语义、年轮关键词全空 → 才轮到年轮语义层，结果算 last_resort 不算权威
+    const emptySemantic = async () => ({ picks: [], none: true });
+    const pick = async () => ({ picks: [{ id: ring.id, reason: '她像是在问那次胡扯' }], none: false, index_count: idx.count, model: 'stub' });
+    const r = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick });
+    assert.ok(r.layers_used.includes('rings-semantic'), `应该触发年轮语义层：${JSON.stringify(r.layers_used)}`);
+    assert.equal(r.memories[0].layer, 'last_resort');
+    assert.equal(r.memories[0].id, ring.id);
+    assert.equal(r.memories[0].reason, '她像是在问那次胡扯');
+    assert.ok(r.ring_semantic.index_count >= 1);
+
+    // 关键词在年轮里搜得到 → 不跑语义层，省钱
+    let called = false;
+    const spy = async () => { called = true; return { picks: [], none: true }; };
+    await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy });
+    assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
+
+    // 语义层报错 → 静默降级，不炸整个召回
+    const boom = async () => { throw new Error('模型超时'); };
+    const degraded = await autoRecall('潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom });
+    assert.deepEqual(degraded.memories, []);
+    assert.ok((degraded.why || '').includes('年轮语义层失败'));
+  });
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;
     const d1 = await tool('dream');

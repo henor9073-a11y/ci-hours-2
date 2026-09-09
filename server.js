@@ -186,6 +186,18 @@ app.post('/api/recall', async (req, res) => {
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
 app.get('/api/migration', (_, res) => res.json(mw.migrate.migrationReport() || {}));
+// ---- 年轮索引：召回翻原始记录用的轻索引（标题+日期+关键词）----
+// 关键词由 Mac 上的 build_ring_index.py 生成再推上来；服务器自己只在新存年轮时
+// 记一条空关键词的占位，所以 pending 是"该补关键词的 id 列表"。
+app.get('/api/ring-index', (req, res) => {
+  const out = mw.ringIndex.stats();
+  if (req.query.pending) out.pending = mw.ringIndex.pendingIds(Number(req.query.pending) || 500);
+  res.json(out);
+});
+app.post('/api/ring-index', (req, res) => {
+  try { res.json(mw.ringIndex.merge((req.body || {}).entries)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 // ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
 app.get('/api/transcripts', (req, res) => {
   const q = (req.query.q || '').trim();
