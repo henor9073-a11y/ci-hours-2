@@ -449,6 +449,18 @@ try {
     await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy });
     assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
 
+    // 长的年轮靠零散双字刷分不该挡住索引层。这是实测踩到的：十几万字的窗口原文
+    // 原始分能盖过真正记着这件事的短记录，然后把索引层挡在外面。除权 + 过线才算命中。
+    // 十万字的窗口转储，里面确实出现过一次这句话，但整段并不是在说这件事
+    const noise = '棋子和辞聊了很多别的事情，天气、作业、狗、吃饭、睡觉。'.repeat(4000)
+      + '棋子和辞在这段记录里聊了非常多的事情，';
+    const long = await tool('add_ring', { window_name: '很长的噪音窗口', date: '2026-09-02', title: '很长的噪音窗口原文', content: noise });
+    let ringModelCalled = false;
+    const pick2 = async () => { ringModelCalled = true; return { picks: [{ id: ring.id, reason: '索引层挑的' }], none: false, index_count: 1, model: 'stub' }; };
+    const noisy = await autoRecall('棋子和辞在这段记录里聊了非常多的事情', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2 });
+    assert.equal(ringModelCalled, true, '长年轮刷出来的高分不该挡住索引层');
+    assert.ok(!noisy.memories.some(m => m.id === long.id), `除权后没过线的长年轮不该返回：${JSON.stringify(noisy.memories.map(m => m.id))}`);
+
     // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行，并且给它留出位置。
     // 这是这一层的关键：库里纹理一多，中文按字匹配几乎总能搜出点沾边的，
     // 用"必须一条都没搜到"当门槛的话年轮层等于永远不触发。
