@@ -361,21 +361,80 @@ async function openFamily(name) {
     sheetSet(gs.length ? gs.map(g => grainCard(g)).join('') : '<div class="empty">这个家族是空的</div>');
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
+// 对话记录浏览器：关键词逐处定位（像微信搜索）+ 按日期翻
+let ringMode = 'date', ringQuery = '';
 async function openRings(sourceType) {
-  sheetLoading(sourceType === 'transcript' ? '文字记录' : '年轮');
-  try {
-    const args = { limit: 80 }; if (sourceType) args.source_type = sourceType;
-    const rs = await mcp('search_rings', args);
-    sheetSet(rs.length ? rs.map(r => ringCard(r)).join('') : '<div class="empty">还没有记录</div>');
-  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+  sheetLoading('对话记录');
+  ringSource = sourceType || '';
+  renderRingBrowser();
 }
-async function openRing(id) {
-  sheetLoading('年轮原文');
+let ringSource = '';
+function renderRingBrowser() {
+  sheetSet(`<div class="search-box" style="margin-top:4px">
+      <span style="color:var(--text-light)">🔍</span>
+      <input id="rg-q" type="search" placeholder="搜一个词，看它出现过的每一处…" value="${esc(ringQuery)}" enterkeyhint="search">
+    </div>
+    <div class="chip-row" style="margin-top:10px">
+      <div class="chip${ringMode === 'date' ? ' on' : ''}" onclick="setRingMode('date')">按日期翻</div>
+      <div class="chip${ringMode === 'hits' ? ' on' : ''}" onclick="setRingMode('hits')">关键词定位</div>
+    </div>
+    <div id="rg-body"><div class="loading">…</div></div>`);
+  const inp = $('#rg-q');
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { ringQuery = e.target.value.trim(); ringMode = ringQuery ? 'hits' : 'date'; renderRingBrowser(); } });
+  loadRingBody();
+}
+function setRingMode(m) { ringMode = m; renderRingBrowser(); }
+async function loadRingBody() {
+  const box = $('#rg-body'); if (!box) return;
+  try {
+    if (ringMode === 'hits' && ringQuery) {
+      const r = await mcp('search_ring_occurrences', { query: ringQuery, limit: 80 });
+      if (!r.hits.length) { box.innerHTML = '<div class="empty">这个词在原始记录里没出现过</div>'; return; }
+      const byRing = {};
+      r.hits.forEach(h => (byRing[h.ring_id] = byRing[h.ring_id] || []).push(h));
+      box.innerHTML = `<div class="section-title">共 ${r.total} 处${r.total > r.shown ? `，显示前 ${r.shown} 处` : ''}</div>` +
+        Object.values(byRing).map(hs => {
+          const h0 = hs[0];
+          return `<div class="entry">
+            <div class="entry-head"><span>${esc(h0.date || '')}</span><span>${esc(h0.window_name || h0.title || '')}</span><span class="tag plain">${hs.length} 处</span></div>
+            ${hs.map(h => `<div class="hit" onclick="openRing('${h.ring_id}', ${h.offset}, '${esc(ringQuery)}')">
+              ${esc(h.before)}<mark>${esc(h.match)}</mark>${esc(h.after)}</div>`).join('')}
+          </div>`;
+        }).join('');
+    } else {
+      const args = { limit: 400 }; if (ringSource) args.source_type = ringSource;
+      const days = await mcp('rings_by_date', args);
+      box.innerHTML = days.length ? days.map(d => `<div class="section-title">${esc(d.date)} <span style="color:var(--text-light);font-weight:400">${d.items.length} 条</span></div>
+        ${d.items.map(i => `<div class="entry" onclick="openRing('${i.id}')">
+          <div class="entry-head"><span>${esc(i.window_name || i.title || '未命名')}</span><span>${i.length} 字</span>${i.source_type === 'daily_summary' ? '<span class="tag plain">每日总结</span>' : ''}</div></div>`).join('')}`).join('')
+        : '<div class="empty">还没有记录</div>';
+    }
+  } catch (e) { box.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+async function openRing(id, offset, kw) {
+  sheetLoading('原文');
   try {
     const r = await mcp('get_ring', { id });
-    sheetSet(`<div class="entry"><div class="entry-head"><span>${esc(r.date)}</span><span>${esc(r.window_name || '')}</span><span>${(r.content || '').length} 字</span></div>
+    const content = r.content || '';
+    let body;
+    if (kw) {
+      // 把所有出现处都高亮；定位的那一处单独标出来，等下滚过去
+      const re = new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      let last = 0, out = '', m;
+      while ((m = re.exec(content)) !== null) {
+        out += esc(content.slice(last, m.index));
+        const isTarget = offset != null && Math.abs(m.index - offset) < 2;
+        out += `<mark${isTarget ? ' id="rg-target" class="target"' : ''}>${esc(m[0])}</mark>`;
+        last = m.index + m[0].length;
+      }
+      out += esc(content.slice(last));
+      body = out;
+    } else body = esc(content);
+    sheetSet(`<div class="entry"><div class="entry-head"><span>${esc(r.date)}</span><span>${esc(r.window_name || '')}</span><span>${content.length} 字</span></div>
       ${r.title ? `<div class="card-title" style="margin-bottom:6px">${esc(r.title)}</div>` : ''}
-      <div class="entry-body">${esc(r.content)}</div></div>`);
+      <div class="entry-body">${body}</div></div>`);
+    const t = document.getElementById('rg-target');
+    if (t) setTimeout(() => t.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function openDiary() {

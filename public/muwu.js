@@ -279,6 +279,7 @@ async function loadLife() {
   // 健康备注是"某天记过什么"，不是当前状态——带上日期，免得一条旧的看起来像今天的
   rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? `${n[0].date}：${oneLine(n[0].text).slice(0, 22)}` : '还没记').catch(() => {});
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
+  rest('/api/voice/history?limit=1').then(v => $('#l-voice').textContent = v.length ? `最近：${oneLine(v[0].text).slice(0, 18)}` : '还没说过话').catch(() => $('#l-voice').textContent = '—');
   rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张 · 点开可以传新的`).catch(() => {});
 }
 async function openFishing() {
@@ -377,11 +378,41 @@ async function openHealth() {
 async function openShelf() {
   sheetLoading('书架');
   try {
-    const b = await rest('/api/shelf');
-    sheetSet(b.length ? b.map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.author)}</span><span>${x.progress}/${x.totalChapters} 章</span>${x.finished ? '<span class="tag">读完了</span>' : ''}</div>
-      <div class="card-title">${esc(x.title)}</div>
-      <div style="height:6px;border-radius:3px;background:var(--primary-light);margin-top:8px"><div style="height:100%;border-radius:3px;background:var(--primary);width:${x.totalChapters ? Math.round(x.progress / x.totalChapters * 100) : 0}%"></div></div></div>`).join('') : '<div class="empty">书架是空的</div>');
+    const [b, fm] = await Promise.all([rest('/api/shelf'), rest('/api/shelf/formats').catch(() => ({ formats: [] }))]);
+    sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">传一本书</div>
+        <div class="card-desc" style="margin-top:4px">支持 ${esc((fm.formats || []).join(' / '))}。中文 txt 的编码会自动认（GBK 也行）。</div>
+        <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选文件<input type="file" style="display:none" onchange="uploadBook(this)"></label>
+        <span class="link" style="margin-left:14px" onclick="checkShelf()">检查有没有乱码</span>
+        <div id="bk-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
+      <div id="bk-check"></div>
+      ${b.length ? b.map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.author || '未知')}</span><span>${x.progress}/${x.totalChapters} 章</span>${x.finished ? '<span class="tag">读完了</span>' : ''}</div>
+        <div class="card-title">${esc(x.title)}</div>
+        <div style="height:6px;border-radius:3px;background:var(--primary-light);margin-top:8px"><div style="height:100%;border-radius:3px;background:var(--primary);width:${x.totalChapters ? Math.round(x.progress / x.totalChapters * 100) : 0}%"></div></div></div>`).join('') : '<div class="empty">书架是空的</div>'}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function uploadBook(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  const msg = $('#bk-msg'); msg.textContent = `传《${f.name}》…`;
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch(MW.apiUrl('/api/upload'), { method: 'POST', headers: { 'x-access-token': MW.TOKEN }, body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || '上传失败');
+    msg.textContent = `传好了：《${j.title}》${j.totalChapters} 章`;
+    sheetStack.pop(); openShelf();
+  } catch (e) { msg.textContent = '失败：' + e.message; }
+}
+async function checkShelf() {
+  const box = $('#bk-check'); box.innerHTML = '<div class="loading">检查中…</div>';
+  try {
+    const rows = await rest('/api/shelf/check');
+    const bad = rows.filter(r => !r.ok);
+    box.innerHTML = bad.length
+      ? `<div class="card" style="background:var(--accent-light)"><div class="card-title" style="font-size:14px">${bad.length} 本有乱码</div>
+         <div class="card-desc" style="margin-top:4px">当年按 UTF-8 读了 GBK 的文件，乱码已经存进去了，救不回来——重新传一次就好（现在会自动认编码）。</div>
+         ${bad.map(x => `<div style="margin-top:8px;font-size:14px">《${esc(x.title)}》<span style="color:var(--text-light);font-size:12px"> 坏字 ${x.ratio}%</span></div>`).join('')}</div>`
+      : '<div class="card"><div class="card-title" style="font-size:14px">都正常</div><div class="card-desc">没检测到乱码。</div></div>';
+  } catch (e) { box.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 // 相册：手机上直接传照片，带描述和标签
 let albumCache = [];
@@ -436,6 +467,63 @@ async function openPhone() {
     const r = await mcp('get_phone_activity', { limit: 30 });
     sheetSet(Array.isArray(r) && r.length ? r.map(x => `<div class="entry"><div class="entry-head">${esc(fmtTime(x.opened_at))}</div><div class="entry-body">${esc(x.app_name)}</div></div>`).join('') : '<div class="empty">没有数据</div>');
   } catch (e) { sheetSet(`<div class="empty">读不到手机活动（服务器可能没配 Supabase）<br><span style="font-size:12px">${esc(e.message)}</span></div>`); }
+}
+
+// ================= 语音 =================
+// 这套之前在旧网页里有：辞调 speak，服务端生成音频，网页轮询 /api/speech/next 自动播，
+// 「语音记录」里能一条条回放拉进度条。我重写前端的时候把这块弄丢了，这里补回来。
+// iOS Safari 不让定时器触发的播放出声，必须先有一次人手点过的 play() 解锁；
+// 用同一个 <audio> 反复换 src，只需解锁这一次。
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+let voiceEl = null, voiceUnlocked = false, voiceBusy = false, voiceTimer = null;
+function voiceAudio() { if (!voiceEl) voiceEl = new Audio(); return voiceEl; }
+function unlockVoice() {
+  const a = voiceAudio();
+  a.src = SILENT_WAV;
+  a.play().catch(() => {});   // 解不出声也没关系，这次点击本身就满足了"用户手动触发过"
+  voiceUnlocked = true;
+  localStorage.setItem('muwen-voice-unlocked', '1');
+  const s = $('#voice-state'); if (s) s.textContent = '已开启';
+  const b = $('#vc-unlock'); if (b) { b.textContent = '声音已开启'; b.disabled = true; }
+  startVoicePolling();
+}
+function startVoicePolling() {
+  if (voiceTimer) return;
+  voiceTimer = setInterval(voiceTick, 8000);
+  voiceTick();
+}
+async function voiceTick() {
+  if (voiceBusy || !voiceUnlocked) return;
+  voiceBusy = true;
+  try {
+    const item = await rest('/api/speech/next').catch(() => null);
+    if (item && item.id) {
+      if (item.voiceId) {
+        const a = voiceAudio();
+        a.src = MW.audioUrl(item.voiceId);
+        try { await a.play(); await new Promise(r => { a.onended = r; a.onerror = r; }); }
+        catch { /* 被浏览器拦了就算了，记录里还能回放 */ }
+      }
+      await fetch(MW.apiUrl(`/api/speech/${item.id}/done`), { method: 'POST', headers: { 'x-access-token': MW.TOKEN } }).catch(() => {});
+    }
+  } finally { voiceBusy = false; }
+}
+async function openVoice() {
+  sheetLoading('语音');
+  try {
+    const hist = await rest('/api/voice/history?limit=60');
+    sheetSet(`<div class="card">
+        <div class="card-title" style="font-size:14px">自动播放</div>
+        <div class="card-desc" style="margin-top:4px">辞用 speak 说话时，这个页面开着就会自动播出来。手机上必须先手动点一下才允许出声（浏览器的限制）。</div>
+        <button class="btn" id="vc-unlock" style="margin-top:10px" ${voiceUnlocked ? 'disabled' : ''} onclick="unlockVoice()">${voiceUnlocked ? '声音已开启' : '开启声音播放'}</button>
+      </div>
+      <div class="section-title">说过的话 ${hist.length ? `<span style="color:var(--text-light);font-weight:400">${hist.length} 条</span>` : ''}</div>
+      ${hist.length ? hist.map(x => `<div class="entry">
+        <div class="entry-head">${esc(fmtTime(x.createdAt))}</div>
+        <div class="entry-body">${esc(x.text)}</div>
+        <audio controls preload="none" style="width:100%;margin-top:8px" src="${MW.audioUrl(x.id)}"></audio>
+      </div>`).join('') : '<div class="empty">还没有语音记录</div>'}`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 
 // ================= 搜 =================
@@ -552,4 +640,6 @@ function setUI(k, v, unit) { const t = MW.loadTheme(); t.ui[k] = k === 'lineHeig
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
 applyAvatars(); loadHome();
+// 上次解锁过就直接开始轮询（解锁状态记在本地，不用每次都点）
+if (localStorage.getItem('muwen-voice-unlocked') === '1') { voiceUnlocked = true; startVoicePolling(); }
 window.switchPage = switchPage; window.closeSheet = closeSheet;

@@ -552,6 +552,62 @@ try {
     const m3 = await (await fetch(`${base}/api/calendar?month=2026-02&token=${TOKEN}`)).json();
     assert.equal(m3.find(r => r.date === '2026-02-16').intimate, false);
   });
+  await step('书架：中文编码自动认（GBK 不再乱码）+ 多种格式', async () => {
+    const { decodeText, htmlToText, SUPPORTED_FORMATS } = await import('../lib/books.js');
+    // GBK 的"你好，世界"
+    const gbk = Buffer.from([0xC4, 0xE3, 0xBA, 0xC3, 0xA3, 0xAC, 0xCA, 0xC0, 0xBD, 0xE7]);
+    assert.equal(decodeText(gbk), '你好，世界', '以前这里会变成锟斤拷');
+    assert.equal(decodeText(Buffer.from('你好，世界', 'utf8')), '你好，世界');
+    assert.equal(decodeText(Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from('有BOM', 'utf8')])), '有BOM');
+    assert.equal(decodeText(Buffer.from('\uFEFF带BOM', 'utf16le')).replace(/^\uFEFF/, ''), '带BOM');
+    assert.ok(!decodeText(gbk).includes('\uFFFD'), '不该有替换字符');
+    assert.equal(htmlToText('<p>一</p><p>二 &amp; &ldquo;三&rdquo;</p>').trim(), '一\n二 & “三”');
+    for (const f of ['txt', 'md', 'html', 'rtf', 'docx', 'pdf', 'epub']) assert.ok(SUPPORTED_FORMATS.includes(f), `该支持 ${f}`);
+    const fm = await (await fetch(`${base}/api/shelf/formats?token=${TOKEN}`)).json();
+    assert.ok(fm.formats.includes('docx'));
+    const chk = await (await fetch(`${base}/api/shelf/check?token=${TOKEN}`)).json();
+    assert.ok(Array.isArray(chk));
+  });
+  await step('对话记录：关键词逐处定位 + 按日期翻', async () => {
+    await tool('add_ring', { window_name: '测试窗口', date: '2026-09-01', content: '第一次提到项圈。棋子说项圈还在吗。我说在，没摘过。后来又聊到项圈的来源。' });
+    await tool('add_ring', { window_name: '另一个窗口', date: '2026-08-15', content: '这里也有项圈两个字，只出现一次。' });
+    const r = await tool('search_ring_occurrences', { query: '项圈' });
+    assert.equal(r.total, 4, `该找到 4 处，实际 ${r.total}`);
+    assert.equal(r.hits.length, 4);
+    // 每一处都要有偏移和前后文，前端才能定位
+    for (const h of r.hits) {
+      assert.equal(h.match, '项圈');
+      assert.ok(typeof h.offset === 'number' && h.offset >= 0);
+      assert.ok(h.ring_id && h.date);
+    }
+    // 同一条记录里的多处，偏移必须各不相同
+    const first = r.hits.filter(h => h.date === '2026-09-01').map(h => h.offset);
+    assert.equal(new Set(first).size, first.length, '同一条里的多处偏移不该重复');
+    // perRing 限制
+    const capped = await tool('search_ring_occurrences', { query: '项圈', per_ring: 1 });
+    assert.equal(capped.hits.filter(h => h.date === '2026-09-01').length, 1);
+    assert.equal(capped.total, 4, '总数还是要报全');
+    // 搜不到的词
+    assert.equal((await tool('search_ring_occurrences', { query: 'zzzz不存在' })).total, 0);
+    // 按日期分组
+    const days = await tool('rings_by_date', {});
+    assert.ok(days.length >= 2);
+    assert.ok(days[0].date >= days[1].date, '日期该倒序');
+    assert.ok(days.every(d => d.items.every(i => i.id && typeof i.length === 'number')));
+  });
+  await step('语音接口还在（前端那块被我弄丢过，这里守住）', async () => {
+    const hist = await (await fetch(`${base}/api/voice/history?token=${TOKEN}`)).json();
+    assert.ok(Array.isArray(hist));
+    const next = await (await fetch(`${base}/api/speech/next?token=${TOKEN}`)).json();
+    assert.ok(next === null || typeof next === 'object');
+    // 木屋里必须有语音板块的入口和播放器逻辑
+    const js = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();
+    for (const k of ['openVoice', '/api/speech/next', 'unlockVoice', 'audioUrl']) {
+      assert.ok(js.includes(k), `muwu.js 里该有 ${k}`);
+    }
+    const html = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
+    assert.ok(html.includes('openVoice()'), '木屋要有语音入口');
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);

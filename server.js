@@ -91,6 +91,14 @@ app.post('/api/settings', (req, res) => {
 });
 // ---- 书库 ----
 app.get('/api/shelf', (_, res) => res.json(getShelf()));
+app.get('/api/shelf/check', async (_, res) => {
+  try { const { checkShelfEncoding } = await import('./lib/books.js'); res.json(checkShelfEncoding()); }
+  catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+app.get('/api/shelf/formats', async (_, res) => {
+  const { SUPPORTED_FORMATS } = await import('./lib/books.js');
+  res.json({ formats: SUPPORTED_FORMATS });
+});
 app.get('/api/search-gutenberg', async (req, res) => {
   try {
     res.json(await searchGutenberg(req.query.q || ''));

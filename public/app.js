@@ -31,6 +31,8 @@
     return r.json();
   }
   const imageUrl = id => url(`/api/album/${id}/image`);
+  const audioUrl = id => url(`/api/voice/${id}/audio`);
+  const apiUrl = p => url(p);
 
   // ---- 日期 / 月相 ----
   const TZ = 'Australia/Melbourne';
@@ -144,5 +146,5 @@
     return j;
   }
 
-  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64 };
+  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64, audioUrl, apiUrl };
 })(window);

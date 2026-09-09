@@ -135,6 +135,11 @@ body::before {
 .heat.cite { background: var(--accent-light); color: var(--accent); font-weight: 600; }
 .heat.reference { opacity: .6; }
 
+mark { background: var(--accent-light); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+mark.target { background: var(--accent); color: #fff; }
+.hit { font-size: 13px; line-height: 1.7; color: var(--text-secondary); padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer; }
+.hit:first-of-type { border-top: none; }
+
 .empty { color: var(--text-light); font-size: 14px; padding: 28px 0; text-align: center; }
 .loading { color: var(--text-light); font-size: 13px; padding: 20px 0; text-align: center; }
 .err { color: #C05B5B; font-size: 13px; padding: 14px; background: var(--card); border-radius: var(--radius-sm); margin-top: 10px; }
