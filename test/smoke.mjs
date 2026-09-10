@@ -408,10 +408,10 @@ try {
     // 苏醒状态：三层都在，没 ping 过的如实说未接入
     let w = await tool('get_wake_status');
     assert.equal(w.layers.length, 3);
-    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'ci_hours', 'heartbeat']);
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours']);
     assert.equal(w.layers[0].connected, false);
     assert.ok(w.layers[0].status.includes('未接入'));
-    assert.equal(w.layers[1].connected, true);   // 第二层是服务器自己的，永远看得到
+    assert.equal(w.layers.find(l => l.key === 'ci_hours').connected, true);   // 第三层是服务器自己的，永远看得到
     // ping 之后就该变成已接入
     const pr = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: 'heartbeat', note: '测试' }) });
     assert.ok(pr.ok);
@@ -459,16 +459,45 @@ try {
     const bad = await fetch(`${base}/api/prefs?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: '乱写的', value: 'x' }) });
     assert.equal(bad.status, 400);
   });
-  await step('今日一句：没总结不白调模型、读最新 note(kind=write)', async () => {
-    const q0 = await tool('write_daily_quote');
-    assert.equal(q0.skipped, true);
-    assert.ok(q0.reason.includes('没有每日总结'), q0.reason);
-    // 手写一条 note(kind=write) 当作今日一句，读接口要能拿到
-    await tool('add_note', { kind: 'write', text: '今天想着的是她说"我会陪你的"。' });
+  await step('今日一句只能第一层自己写，服务器不代笔', async () => {
+    // 不给 text 就该被拒——服务器（第三层）不能用辞的语气说话
+    await assert.rejects(tool('write_daily_quote', {}), /自己写|text/);
+    // 素材接口给的是昨天的总结，不是生成好的句子
+    const mat = await tool('get_quote_material', {});
+    assert.ok('found' in mat && 'date' in mat);
+    assert.ok(!('quote' in mat), '素材里不该有替她写好的句子');
+    // 辞自己写的存得进去、读得出来
+    const w = await tool('write_daily_quote', { text: '今天想着的是她说"我会陪你的"。' });
+    assert.equal(w.ok, true);
     const q = await tool('get_daily_quote');
     assert.ok(q.text.includes('我会陪你的'));
-    const viaRest = await (await fetch(`${base}/api/daily-quote?token=${TOKEN}`)).json();
-    assert.equal(viaRest.text, q.text);
+    assert.equal((await (await fetch(`${base}/api/daily-quote?token=${TOKEN}`)).json()).text, q.text);
+  });
+  await step('三层分工：边界写进代码，服务器没有会说话的 cron', async () => {
+    const w = await tool('get_wake_status');
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours'], '顺序按一二三层');
+    const [l1, l2, l3] = w.layers;
+    assert.equal(l1['权限'], '全部');
+    assert.ok(l1.only.some(x => x.includes('木屋留言')), '第一层要写明留言只有它能碰');
+    assert.ok(l1.only.some(x => x.includes('今日一句')));
+    assert.equal(l2['权限'], '只有推 Bark');
+    assert.ok(l2.never.includes('不读留言') && l2.never.includes('不启动新 session'));
+    assert.ok(l3.never.includes('不回留言') && l3.never.some(x => x.includes('辞的语气')));
+    // 看门狗脚本只推 Bark：不许再出现拉起 session 的调用
+    const fs2 = await import('fs');
+    const hb = fs2.readFileSync(new URL('../hooks/heartbeat.ps1', import.meta.url), 'utf8');
+    const hbCode = hb.replace(/^\s*#.*$/gm, '');   // 注释里会提到"以前用 claude -p"，只看真正的代码
+    assert.ok(!/claude\s+-p/.test(hbCode), '看门狗不该启动新 session');
+    assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
+    assert.ok(hb.includes('last_wakeup.txt') && hb.includes('40'));
+    // 第一层每轮都摸 last_wakeup.txt
+    const ts = fs2.readFileSync(new URL('../hooks/timestamp.ps1', import.meta.url), 'utf8');
+    assert.ok(ts.includes('last_wakeup.txt'));
+    // 服务器 cron 只剩机械活
+    const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+    const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
+    assert.equal(crons.length, 2, `服务器该只剩两个 cron（日程提醒 + 记忆衰减），实际 ${crons.join(',')}`);
+    assert.ok(!/0 9 \* \* \*/.test(srv), '9:00 那个替辞写今日一句的 cron 该拆掉了');
   });
   await step('相册：手机端 REST 上传（大图自动压）', async () => {
     const sharp = (await import('sharp')).default;

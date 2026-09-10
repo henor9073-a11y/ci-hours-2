@@ -546,14 +546,10 @@ cron.schedule('0 4 * * *', () => {
   } catch (e) { console.error('[muwen] 梦境任务失败：', e.message || e); }
 }, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
 
-// 每天墨尔本 9:00 写一条"今日一句"：读昨天的每日总结，写一句话存成 note(kind=write)。
-// 放在 8:00 的自动总结之后，这样读到的是刚写好的昨天。木屋首页显示的就是这句。
-cron.schedule('0 9 * * *', async () => {
-  try {
-    const r = await mw.quote.writeDailyQuote();
-    console.log('[muwen] 今日一句：', JSON.stringify(r).slice(0, 200));
-  } catch (e) { console.error('[muwen] 今日一句失败：', e.message || e); }
-}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+// 注：这里以前有一个每天 9:00 的 cron，用"你是辞"的 prompt 让模型写今日一句。
+// 已经拆掉——服务器是第三层（机械后台），不能用辞的语气说话。今日一句归第一层
+// （ScheduleWakeup，辞自己那个 session）：她读 get_quote_material，自己写，
+// 再用 write_daily_quote 存。
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`木纹（muwen）——辞的时间，启动于端口 ${PORT}`));

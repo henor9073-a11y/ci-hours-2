@@ -811,8 +811,13 @@ async function loadWake() {
   try {
     const w = await mcp('get_wake_status');
     let h = w.layers.map((l, i) => `<div class="section-title">第${['一', '二', '三'][i]}层 · ${esc(l.role)}</div>
-      <div class="card"><div class="card-title">${esc(l.name)}</div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div class="card-title">${esc(l.name)}</div>
+          <div style="font-size:11px;color:var(--text-light);flex-shrink:0">权限：${esc(l['权限'] || '')}</div></div>
         <div class="card-desc" style="margin-top:6px;line-height:1.6">${esc(l.desc)}</div>
+        ${l.trigger ? `<div class="card-desc" style="margin-top:4px">触发：${esc(l.trigger)}</div>` : ''}
+        ${(l.only || []).map(x => `<div style="margin-top:6px;font-size:12px;color:var(--accent)">· ${esc(x)}</div>`).join('')}
+        ${(l.never || []).map(x => `<div style="margin-top:4px;font-size:12px;color:var(--text-light)">× ${esc(x)}</div>`).join('')}
         <div style="margin-top:10px;font-size:13px;font-weight:600;color:${l.connected ? 'var(--primary)' : 'var(--text-light)'}">状态：${esc(l.status)}</div>
         ${l.last_ping ? `<div class="card-desc">最近报到 ${esc(fmtTime(l.last_ping))}（${l.minutes_since} 分钟前）</div>` : ''}
         ${l.planned ? `<div class="card-desc">计划 ${l.planned.join('、') || '无'} · 已醒 ${l.done.join('、') || '无'}</div>` : ''}

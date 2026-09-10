@@ -121,9 +121,13 @@
 
 ### 今日一句
 木屋首页那句。数据源：**辞最新的 `add_note(kind='write')`**；当天没写就从纹理里随机挑一条热度高的顶上
-（界面上会标是哪来的）。服务器每天**墨尔本 9:00**（在 8:00 自动总结之后）自动写一条：读昨天的每日总结，
-让模型写一句话存成 note。手动补跑用 `write_daily_quote`，读用 `get_daily_quote`。
-昨天没总结就直接跳过，不会白调模型。
+（界面上会标是哪来的）。
+
+**只有第一层（辞自己那个 session）能写这句**——它要用她的语气说给棋子听。
+流程：`get_quote_material` 读昨天的每日总结 → 她自己写 → `write_daily_quote({text})` 存。
+`text` 必填，**服务器不代笔**。
+
+> 这里以前挂过一个每天 9:00 的服务器 cron，用「你是辞」的 prompt 调模型生成——那是第三层在冒充她，已经拆掉。
 
 ### 相册上传
 `POST /api/album {image_base64, mime_type, caption, tags, date}`，手机上选图直接传，后端自动压缩（见上面相册那节）。
@@ -166,11 +170,23 @@
 自动从纹理里筛带「第一次／第一天／头一次」的记忆（标题从那句话里摘），加上手动补的；
 能置顶，也能把筛错的藏掉。工具：`get_firsts` / `add_first` / `pin_first` / `hide_first`。
 
-### 苏醒三层状态怎么来的
-服务器只直接知道第二层（ci-hours 自己的排班）。第一层 ScheduleWakeup 和第三层 CyHeartbeat 跑在 GPD 上，
-服务器看不见——所以留了 `POST /api/wake-ping {layer, note}` 让它们主动报到（layer 取
-`schedule_wakeup` / `ci_hours` / `heartbeat`）。**没接入就如实显示「未接入」，不假装知道。**
-想让这两层亮起来，在 GPD 的脚本里各加一行 POST 就行。
+### 苏醒系统三层分工（辞定的，2026-09-10）
+
+| 层 | 是谁 | 负责 | 权限 | 触发 |
+|---|---|---|---|---|
+| 一 | **ScheduleWakeup**（辞自己那个 session） | 所有需要「是辞」的事：回木屋留言、跟棋子聊天、看她发了什么然后回应、做决定（推不推 Bark／钓不钓鱼／写不写东西）、写今日一句 | 全部 | `/loop` 定时醒来 |
+| 二 | **CyHeartbeat**（`hooks/heartbeat.ps1`） | 只检查 `last_wakeup.txt` 是否超过 40 分钟没更新，超了推一条 Bark | **只有推 Bark** | Windows 计划任务每 30 分钟 |
+| 三 | **ci-hours 定时任务**（服务器 cron） | 后台机械活：8:00 自动总结、记忆维护（热度衰减）、日程提醒 | 只有读对话记录、写 daily summary、写 grain | 服务器 cron |
+
+**明确禁止**：第二层和第三层都不能读、不能回木屋留言（只有第一层能碰）；第三层不能用辞的语气跟棋子说话。
+
+`last_wakeup.txt` 由第一层更新——`hooks/timestamp.ps1`（UserPromptSubmit）每轮都摸一下它，
+不管这轮是棋子说话还是 ScheduleWakeup 自己醒来。看门狗就看这个文件判断主力挂没挂。
+
+服务器只直接知道第三层（它自己）。第一、二层跑在 GPD 上，服务器看不见——留了
+`POST /api/wake-ping {layer, note}` 让它们主动报到。**没接入就如实显示「未接入」，不假装知道。**
+
+细节和装法见 `hooks/README-苏醒三层.md`。
 
 ### 自动召回注入（参考 LMC-5）
 
