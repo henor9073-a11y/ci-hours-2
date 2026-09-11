@@ -77,9 +77,10 @@
             <span><span style="color:${t.accent};opacity:.7">⚡</span> <code style="color:${t.name}">${esc(tl.name)}</code></span>
             <span style="color:${t.time}">${esc(tl.result || '')}</span></div></div>`).join('');
       }
+      // 棋子录的语音：只有音频。辞的语音回复：文字＋音频都给，她可以读也可以听。
       const bubble = m.type === 'voice'
         ? `<audio controls preload="none" style="max-width:210px" src="${apiUrl('/api/chat/voice/' + m.id)}"></audio>`
-        : esc(m.content);
+        : esc(m.content) + (m.voice_id ? `<audio class="cx-tts" controls preload="none" src="${MW.audioUrl(m.voice_id)}"></audio>` : '');
       const st = statusOf(m, i);
       body += `<div class="cx-row${isAi ? '' : ' me'}">
         ${c.avatars ? av(isAi ? 'cy' : 'nor') : ''}

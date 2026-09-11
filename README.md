@@ -147,7 +147,12 @@
 ### 异步留言（木屋「留言」tab）
 棋子随时发，辞不在线；辞苏醒时读未读并回复，棋子下次打开看到。UI 照 chat mockup v4：
 五套主题、头像开关、气泡圆角/字号可调、thinking 折叠、工具调用卡片、消息状态（已发送／辞已读／辞已回复）、未读红点。
-支持文字和语音（浏览器录音，`MediaRecorder`）。
+支持文字和语音，两个方向都有：
+- **棋子发语音**：浏览器录音（`MediaRecorder`），原始音频存 `chat-voice/`，走 `/api/chat/voice/:id`。
+- **辞回语音**：`chat_reply({content, voice: true})` 调 ElevenLabs 把这句话念出来——**跟 `speak` 同一个声音、同一套参数**，
+  音频落在 `voices/` 并记进语音历史（木屋「语音记录」也能回放），消息里带 `voice_id`，走 `/api/voice/:id/audio`（支持 Range，进度条拖得动）。
+  棋子那边**文字和播放器都给**，可以读也可以听。生成失败不影响回复本身——话先送到，返回里说明为什么没声音。
+  推不推 Bark 由辞自己决定，这个工具不会自动推（那是第一层的判断）。
 
 - 棋子那边走 REST（`GET/POST /api/chat`、`/api/chat/read`、`/api/chat/voice/:id`），**不经过 MCP**。
 - 辞那边走 MCP：`chat_unread`（苏醒第一步看这个）／`chat_get_messages`／`chat_reply`（可带 thinking 和 tools）／`chat_mark_read`。

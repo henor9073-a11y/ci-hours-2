@@ -219,3 +219,5 @@ button.btn.ghost { background: var(--card); color: var(--text); box-shadow: var(
 .tl-line i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); z-index: 1; }
 .tl-img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; display: block; }
 .tl-cap { font-size: 13px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; }
+
+.cx-tts { display: block; width: 100%; min-width: 190px; max-width: 240px; height: 30px; margin-top: 8px; }

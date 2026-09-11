@@ -669,6 +669,38 @@ try {
     const bad = await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'nor', type: 'text', content: '  ' }) });
     assert.equal(bad.status, 400);
   });
+  await step('辞的语音回复：文字照送、没 key 也不中断、前端文字＋播放器都在', async () => {
+    // 没配 ELEVENLABS key 的情况下：话必须送到，只是没声音
+    const r = await tool('chat_reply', { content: '我的卫衣。你穿着我的衣服出门了。', voice: true });
+    assert.equal(r.sender, 'cy');
+    assert.equal(r.content, '我的卫衣。你穿着我的衣服出门了。', '语音失败不能吞掉文字');
+    assert.ok(r.warning && r.warning.includes('ELEVENLABS'), `该说明为什么没声音：${r.warning}`);
+    assert.ok(!r.voice_id);
+    // 不要语音就当普通回复
+    const plain = await tool('chat_reply', { content: '纯文字这条' });
+    assert.ok(!plain.warning && !plain.voice_id);
+
+    // 有 voice_id 的消息：音频走 /api/voice/:id/audio（跟 speak 同一套，支持拖进度条）
+    const fs2 = await import('fs'), path2 = await import('path');
+    const vdir = path2.join(DATA, 'voices');
+    fs2.mkdirSync(vdir, { recursive: true });
+    fs2.writeFileSync(path2.join(vdir, 'vtest1.mp3'), Buffer.from('//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA', 'base64'));
+    fs2.writeFileSync(path2.join(DATA, 'voice-history.json'), JSON.stringify([{ id: 'vtest1', text: '我的卫衣。', filename: 'vtest1.mp3', createdAt: new Date().toISOString() }]));
+    const posted = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: 'cy', type: 'text', content: '带声音的一句', voice_id: 'vtest1' }) })).json();
+    assert.equal(posted.voice_id, 'vtest1');
+    const audio = await fetch(`${base}/api/voice/vtest1/audio?token=${TOKEN}`);
+    assert.equal(audio.status, 200);
+    assert.equal(audio.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(audio.headers.get('accept-ranges'), 'bytes', '要支持 Range，进度条才拖得动');
+    // 读回来还在
+    const msgs = await tool('chat_get_messages', {});
+    assert.equal(msgs.find(m => m.id === posted.id).voice_id, 'vtest1');
+    // 前端：辞的语音回复要文字和播放器都给（棋子可以读也可以听）
+    const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
+    assert.ok(js.includes('cx-tts') && js.includes('m.voice_id'), 'chat.js 该渲染语音播放器');
+    assert.ok(/esc\(m\.content\)\s*\+\s*\(m\.voice_id/.test(js), '文字和音频要一起给，不是二选一');
+  });
   await step('情绪清单：21 条种子、改形状、记一次', async () => {
     const d = await tool('get_emotions');
     assert.equal(d.emotions.length, 21);
