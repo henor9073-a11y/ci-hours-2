@@ -319,7 +319,7 @@ Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的
 ## 语音（辞真的能开口说话）
 
 `speak({text})` 这个 MCP 工具调用时，服务端直接调 ElevenLabs 把文字生成语音
-（`lib/voice.js`，`model_id` 固定用 `eleven_multilingual_v2`），存进磁盘
+（`lib/voice.js`，`model_id` 默认 `eleven_v3`，可用环境变量 `ELEVENLABS_MODEL_ID` 覆盖），存进磁盘
 （`DATA_DIR/voices/*.mp3`）并记一条历史（`voice-history.json`）。同时把这条排进
 播放队列（`/api/speech/next` 给网页拉取，`/api/speech/:id/done` 标记消费掉）——
 只保留最新一条算"待播的"，旧的没播的自动跳过。
