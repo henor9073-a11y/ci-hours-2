@@ -221,3 +221,69 @@ button.btn.ghost { background: var(--card); color: var(--text); box-shadow: var(
 .tl-cap { font-size: 13px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; }
 
 .cx-tts { display: block; width: 100%; min-width: 190px; max-width: 240px; height: 30px; margin-top: 8px; }
+
+/* ---- 聊天记录（像微信"查找聊天记录"）---- */
+.rs-box { position: sticky; top: 58px; z-index: 5; }
+.rs-box input { -webkit-appearance: none; appearance: none; padding: 0; }
+.rs-box input::-webkit-search-cancel-button { display: none; }
+.rs-clear { color: var(--accent); font-size: 14px; cursor: pointer; flex-shrink: 0; }
+.rs-entry-title { text-align: center; font-size: 13px; color: var(--text-light); margin: 34px 0 14px; }
+.rs-entry { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; }
+.rs-entry span { color: var(--accent); font-size: 15px; padding: 6px 0; cursor: pointer; border-left: 1px solid var(--border); }
+.rs-entry span:first-child { border-left: none; }
+.rs-day { display: flex; justify-content: space-between; font-size: 14px; cursor: pointer; }
+.rs-day span:last-child { color: var(--text-light); font-size: 12px; }
+.rs-count { font-size: 12px; color: var(--text-light); margin: 12px 4px 2px; }
+.rs-row { display: flex; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rs-row:active { background: var(--primary-light); }
+.rs-main { flex: 1; min-width: 0; }
+.rs-top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-light); }
+.rs-top em { font-style: normal; margin-left: 6px; font-size: 11px; opacity: .8; }
+.rs-snip { font-size: 15px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-more { width: 100%; margin-top: 12px; }
+
+.rc-week { position: sticky; top: 58px; z-index: 5; background: var(--bg); display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 13px; color: var(--text-light); padding: 8px 0; border-bottom: 1px solid var(--border); }
+.rc-month { font-size: 14px; color: var(--text-light); margin: 18px 4px 6px; }
+.rc-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.rc-d { display: flex; flex-direction: column; align-items: center; min-height: 58px; padding-top: 4px; color: var(--text-light); opacity: .55; }
+.rc-d b { font-weight: 400; font-size: 17px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.rc-d.has { color: var(--text); opacity: 1; cursor: pointer; }
+.rc-d.has:active b { background: var(--primary-light); }
+.rc-d.today { opacity: 1; }
+.rc-d.today b { background: var(--accent); color: #fff; }
+.rc-d i { font-style: normal; font-size: 10px; color: var(--accent); margin-top: 1px; }
+
+.rv-daily { background: var(--card); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 8px; box-shadow: var(--shadow); font-size: 13px; line-height: 1.6; }
+.rv-daily .summary-label { margin-bottom: 2px; display: block; }
+.rv-jump { margin-top: 10px; }
+.rv-jump .chip { font-size: 12px; padding: 5px 11px; }
+.rv-list { padding-top: 4px; }
+.rv-sep { text-align: center; margin: 22px 0 10px; font-size: 11px; color: var(--text-light); scroll-margin-top: 64px; }
+.rv-sep span { background: var(--primary-light); border-radius: 10px; padding: 3px 10px; display: inline-block; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.rv-time { text-align: center; font-size: 11px; color: var(--text-light); margin: 14px 0 6px; }
+.rv-note, .rv-doc { font-size: 12px; color: var(--text-secondary); background: var(--card); border-radius: var(--radius-sm); padding: 10px 12px; margin: 8px 0; white-space: pre-wrap; word-break: break-word; line-height: 1.7; }
+.rv-doc { font-size: 14px; color: var(--text); }
+.rv-row { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; content-visibility: auto; contain-intrinsic-size: auto 64px; scroll-margin-top: 80px; }
+.rv-row.me { flex-direction: row-reverse; }
+.rv-av { width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0; overflow: hidden; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; }
+.rv-av.nor { background: var(--accent-light); color: var(--accent); }
+.rv-av img { width: 100%; height: 100%; object-fit: cover; }
+.rs-row .rv-av { width: 40px; height: 40px; }
+.rv-col { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: calc(100% - 84px); min-width: 0; }
+.rv-row.me .rv-col { align-items: flex-end; }
+.rv-bubble { background: var(--card); color: var(--text); border-radius: 4px 12px 12px 12px; padding: 9px 12px; font-size: 15px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; box-shadow: var(--shadow); max-width: 100%; position: relative; }
+.rv-row.me .rv-bubble { background: var(--accent-light); border-radius: 12px 4px 12px 12px; }
+.rv-bubble.long { max-height: 22em; overflow: hidden; padding-bottom: 40px; }
+.rv-more { position: absolute; left: 0; right: 0; bottom: 0; border: none; font-family: inherit; font-size: 12px; color: var(--accent); padding: 18px 0 8px; cursor: pointer; background: linear-gradient(to bottom, transparent, var(--card) 45%); }
+.rv-row.me .rv-more { background: linear-gradient(to bottom, transparent, var(--accent-light) 45%); }
+.rv-fold button { background: none; border: 1px solid var(--border); border-radius: 10px; color: var(--text-light); font-size: 11px; padding: 3px 10px; cursor: pointer; font-family: inherit; display: flex; gap: 5px; align-items: center; }
+.rv-fold button span { display: inline-block; transition: transform .15s; font-size: 9px; }
+.rv-fold.open button span { transform: rotate(90deg); }
+.rv-fold-body { display: none; margin-top: 4px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; }
+.rv-fold.think .rv-fold-body { font-style: italic; }
+.rv-fold.result .rv-fold-body { font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 360px; overflow: auto; }
+.rv-fold.open .rv-fold-body { display: block; }
+.rv-tool { font-size: 11px; color: var(--text-light); border: 1px dashed var(--border); border-radius: 8px; padding: 2px 8px; }
+.rv-col.target .rv-bubble, .rv-note.target, .rv-doc.target { animation: rvFlash 2.2s ease; }
+@keyframes rvFlash { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: var(--shadow); } }
+.rv-nav { display: flex; justify-content: space-between; margin: 24px 0 8px; }

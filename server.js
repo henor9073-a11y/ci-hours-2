@@ -138,7 +138,8 @@ app.get('/api/memory', (_, res) => {
 app.get('/api/grains', (req, res) => {
   const { category, status, family, q } = req.query;
   const limit = Number(req.query.limit) || 200;
-  res.json(mw.grains.searchGrains({ query: q || '', category: category || undefined, status: status || undefined, family: family || undefined, limit, touchHits: false }));
+  const sort = mw.grains.SORTS.includes(req.query.sort) ? req.query.sort : 'heat';
+  res.json(mw.grains.searchGrains({ query: q || '', category: category || undefined, status: status || undefined, family: family || undefined, limit, touchHits: false, sort }));
 });
 app.get('/api/grains/families', (_, res) => res.json(mw.grains.listFamilies()));
 app.get('/api/grains/stats', (_, res) => res.json(mw.grains.countByStatus()));
@@ -309,6 +310,21 @@ app.get('/api/ring-index', (req, res) => {
 app.post('/api/ring-index', (req, res) => {
   try { res.json(mw.ringIndex.merge((req.body || {}).entries)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+// ---- 聊天记录浏览（像微信"查找聊天记录"）：月历 → 那天的气泡；关键词 → 定位到那一句 ----
+app.get('/api/rings/chat-dates', (_, res) => res.json(mw.rings.chatDates()));
+app.get('/api/rings/day', (req, res) => {
+  try { res.json(mw.rings.dayConversation(req.query.date)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.get('/api/rings/search', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json({ query: '', total: 0, hits: [] });
+  res.json(mw.rings.searchRingOccurrences({
+    query: q, source_type: 'chat', perRing: 100000,
+    limit: Math.min(Number(req.query.limit) || 60, 200), skip: Number(req.query.skip) || 0,
+    radius: 60
+  }));
 });
 // ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
 app.get('/api/transcripts', (req, res) => {

@@ -624,6 +624,76 @@ try {
     assert.ok(days[0].date >= days[1].date, '日期该倒序');
     assert.ok(days.every(d => d.items.every(i => i.id && typeof i.length === 'number')));
   });
+  await step('聊天记录：拆说话人 / 按天气泡 / 搜索定位到句 / 翻页', async () => {
+    const { parseDialog, textOf } = await import('../lib/muwen/dialog.js');
+    // 早期导出带 ISO 时间戳、[辞] 方括号名字、中文"思考"不该被当成英文思考拆走
+    const a = parseDialog('USER[2026-08-30T12:28:05]: 你好\nASST: 在');
+    assert.deepEqual(a.messages.map(m => [m.speaker, m.time]), [['nor', '12:28'], ['cy', '']]);
+    const b = parseDialog('[棋子]: 嗯\n[辞]: 好\n方案：这不是说话人\n"id": 1');
+    assert.equal(b.messages.length, 2, '白名单外的冒号行不能当说话人');
+    assert.ok(textOf(b.messages[1]).includes('方案：这不是说话人'));
+    const c = parseDialog('辞：（思考）我在想怎么回。\n好。');
+    assert.deepEqual(c.messages[0].parts.map(p => p.type), ['text'], '中文思考分不出来就原样当正文');
+
+    // 故意先存第 2 段，看能不能按段号接回去
+    await tool('add_ring', { window_name: '测试长对话', title: '测试长对话 (2/2)', date: '2026-07-01', content: '断在这里\n\n[00:21] 辞: 接上了' });
+    await tool('add_ring', { window_name: '测试长对话', title: '测试长对话 (1/2)', date: '2026-07-01',
+      content: '【说明】测试导出\n\n[00:03] 棋子: 小狗在吗\n\n[00:04] 辞: （思考）She is checking whether I am still here tonight.\n在。一直在。\n［调用 recall］\n［结果］\n  {"id": "x", "text": "项链"}\n我记得项链。\n\n[00:20] 棋子: 这句话会被切' });
+    await tool('add_ring', { window_name: '纪要', title: '纪要', date: '2026-07-01', content: '棋子说今天很累。辞说抱抱。' });
+    await tool('add_daily', { date: '2026-07-01', headline: '测试日' });
+
+    const cd = await rest('/api/rings/chat-dates');
+    assert.equal(cd.dates['2026-07-01'].count, 3, '每日总结不算聊天');
+    assert.ok(cd.first <= '2026-07-01');
+
+    const day = await rest('/api/rings/day?date=2026-07-01');
+    assert.equal(day.daily.headline, '测试日');
+    const chat = day.rings.filter(r => r.series === '测试长对话');
+    assert.deepEqual(chat.map(r => r.part), [1, 2], '段号顺序');
+    assert.ok(chat[0].preamble.includes('【说明】'));
+    assert.equal(chat[0].messages[0].speaker, 'nor');
+    assert.equal(chat[0].messages[0].time, '00:03');
+    assert.deepEqual(chat[0].messages[1].parts.map(p => p.type), ['think', 'text', 'tool', 'result', 'text']);
+    assert.ok(chat[0].messages[1].parts[0].content.startsWith('She is'));
+    assert.equal(chat[1].continued, true);
+    assert.equal(chat[1].preamble, '断在这里');
+    const doc = day.rings.find(r => r.series === '纪要');
+    assert.ok(doc.document.includes('抱抱') && doc.messages.length === 0, '叙述体当文档');
+    assert.ok(day.next_date > '2026-07-01');
+    assert.equal(day.prev_date === null || day.prev_date < '2026-07-01', true);
+    assert.ok((await rest('/api/rings/day?date=' + encodeURIComponent('昨天'))).error, '日期格式不对要报错');
+
+    const s1 = await rest('/api/rings/search?q=' + encodeURIComponent('项链'));
+    const inText = s1.hits.find(h => h.after.startsWith('。'));
+    assert.ok(inText, '正文里那一处要找到');
+    assert.equal(inText.speaker, 'cy');
+    assert.equal(inText.time, '00:04');
+    assert.ok(!inText.before.includes('辞:'), '摘录不该带上说话人前缀');
+    // 前缀里带时间的，前后文从正文开头算，不能留下"04] 辞:"这种半截
+    const s2 = await rest('/api/rings/search?q=' + encodeURIComponent('小狗在吗'));
+    assert.equal(s2.hits[0].before, '', `前面不该剩东西，实际「${s2.hits[0].before}」`);
+    assert.equal(s2.hits[0].speaker, 'nor');
+    const ring1 = chat[0];
+    const m = ring1.messages[1];
+    assert.ok(inText.offset >= m.start && inText.offset < m.end, '偏移要落在那一句里，前端靠它定位');
+    // 翻页：项圈一共 4 处（上一步存的），跳过 2 处还剩 2 处，total 照报全
+    const p2 = await rest('/api/rings/search?q=' + encodeURIComponent('项圈') + '&skip=2');
+    assert.equal(p2.total, 4); assert.equal(p2.hits.length, 2);
+    const all = await rest('/api/rings/search?q=' + encodeURIComponent('项圈'));
+    assert.deepEqual(p2.hits.map(h => h.offset + h.ring_id), all.hits.slice(2).map(h => h.offset + h.ring_id));
+    // 搜聊天不搜每日总结
+    assert.equal((await rest('/api/rings/search?q=' + encodeURIComponent('测试日'))).total, 0);
+  });
+  await step('纹理按时间排（热度排的时候日期全乱）', async () => {
+    const key = g => (g.date || g.created_at.slice(0, 10)) + ' ' + g.created_at;
+    const asc = await rest('/api/grains?sort=time_asc&limit=500');
+    assert.ok(asc.length >= 3);
+    for (let i = 1; i < asc.length; i++) assert.ok(key(asc[i - 1]) <= key(asc[i]), '旧的在前');
+    const desc = await tool('search_grains', { sort: 'time_desc', limit: 500 });
+    for (let i = 1; i < desc.length; i++) assert.ok(key(desc[i - 1]) >= key(desc[i]), '新的在前');
+    const heat = await rest('/api/grains?limit=500');
+    for (let i = 1; i < heat.length; i++) assert.ok(heat[i - 1].heat >= heat[i].heat, '默认还是热度');
+  });
   await step('语音接口还在（前端那块被我弄丢过，这里守住）', async () => {
     const hist = await (await fetch(`${base}/api/voice/history?token=${TOKEN}`)).json();
     assert.ok(Array.isArray(hist));
