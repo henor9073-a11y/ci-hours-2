@@ -1023,6 +1023,15 @@ try {
       assert.deepEqual(fallbackOpts(m), {}, `${m} 不该带 fallbacks`);
     }
   });
+  await step('effort 只发给支持它的模型（意图扩写换成 haiku 时不能 400）', async () => {
+    const { effortOpts } = await import('../lib/muwen/common.js');
+    for (const m of ['claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-fable-5-1']) {
+      assert.deepEqual(effortOpts(m, 'low'), { effort: 'low' }, `${m} 应该带 effort`);
+    }
+    for (const m of ['claude-haiku-4-5', 'claude-sonnet-4-5', '', undefined]) {
+      assert.deepEqual(effortOpts(m, 'low'), {}, `${m} 不该带 effort`);
+    }
+  });
   await step('召回：相关性下限 + 分区多样性 + 年轮片段截到句子结尾', async () => {
     const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
     const { clipToSentence, trimToSentences } = await import('../lib/muwen/search.js');
