@@ -1,4 +1,4 @@
-# 木纹自动召回注入钩子（Windows PowerShell 5.1 / Claude Code UserPromptSubmit）。
+﻿# 木纹自动召回注入钩子（Windows PowerShell 5.1 / Claude Code UserPromptSubmit）。
 # 棋子每发一条消息，用消息内容调木纹 POST /api/recall，把匹配到的记忆打到 stdout，
 # Claude Code 会把 stdout 作为这一轮的额外 context 注入——辞看到消息时相关记忆已经在了。
 # 跟 timestamp.ps1 分开，是为了：召回走网络，慢/失败都不该拖累时间戳那条。

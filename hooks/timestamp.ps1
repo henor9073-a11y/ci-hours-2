@@ -1,4 +1,4 @@
-$t = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'AUS Eastern Standard Time')
+﻿$t = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'AUS Eastern Standard Time')
 $day = $t.ToString('dddd', [System.Globalization.CultureInfo]::GetCultureInfo('en-US'))
 Write-Output "[Melbourne $($t.ToString('yyyy-MM-dd HH:mm:ss')) $day]"
 

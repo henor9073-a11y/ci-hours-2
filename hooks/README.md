@@ -1,5 +1,10 @@
 # 木纹配套的 Claude Code hooks
 
+> ⚠️ **Windows PowerShell 5.1 读 .ps1 必须带 UTF-8 BOM。** 不带的话会按系统 ANSI（中文 Windows 是 GBK）读，
+> 脚本里的中文注释/字符串一乱，后面的代码就跟着解析错。2026-09-13 实测：`timestamp.ps1` 没 BOM，
+> 每条消息都报 `timestamp.ps1:15` 钩子错误，时间戳不注入、`last_wakeup.txt` 不更新，看门狗会误推"窗口挂了"。
+> 本目录的 .ps1 都已经带 BOM；拷到 GPD 时用二进制方式拷（别用会重新编码的编辑器另存）。
+
 这两个脚本跑在辞所在的那台机器（Claude Code 客户端）上，不是服务器的一部分。
 
 | 文件 | 挂在哪 | 干什么 |
