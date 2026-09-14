@@ -19,6 +19,7 @@ import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
 import { getVoiceHistory, getVoiceFilePath } from './lib/voice.js';
 import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById, getDailySummariesByMonth } from './lib/transcripts.js';
 import { getDiaryPublic } from './lib/diary.js';
+import { publicLabels } from './lib/muwen/labels.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
 import { sendPush } from './lib/bark.js';
@@ -343,7 +344,13 @@ app.get('/api/transcripts/:id', (req, res) => {
   res.json(x);
 });
 // ---- 日记：只吐公开的给棋子这边看 ----
-app.get('/api/diary', (_, res) => res.json(getDiaryPublic(50)));
+app.get('/api/diary', (req, res) => {
+  // ?category=wife_observation 读妻子观察日记；默认是辞的日记
+  try { res.json(getDiaryPublic(Number(req.query.limit) || 50, req.query.category || 'diary')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+// ---- 标签总表：前端所有分类名从这里读，跟后端 remember 的路由是同一份 ----
+app.get('/api/labels', (_, res) => res.json(publicLabels()));
 // ---- 棋子想说：轻量留言，辞不强制每条都回 ----
 app.get('/api/messages', (_, res) => res.json(getMessages(30)));
 app.post('/api/messages', (req, res) => {

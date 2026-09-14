@@ -3,7 +3,10 @@ const { mcp, rest, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBe
 MW.applyTheme();
 
 // ---------- 通用 ----------
-const $ = s => document.querySelector(s);
+// 弹层是一层层叠着的真 DOM（下面的层只是藏起来，不销毁），不同层里可能有同名 id——
+// 所以查元素先在最上面那层里找，找不到再找整页。
+const $ = s => { let top = null; try { top = sheetStack[sheetStack.length - 1]; } catch {} return (top && top.node && top.node.querySelector(s)) || document.querySelector(s); };
+const byId = id => $('#' + CSS.escape(id));
 const el = (h) => { const d = document.createElement('div'); d.innerHTML = h; return d.firstElementChild; };
 function fail(node, e) { node.innerHTML = `<div class="err">读不到：${esc(e.message || e)}</div>`; }
 
@@ -23,6 +26,16 @@ const ARCHIVE = [
   { key: 'coincidence', name: '巧合', desc: '说不清的同步', kind: 'grain', cat: 'unexplained', family: '巧合' },
   { key: 'evidence', name: '证据', desc: '这是真的', kind: 'grain', cat: 'unexplained', family: '证据', wide: true }
 ];
+const DIARY_NAMES = { diary: '辞的日记', wife_observation: '妻子观察日记' };
+// 分类显示名的唯一来源是后端标签总表（/api/labels），跟辞写记忆时用的 remember 是同一份。
+// 上面这些默认值只是网络慢的时候先顶上用。
+const labelsReady = rest('/api/labels').then(ls => {
+  const by = Object.fromEntries(ls.map(l => [l.key, l]));
+  for (const k of Object.keys(CATS)) if (by[k]) CATS[k] = by[k].name;
+  for (const a of ARCHIVE) if (a.kind === 'grain' && by[a.key]) a.name = by[a.key].name;
+  for (const k of Object.keys(DIARY_NAMES)) if (by[k]) DIARY_NAMES[k] = by[k].name;
+}).catch(() => {});
+
 
 // 结果分组的显示名：后端新版会给 label，旧版只给 category/layer，这里都兜住
 const LAYER_NAMES = { grains: '纹理', rings: '原始记录', profiles: '档案', photos: '照片', cross_sections: '摘要' };
@@ -49,25 +62,37 @@ document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage
 
 // ---------- 抽屉 ----------
 let sheetStack = [];
+// 每一层是一个真的 DOM 节点，往里走一层只是把下面那层藏起来。
+// 以前返回的时候拿存下来的 HTML 字符串整块重建：图片全部重新加载（闪一下），
+// 滚动位置在图片还没撑开时就设了（落点不对，看起来"自己跳"），表单里填的字也没了。
+function showLayer(s) { s.node.style.display = ''; $('#sheet-title').textContent = s.title; $('#sheet').scrollTop = s.scroll || 0; }
 function openSheet(title, html) {
-  // 往里走一层之前记住当前滚到哪了，返回的时候滚回去（翻聊天记录点进去再退出来，不该回到顶上）
-  if (sheetStack.length) sheetStack[sheetStack.length - 1].scroll = $('#sheet').scrollTop;
-  sheetStack.push({ title, html });
+  const prev = sheetStack[sheetStack.length - 1];
+  if (prev) { prev.scroll = $('#sheet').scrollTop; prev.node.style.display = 'none'; }
+  const node = document.createElement('div');
+  node.className = 'sheet-layer';
+  node.innerHTML = html;
+  document.getElementById('sheet-body').appendChild(node);
+  sheetStack.push({ title, node, scroll: 0 });
   $('#sheet-title').textContent = title;
-  $('#sheet-body').innerHTML = html;
   $('#sheet').classList.add('open');
   $('#sheet').scrollTop = 0;
 }
+// 扔掉最上面一层（不负责显示下一层）——"关掉这层马上重开同一种"的地方用
+function sheetDrop() { const s = sheetStack.pop(); if (s && s.node) s.node.remove(); return s; }
 function closeSheet() {
-  sheetStack.pop();
-  if (sheetStack.length) { const s = sheetStack[sheetStack.length - 1]; $('#sheet-title').textContent = s.title; $('#sheet-body').innerHTML = s.html; $('#sheet').scrollTop = s.scroll || 0; }
-  else $('#sheet').classList.remove('open');
+  sheetDrop();
+  const s = sheetStack[sheetStack.length - 1];
+  if (s) showLayer(s); else $('#sheet').classList.remove('open');
 }
 function sheetLoading(title) { openSheet(title, '<div class="loading">读取中…</div>'); }
 const sheetTop = () => sheetStack[sheetStack.length - 1];
 // 异步读完再填：用户这期间已经点返回或者点进别处了，就别往不属于它的那一层里写
 function sheetSetIf(me, html) { if (sheetTop() === me) sheetSet(html); return sheetTop() === me; }
-function sheetSet(html) { $('#sheet-body').innerHTML = html; if (sheetStack.length) sheetStack[sheetStack.length - 1].html = html; }
+function sheetSet(html) { const s = sheetTop(); if (s) s.node.innerHTML = html; }
+// 用户最近一次自己动手（滑/点/按键）的时间：延迟滚动定位之前看一眼，别把正在翻的人拽回去
+let sheetTouchedAt = 0;
+['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(ev => document.getElementById('sheet').addEventListener(ev, () => { sheetTouchedAt = Date.now(); }, { passive: true }));
 
 // ---------- 卡片渲染 ----------
 function grainCard(g, opts = {}) {
@@ -307,7 +332,8 @@ async function showDay(ds) {
 // ================= Tab 忆 =================
 let memLoaded = false;
 async function loadMemory() {
-  memLoaded = true;
+  memLoaded = true;     // 先标记，免得等标签总表的时候连点两下渲染两遍
+  await labelsReady;   // 档案卡片的分类名要等标签总表
   $('#m-archive').innerHTML = ARCHIVE.map((a, i) => `<div class="memory-card${a.wide ? ' wide' : ''}" onclick="openArchive('${a.key}')">
     <div class="memory-icon${i % 2 ? ' accent' : ''}">${a.name[0]}</div>
     <div><div class="memory-name">${a.name}</div><div class="memory-count">${a.desc}</div></div></div>`).join('');
@@ -347,8 +373,9 @@ const GRAIN_SORTS = [['heat', '按热度'], ['time_desc', '新的在前'], ['tim
 function grainSort() { try { return localStorage.getItem('muwen-grain-sort') || 'heat'; } catch { return 'heat'; } }
 function setGrainSort(s) {
   try { localStorage.setItem('muwen-grain-sort', s); } catch {}
-  const cur = sheetStack.pop();
-  if (cur && cur.reload) cur.reload(); else if (!sheetStack.length) $('#sheet').classList.remove('open');
+  const cur = sheetDrop();
+  if (cur && cur.reload) cur.reload();
+  else { const s = sheetTop(); if (s) showLayer(s); else $('#sheet').classList.remove('open'); }
 }
 function grainSortChips() {
   const s = grainSort();
@@ -381,7 +408,7 @@ async function openGrains(cat, status) {
     sheetSet(tabs + grainSortChips() + grainList(gs, '没有'));
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-function reopenGrains(cat, status) { sheetStack.pop(); openGrains(cat, status || undefined); }
+function reopenGrains(cat, status) { sheetDrop(); openGrains(cat, status || undefined); }
 async function openGrain(id) {
   sheetLoading('纹理');
   try {
@@ -581,15 +608,17 @@ async function openRingDay(date, target) {
     if (!ringPrefs) ringPrefs = await MW.loadPrefs().catch(() => ({}));
     const d = await rest('/api/rings/day?date=' + encodeURIComponent(date));
     if (!sheetSetIf(me, renderDay(d, target))) return;
-    const t = document.getElementById('rv-target');
+    const t = byId('rv-target');
     if (t) {
       // 气泡用了 content-visibility，上面没画出来的高度是估的；画完再对一次位置
+      const t0 = Date.now();
       t.scrollIntoView({ block: 'center' });
-      setTimeout(() => { if (sheetTop() === me) { t.scrollIntoView({ block: 'center' }); me.scroll = $('#sheet').scrollTop; } }, 250);
+      // 这 250ms 里用户要是已经自己动手滑了，就别再把人拽回去（以前"页面自己跳"有一部分是这个）
+      setTimeout(() => { if (sheetTop() === me && sheetTouchedAt < t0) { t.scrollIntoView({ block: 'center' }); me.scroll = $('#sheet').scrollTop; } }, 250);
     }
   } catch (e) { sheetSetIf(me, `<div class="err">${esc(e.message)}</div>`); }
 }
-function reopenRingDay(date) { sheetStack.pop(); openRingDay(date); }
+function reopenRingDay(date) { sheetDrop(); openRingDay(date); }
 
 function renderDay(d, target) {
   const kw = target && target.kw;
@@ -634,7 +663,7 @@ function renderDay(d, target) {
     }
   });
   if (heads.length > 1) {
-    h += `<div class="chip-row rv-jump">${heads.map(x => `<div class="chip" onclick="document.getElementById('rv-s-${x.i}').scrollIntoView({block:'start'})">${esc(x.name.length > 16 ? x.name.slice(0, 16) + '…' : x.name)}</div>`).join('')}</div>`;
+    h += `<div class="chip-row rv-jump">${heads.map(x => `<div class="chip" onclick="byId('rv-s-${x.i}').scrollIntoView({block:'start'})">${esc(x.name.length > 16 ? x.name.slice(0, 16) + '…' : x.name)}</div>`).join('')}</div>`;
   }
   return h + `<div class="rv-list">${body}</div>` + dayNav(d);
 }
@@ -705,16 +734,36 @@ async function openRing(id, offset, kw) {
       <div class="entry"><div class="entry-head"><span>${esc(r.date)}</span><span>${esc(r.window_name || '')}</span><span>${content.length} 字</span></div>
       ${r.title ? `<div class="card-title" style="margin-bottom:6px">${esc(r.title)}</div>` : ''}
       <div class="entry-body">${body}</div></div>`);
-    const t = document.getElementById('rg-target');
-    if (t) setTimeout(() => t.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    const t = byId('rg-target');
+    if (t) { const t0 = Date.now(); setTimeout(() => { if (sheetTouchedAt < t0) t.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60); }
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-async function openDiary() {
-  sheetLoading('日记');
+// 日记分两本：辞的日记 / 妻子观察日记。后端分开存，这里放在同一个"日记"里切换。
+// 切换只换下面的列表，不重开整层（不闪、不回到顶上重新读取）。两本都是辞自己写的，网页只读公开的。
+async function openDiary(book) {
+  await labelsReady;
+  openSheet('日记', `<div class="chip-row" id="dy-tabs" style="margin:6px 0 4px">
+    ${Object.entries(DIARY_NAMES).map(([k, v]) => `<div class="chip" data-book="${k}" onclick="showDiaryBook('${k}')">${esc(v)}</div>`).join('')}</div>
+    <div id="dy-hint"></div><div id="dy-list"><div class="loading">读取中…</div></div>`);
+  showDiaryBook(book || 'diary');
+}
+const diaryCache = {};
+async function showDiaryBook(book) {
+  const me = sheetTop(); if (!me) return;
+  me.node.querySelectorAll('#dy-tabs .chip').forEach(c => c.classList.toggle('on', c.dataset.book === book));
+  const hint = me.node.querySelector('#dy-hint'), list = me.node.querySelector('#dy-list');
+  if (!hint || !list) return;
+  hint.innerHTML = book === 'wife_observation' ? '<div class="card-desc" style="margin:2px 4px 8px">辞观察棋子写下的。辞自己写，不做自动总结。</div>' : '';
+  list.innerHTML = diaryCache[book] || '<div class="loading">读取中…</div>';
   try {
-    const ds = await rest('/api/diary');
-    sheetSet(ds.length ? ds.map(d => `<div class="entry"><div class="entry-head">${esc(fmtTime(d.addedAt))}</div><div class="entry-body">${esc(d.text)}</div></div>`).join('') : '<div class="empty">还没有公开日记</div>');
-  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+    const ds = await rest('/api/diary?category=' + encodeURIComponent(book));
+    const html = ds.length
+      ? ds.map(d => `<div class="entry"><div class="entry-head">${d.date ? `<span>${esc(d.date)}</span>` : ''}<span>${esc(fmtTime(d.addedAt))}</span></div><div class="entry-body">${esc(d.text)}</div></div>`).join('')
+      : `<div class="empty">还没有公开的${esc(DIARY_NAMES[book] || '日记')}</div>`;
+    diaryCache[book] = html;
+    const cur = me.node.querySelector('#dy-tabs .chip.on');
+    if (sheetTop() === me && cur && cur.dataset.book === book) list.innerHTML = html;
+  } catch (e) { if (sheetTop() === me) list.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 async function openDailyList() {
   sheetLoading('每日总结');
@@ -838,8 +887,8 @@ async function saveFirst() {
   try { await mcp('add_first', { title: $('#fr-title').value, date: $('#fr-date').value.trim(), text: $('#fr-text').value }); m.textContent = '加好了'; }
   catch (e) { m.textContent = '失败：' + e.message; }
 }
-async function pinFirst(id, on) { try { await mcp('pin_first', { id, on }); sheetStack.pop(); openFirsts(); } catch (e) { alert(e.message); } }
-async function hideFirst(id) { try { await mcp('hide_first', { id, on: true }); sheetStack.pop(); openFirsts(); } catch (e) { alert(e.message); } }
+async function pinFirst(id, on) { try { await mcp('pin_first', { id, on }); sheetDrop(); openFirsts(); } catch (e) { alert(e.message); } }
+async function hideFirst(id) { try { await mcp('hide_first', { id, on: true }); sheetDrop(); openFirsts(); } catch (e) { alert(e.message); } }
 
 // ================= Tab 册 =================
 let albumLoaded = false, albumPhotos = [], albumTag = '', albumMode = 'date';

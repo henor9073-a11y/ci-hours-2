@@ -180,7 +180,8 @@ button.btn.ghost { background: var(--card); color: var(--text); box-shadow: var(
 .cx-row.me { flex-direction: row-reverse; }
 .cx-bw { display: flex; align-items: flex-end; gap: 6px; max-width: 80%; }
 .cx-bw.me { flex-direction: row-reverse; }
-.cx-bubble { padding: 10px 14px; line-height: 1.5; letter-spacing: .3px; word-break: break-word; white-space: pre-wrap; backdrop-filter: blur(10px); box-shadow: 0 1px 3px rgba(0,0,0,.03); }
+/* 每个气泡以前都带 backdrop-filter: blur——几百个模糊层叠在一起，手机上滚动一卡一卡的，拿掉了 */
+.cx-bubble { padding: 10px 14px; line-height: 1.5; letter-spacing: .3px; word-break: break-word; white-space: pre-wrap; box-shadow: 0 1px 3px rgba(0,0,0,.03); }
 .cx-time { font-size: 9px; flex-shrink: 0; margin-bottom: 4px; white-space: nowrap; }
 .cx-think-wrap, .cx-tool-wrap { margin: 2px 0; }
 .cx-think-btn { border: 1px solid; border-radius: 12px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: inherit; }
@@ -287,3 +288,29 @@ button.btn.ghost { background: var(--card); color: var(--text); box-shadow: var(
 .rv-col.target .rv-bubble, .rv-note.target, .rv-doc.target { animation: rvFlash 2.2s ease; }
 @keyframes rvFlash { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: var(--shadow); } }
 .rv-nav { display: flex; justify-content: space-between; margin: 24px 0 8px; }
+
+/* ---- 留言的外观全走变量（chat.js 的 applyLook 设在 .cx 上），改主题/滑块不用重画消息 ---- */
+.cx { color: var(--cx-text); }
+.cx-head { background: var(--cx-head); border-color: var(--cx-think-bd); }
+.cx-title { font-size: 17px; font-weight: 600; color: var(--cx-text); }
+.cx-sub { font-size: 11px; color: var(--cx-name); }
+.cx-gear { color: var(--cx-accent); }
+.cx-av { background: var(--cx-av-bg); color: var(--cx-accent); }
+.cx-av.img { background: transparent; }
+.cx.no-av .cx-av { display: none; }
+.cx:not(.no-av) .cx-think-wrap, .cx:not(.no-av) .cx-tool-wrap { padding-left: 40px; }
+.cx-day, .cx-time, .cx-t, .cx-empty, .cx-hint { color: var(--cx-time); }
+.cx-bubble { border-radius: var(--cx-radius); font-size: var(--cx-font); color: var(--cx-text); }
+.cx-bubble.ai { background: var(--cx-ai); }
+.cx-bubble.mine { background: var(--cx-me); }
+.cx-think-btn, .cx-think, .cx-tool { background: var(--cx-think-bg); border-color: var(--cx-think-bd); color: var(--cx-name); }
+.cx-arrow { display: inline-block; font-size: 9px; transition: transform .2s; }
+.cx-arrow.on { transform: rotate(90deg); }
+.cx-bolt { color: var(--cx-accent); opacity: .7; }
+.cx-tool code { color: var(--cx-name); }
+.cx-input-wrap { background: var(--cx-head); }
+.cx-input { background: var(--cx-input); border-color: var(--cx-think-bd); }
+.cx-input input { color: var(--cx-text); }
+#cx-rec { background: var(--cx-think-bg); color: var(--cx-accent); }
+.cx-send { background: var(--cx-accent); }
+.cx-set { background: var(--cx-set-bg); color: var(--cx-text); }

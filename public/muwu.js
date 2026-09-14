@@ -1,7 +1,9 @@
 // 木屋前端。跟木纹共用 app.js 和 style.css，数据同样走 /mcp。
 const { mcp, rest, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBetween, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR } = MW;
 MW.applyTheme();
-const $ = s => document.querySelector(s);
+// 弹层是一层层叠着的真 DOM（下面的层只是藏起来），不同层里可能有同名 id——先在最上面那层找。
+const $ = s => { let top = null; try { top = sheetStack[sheetStack.length - 1]; } catch {} return (top && top.node && top.node.querySelector(s)) || document.querySelector(s); };
+const byId = id => $('#' + CSS.escape(id));
 function fail(n, e) { n.innerHTML = `<div class="err">读不到：${esc(e.message || e)}</div>`; }
 
 function switchPage(name, node) {
@@ -18,10 +20,30 @@ function switchPage(name, node) {
 document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage(n.dataset.p, n));
 
 let sheetStack = [];
-function openSheet(t, h) { sheetStack.push({ t, h }); $('#sheet-title').textContent = t; $('#sheet-body').innerHTML = h; $('#sheet').classList.add('open'); $('#sheet').scrollTop = 0; }
-function closeSheet() { sheetStack.pop(); if (sheetStack.length) { const s = sheetStack[sheetStack.length - 1]; $('#sheet-title').textContent = s.t; $('#sheet-body').innerHTML = s.h; } else $('#sheet').classList.remove('open'); }
+// 每一层是真的 DOM 节点，往里走只是把下面那层藏起来；返回的时候原样露出来。
+// 以前拿 HTML 字符串整块重建：图片重新加载会闪、填了一半的表单会清空、滚动位置也回不去。
+function showLayer(s) { s.node.style.display = ''; $('#sheet-title').textContent = s.t; $('#sheet').scrollTop = s.scroll || 0; }
+function openSheet(t, h) {
+  const prev = sheetStack[sheetStack.length - 1];
+  if (prev) { prev.scroll = $('#sheet').scrollTop; prev.node.style.display = 'none'; }
+  const node = document.createElement('div');
+  node.className = 'sheet-layer';
+  node.innerHTML = h;
+  document.getElementById('sheet-body').appendChild(node);
+  sheetStack.push({ t, node, scroll: 0 });
+  $('#sheet-title').textContent = t;
+  $('#sheet').classList.add('open');
+  $('#sheet').scrollTop = 0;
+}
+// 扔掉最上面一层（不负责显示下一层）——"关掉这层马上重开同一种"的地方用
+function sheetDrop() { const s = sheetStack.pop(); if (s && s.node) s.node.remove(); return s; }
+function closeSheet() {
+  sheetDrop();
+  const s = sheetStack[sheetStack.length - 1];
+  if (s) showLayer(s); else $('#sheet').classList.remove('open');
+}
 function sheetLoading(t) { openSheet(t, '<div class="loading">读取中…</div>'); }
-function sheetSet(h) { $('#sheet-body').innerHTML = h; if (sheetStack.length) sheetStack[sheetStack.length - 1].h = h; }
+function sheetSet(h) { const s = sheetStack[sheetStack.length - 1]; if (s) s.node.innerHTML = h; }
 
 // ---------- 头像：存服务器，两个人看到同一张；点开是今日动态 ----------
 async function applyAvatars() {
@@ -125,11 +147,11 @@ async function uploadOotd(d, input) {
     const r = await MW.uploadPhoto(file, { caption: `OOTD ${d}`, date: d, tags: ['OOTD'] });
     await mcp('set_moment', { date: d, owner: 'nor', ootd_photo: r.photo.id, by: '棋子' });
     msg.textContent = '传好了';
-    sheetStack.pop(); openMoment('nor', d);
+    sheetDrop(); openMoment('nor', d);
   } catch (e) { msg.textContent = '上传失败：' + e.message; }
 }
 async function clearOotdPhoto(d) {
-  try { await mcp('set_moment', { date: d, owner: 'nor', ootd_photo: '', by: '棋子' }); sheetStack.pop(); openMoment('nor', d); } catch (e) { alert(e.message); }
+  try { await mcp('set_moment', { date: d, owner: 'nor', ootd_photo: '', by: '棋子' }); sheetDrop(); openMoment('nor', d); } catch (e) { alert(e.message); }
 }
 async function openAvatarPicker(owner) {
   sheetLoading('换头像');
@@ -312,11 +334,11 @@ async function uploadCountdownPhoto(id, input) {
   try {
     const r = await MW.uploadPhoto(f, { caption: '倒数日配图', tags: ['倒数日'] });
     await mcp('update_countdown', { id, photo_id: r.photo.id });
-    sheetStack.pop(); openCountdown(id); loadCountdowns();
+    sheetDrop(); openCountdown(id); loadCountdowns();
   } catch (e) { m.textContent = '失败：' + e.message; }
 }
 async function clearCountdownPhoto(id) {
-  try { await mcp('update_countdown', { id, photo_id: '' }); sheetStack.pop(); openCountdown(id); loadCountdowns(); } catch (e) { alert(e.message); }
+  try { await mcp('update_countdown', { id, photo_id: '' }); sheetDrop(); openCountdown(id); loadCountdowns(); } catch (e) { alert(e.message); }
 }
 
 function openAddCountdown() {
@@ -500,7 +522,7 @@ async function uploadBook(input) {
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || '上传失败');
     msg.textContent = `传好了：《${j.title}》${j.totalChapters} 章`;
-    sheetStack.pop(); openShelf();
+    sheetDrop(); openShelf();
   } catch (e) { msg.textContent = '失败：' + e.message; }
 }
 async function checkShelf() {
@@ -535,7 +557,7 @@ async function openAlbum(tag) {
       ${list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="openOnePhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">还没有照片</div>'}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-function reopenAlbum(tag) { sheetStack.pop(); openAlbum(tag || undefined); }
+function reopenAlbum(tag) { sheetDrop(); openAlbum(tag || undefined); }
 async function doUpload(input) {
   const files = [...(input.files || [])]; if (!files.length) return;
   const msg = $('#up-msg');
@@ -552,7 +574,7 @@ async function doUpload(input) {
     } catch (e) { msg.textContent = `第 ${done + 1} 张失败：${e.message}`; return; }
   }
   msg.textContent = `传好了 ${done} 张`;
-  sheetStack.pop(); openAlbum();
+  sheetDrop(); openAlbum();
 }
 function openOnePhoto(id) {
   const p = albumCache.find(x => x.id === id) || {};
@@ -680,7 +702,7 @@ async function saveSong() {
     const r = await fetch(MW.apiUrl('/api/songs'), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN },
       body: JSON.stringify({ title: t, artist: $('#sg-artist').value, lyrics: $('#sg-lyrics').value, note: $('#sg-note').value, added_by: '棋子' }) });
     if (!r.ok) throw new Error((await r.json()).error || '加不上');
-    sheetStack.pop(); openSongs();
+    sheetDrop(); openSongs();
   } catch (e) { m.textContent = '失败：' + e.message; }
 }
 async function openSong(id) {
@@ -782,6 +804,8 @@ async function doSearch(q) {
   } catch (e) { fail($('#s-body'), e); }
 }
 const CATNAME = { experience: '经历', agreement: '约定', feeling: '感受', learning: '学习', to_self: '给自己', unexplained: '说不清的', transcript: '原始记录', daily_summary: '每日总结' };
+// 分类名以后端标签总表为准（/api/labels），跟木纹、跟辞写记忆用的 remember 是同一份
+rest('/api/labels').then(ls => { for (const l of ls) if (CATNAME[l.key]) CATNAME[l.key] = l.name; }).catch(() => {});
 function group(title, items) {
   return `<div class="group"><div class="group-head" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
     <div class="group-title">${esc(title)}</div><div class="group-count">${items.length}条</div></div>
@@ -877,7 +901,15 @@ function setColor(k, v) { const t = MW.loadTheme(); t.custom[k] = v; MW.saveThem
 function resetCustom() { const t = MW.loadTheme(); t.custom = {}; MW.saveTheme(t); loadSettings(); }
 function setWall(v) { const t = MW.loadTheme(); t.ui.wallpaper = v; MW.saveTheme(t); loadSettings(); }
 function setWallpaperUrl() { const t = MW.loadTheme(); t.ui.wallpaper = $('#st-wall-url').value.trim(); MW.saveTheme(t); loadSettings(); }
-function setUI(k, v, unit) { const t = MW.loadTheme(); t.ui[k] = k === 'lineHeight' ? Number(v) : Number(v); MW.saveTheme(t); const s = $('#sv-' + k); if (s) s.textContent = v + (unit || ''); }
+// 滑块拖动时 oninput 一秒触发几十次。以前每次都把整站十几个 CSS 变量改一遍，
+// 整页跟着重算重画（底部导航还带模糊），拖起来一卡一卡的。合并成一帧最多改一次。
+let uiPending = {}, uiRaf = 0;
+function setUI(k, v, unit) {
+  uiPending[k] = Number(v);
+  const s = $('#sv-' + k); if (s) s.textContent = v + (unit || '');
+  if (uiRaf) return;
+  uiRaf = requestAnimationFrame(() => { uiRaf = 0; const t = MW.loadTheme(); Object.assign(t.ui, uiPending); uiPending = {}; MW.saveTheme(t); });
+}
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
 applyAvatars(); loadHome(); CX.init();

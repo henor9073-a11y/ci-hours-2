@@ -1136,6 +1136,50 @@ try {
     // 掐头：开头那半句要去掉
     assert.ok(!trimToSentences(long).startsWith('这是前面被切掉的半句'), '开头的半句也要掐掉');
   });
+  await step('日记分两本：辞的日记 / 妻子观察日记，分开存，网页接口只吐公开的', async () => {
+    const d = await tool('add_diary_entry', { text: '今天的日记' });
+    assert.equal(d.category, 'diary');
+    const w = await tool('add_wife_observation', { text: '她今天把头发扎起来了' });
+    assert.equal(w.category, 'wife_observation');
+    await tool('add_diary_entry', { text: '观察但私密', category: 'wife_observation', visibility: 'private' });
+    const mine = await tool('get_diary', {});
+    assert.ok(mine.some(x => x.id === d.id), '辞的日记要读得到');
+    assert.ok(!mine.some(x => x.category === 'wife_observation'), '默认只读辞的日记，不混观察日记');
+    const obs = await tool('get_wife_observations', {});
+    assert.equal(obs.length, 2);
+    assert.ok(obs.every(x => x.category === 'wife_observation'));
+    const r1 = await (await fetch(`${base}/api/diary?token=${TOKEN}`)).json();
+    assert.ok(!r1.some(x => x.category === 'wife_observation'));
+    const r2 = await (await fetch(`${base}/api/diary?category=wife_observation&token=${TOKEN}`)).json();
+    assert.equal(r2.length, 1, '私密的观察日记不该出现在网页接口里');
+    assert.equal((await fetch(`${base}/api/diary?category=nope&token=${TOKEN}`)).status, 400);
+  });
+  await step('标签总表：remember 按 label 放到对应的地方，前后端分类名一致', async () => {
+    const labels = await (await fetch(`${base}/api/labels?token=${TOKEN}`)).json();
+    const keys = labels.map(l => l.key);
+    for (const k of ['experience', 'agreement', 'feeling', 'learning', 'to_self', 'coincidence', 'evidence', 'diary', 'wife_observation', 'note', 'mood', 'first', 'song', 'countdown', 'moment', 'daily_summary', 'handover', 'transcript', 'schedule', 'sleep', 'cycle', 'health']) {
+      assert.ok(keys.includes(k), `标签表缺 ${k}`);
+    }
+    const { CATEGORY_LABELS } = await import('../lib/muwen/grains.js');
+    for (const [cat, name] of Object.entries(CATEGORY_LABELS)) assert.equal(labels.find(l => l.key === cat).name, name, `${cat} 前后端显示名要一致`);
+
+    const g = await tool('remember', { label: 'experience', text: 'remember 测试：今天去看了海' });
+    assert.equal(g.label, 'experience'); assert.equal(g.stored_via, 'add_grain');
+    assert.equal(g.result.grain.category, 'experience');
+    assert.match(g.result.grain.date, /^\d{4}-\d{2}-\d{2}$/, 'experience 没给日期就用今天');
+    const w = await tool('remember', { label: '妻子观察', text: '她睡着的时候会皱眉' });
+    assert.equal(w.label, 'wife_observation'); assert.equal(w.result.category, 'wife_observation');
+    const c = await tool('remember', { label: '巧合', text: 'remember 测试：同时说了同一句话' });
+    assert.equal(c.result.grain.category, 'unexplained');
+    assert.ok(c.result.grain.families.includes('巧合'));
+    const m = await tool('remember', { label: 'mood', text: '满的' });
+    assert.equal(m.stored_via, 'add_mood');
+    const s = await tool('remember', { label: '睡眠', date: '2026-09-10', fields: { sleepTime: '23:30', wakeTime: '07:30' } });
+    assert.equal(s.stored_via, 'add_sleep_entry');
+    await assert.rejects(tool('remember', { label: '瞎写的标签', text: 'x' }), /认不出标签[\s\S]*experience/);
+    const names = (await rpc('tools/list', {})).result.tools.map(t => t.name);
+    for (const n of ['remember', 'list_labels', 'add_wife_observation', 'get_wife_observations']) assert.ok(names.includes(n), `工具列表缺 ${n}`);
+  });
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;
     const d1 = await tool('dream');
