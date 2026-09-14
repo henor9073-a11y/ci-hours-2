@@ -15,7 +15,7 @@
   async function mcp(name, args = {}) {
     const r = await fetch(url('/mcp'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
+      headers: Object.assign({ 'Content-Type': 'application/json', 'x-access-token': TOKEN }, global.MW_READONLY ? { 'x-muwen-readonly': '1' } : {}),
       body: JSON.stringify({ jsonrpc: '2.0', id: ++mcpId, method: 'tools/call', params: { name, arguments: args } })
     });
     if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);

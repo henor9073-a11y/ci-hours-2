@@ -1180,6 +1180,32 @@ try {
     const names = (await rpc('tools/list', {})).result.tools.map(t => t.name);
     for (const n of ['remember', 'list_labels', 'add_wife_observation', 'get_wife_observations']) assert.ok(names.includes(n), `工具列表缺 ${n}`);
   });
+  await step('木纹网页只读：写工具被拒，读也不升温、不记访问、不写召回日志', async () => {
+    const ro = async (name, args = {}) => {
+      const r = await fetch(`${base}/mcp`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, 'x-muwen-readonly': '1' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name, arguments: args } })
+      });
+      return (await r.json()).result;
+    };
+    for (const [name, args] of [['add_diary_entry', { text: '网页不该写进来' }], ['remember', { label: 'feeling', text: '网页不该写进来' }], ['update_grain', { id: 'x', pinned: true }], ['move_to_archive', { id: 'x' }], ['set_handover', { text: 'x' }]]) {
+      const r = await ro(name, args);
+      assert(r.isError && r.content[0].text.includes('只读'), `${name} 应该被拒：${r.content[0].text}`);
+    }
+    const g = (await rest('/api/grains?limit=1'))[0];
+    assert(g, '要有一条纹理来测');
+    const logsBefore = (await tool('get_recall_logs', { limit: 1000 })).length;
+    for (const [name, args] of [['search_grains', { query: g.text.slice(0, 6), limit: 5 }], ['get_grain', { id: g.id }], ['get_grain_with_counterevidence', { id: g.id }], ['search_all', { query: g.text.slice(0, 6) }], ['auto_recall', { query: g.text.slice(0, 6) }]]) {
+      const r = await ro(name, args);
+      assert(!r.isError, `${name} 读应该放行：${r.content[0].text}`);
+    }
+    const after = await rest(`/api/grains/${g.id}`);
+    assert(after.access_count === g.access_count && after.heat === g.heat && after.last_accessed === g.last_accessed, `读完不该变：${g.access_count}/${g.heat} → ${after.access_count}/${after.heat}`);
+    assert((await tool('get_recall_logs', { limit: 1000 })).length === logsBefore, '网页搜索不该写召回日志');
+    const diaries = await tool('get_diary', { limit: 100 });
+    assert(!JSON.stringify(diaries).includes('网页不该写进来'), '被拒的写入不该落盘');
+  });
+
   await step('dream：衰减一次、第二次同一天跳过、pinned 不低于 20、提醒可读', async () => {
     const h0 = (await tool('get_grain', { id: 'x1' })).heat;
     const d1 = await tool('dream');

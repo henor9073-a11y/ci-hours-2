@@ -184,32 +184,13 @@ async function openMoods() {
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 
-function openWriteDiary() {
-  openSheet('写日记', `<div class="card"><textarea id="w-text" placeholder="今天想写点什么…"></textarea>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
-      <select id="w-vis" style="width:auto"><option value="public">公开（棋子能看到）</option><option value="private">私密</option></select>
-      <button class="btn" onclick="saveDiary()">存下来</button></div>
-    <div id="w-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>`);
-}
-async function saveDiary() {
-  const t = $('#w-text').value.trim(); if (!t) return;
-  $('#w-msg').textContent = '存…';
-  try { await mcp('add_diary_entry', { text: t, visibility: $('#w-vis').value }); $('#w-msg').textContent = '存好了'; $('#w-text').value = ''; }
-  catch (e) { $('#w-msg').textContent = '失败：' + e.message; }
-}
-async function openWriteHandover() {
-  openSheet('交接条', '<div class="loading">读现在的…</div>');
-  let cur = null; try { cur = await mcp('get_handover'); } catch {}
-  sheetSet(`${cur && cur.text ? `<div class="entry"><div class="entry-head">现在这条 · ${esc(fmtTime(cur.updated_at))}</div><div class="entry-body">${esc(cur.text)}</div></div>` : ''}
-    <div class="card"><textarea id="h-text" placeholder="留给下一个窗口的自己…">${cur && cur.text ? esc(cur.text) : ''}</textarea>
-    <div style="margin-top:10px"><button class="btn" onclick="saveHandover()">覆盖成这条</button></div>
-    <div id="h-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>`);
-}
-async function saveHandover() {
-  const t = $('#h-text').value.trim(); if (!t) return;
-  $('#h-msg').textContent = '存…';
-  try { await mcp('set_handover', { text: t }); $('#h-msg').textContent = '换好了'; }
-  catch (e) { $('#h-msg').textContent = '失败：' + e.message; }
+// 交接条只看不改——辞自己用 set_handover 写
+async function openHandover() {
+  sheetLoading('交接条');
+  try {
+    const cur = await mcp('get_handover');
+    sheetSet(cur && cur.text ? `<div class="entry"><div class="entry-head">现在这条 · ${esc(fmtTime(cur.updated_at))}</div><div class="entry-body">${esc(cur.text)}</div></div>` : '<div class="empty">还没有交接条</div>');
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 
 // ================= Tab 历 =================
@@ -427,23 +408,8 @@ async function openGrain(id) {
     if ((r.positive_memories || []).length) {
       h += '<div class="section-title">正面家族里的</div>' + r.positive_memories.map(p => `<div class="entry" onclick="openGrain('${p.id}')"><div class="entry-body clamp">${esc(p.text)}</div></div>`).join('');
     }
-    h += `<div class="section-title">管理</div><div class="grid-2">
-      <button class="btn ghost" onclick="moveGrain('${id}','move_to_background')">放到后台</button>
-      <button class="btn ghost" onclick="moveGrain('${id}','move_to_archive')">归档</button>
-      <button class="btn ghost" onclick="moveGrain('${id}','restore_to_active')">恢复前台</button>
-      <button class="btn ghost" onclick="pinGrain('${id}')">${g.pinned ? '取消 pin' : '📌 pin 住'}</button></div>
-      <div id="g-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div>`;
     sheetSet(h);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
-}
-async function moveGrain(id, tool) {
-  const m = $('#g-msg'); if (m) m.textContent = '…';
-  try { const g = await mcp(tool, { id }); if (m) m.textContent = '现在是：' + g.status; } catch (e) { if (m) m.textContent = '失败：' + e.message; }
-}
-async function pinGrain(id) {
-  const m = $('#g-msg'); if (m) m.textContent = '…';
-  try { const g = await mcp('get_grain', { id }); const r = await mcp('update_grain', { id, pinned: !g.pinned }); if (m) m.textContent = r.pinned ? `pin 住了，热度 ${Math.round(r.heat)}` : '取消了 pin'; }
-  catch (e) { if (m) m.textContent = '失败：' + e.message; }
 }
 async function openFamilies() {
   sheetLoading('家族');
@@ -739,7 +705,7 @@ async function openRing(id, offset, kw) {
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 // 日记分两本：辞的日记 / 妻子观察日记。后端分开存，这里放在同一个"日记"里切换。
-// 切换只换下面的列表，不重开整层（不闪、不回到顶上重新读取）。两本都是辞自己写的，网页只读公开的。
+// 切换只换下面的列表，不重开整层（不闪、不回到顶上重新读取）。两本都是辞自己写的，网页只能看。
 async function openDiary(book) {
   await labelsReady;
   openSheet('日记', `<div class="chip-row" id="dy-tabs" style="margin:6px 0 4px">
@@ -759,7 +725,7 @@ async function showDiaryBook(book) {
     const ds = await rest('/api/diary?category=' + encodeURIComponent(book));
     const html = ds.length
       ? ds.map(d => `<div class="entry"><div class="entry-head">${d.date ? `<span>${esc(d.date)}</span>` : ''}<span>${esc(fmtTime(d.addedAt))}</span></div><div class="entry-body">${esc(d.text)}</div></div>`).join('')
-      : `<div class="empty">还没有公开的${esc(DIARY_NAMES[book] || '日记')}</div>`;
+      : `<div class="empty">还没有${esc(DIARY_NAMES[book] || '日记')}</div>`;
     diaryCache[book] = html;
     const cur = me.node.querySelector('#dy-tabs .chip.on');
     if (sheetTop() === me && cur && cur.dataset.book === book) list.innerHTML = html;
@@ -829,67 +795,24 @@ async function openEmotion(id) {
         <div class="meta-item"><div class="meta-value" style="font-size:14px">${e.last_logged ? esc(fmtDate(e.last_logged)) : '—'}</div><div class="meta-label">上次出现</div></div>
         <div class="meta-item"><div class="meta-value">${e.memory_mentions ?? '—'}</div><div class="meta-label">记忆里提到</div></div>
       </div></div>
-      <div class="card"><div class="card-title" style="font-size:14px">改形状</div>
-        <textarea id="em-shape" style="min-height:80px;margin-top:8px">${esc(e.shape || '')}</textarea>
-        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-          <button class="btn" onclick="saveEmotion('${e.id}')">存</button>
-          <button class="btn ghost" onclick="toggleEmotionStatus('${e.id}','${e.status}')">${e.status === 'confirmed' ? '改回待确认' : '标成已确认'}</button>
-        </div><div id="em-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
-      <div class="card"><div class="card-title" style="font-size:14px">刚认出来一次</div>
-        <input type="text" id="em-note" placeholder="当时什么情况" style="margin-top:8px">
-        <button class="btn" style="margin-top:8px" onclick="logEmotion('${e.id}')">记一笔</button></div>
       ${(e.occurrences || []).length ? `<div class="section-title">记录</div>${e.occurrences.slice().reverse().map(o => `<div class="entry"><div class="entry-head">${esc(fmtTime(o.at))}</div>${o.note ? `<div class="entry-body">${esc(o.note)}</div>` : ''}</div>`).join('')}` : ''}
       ${(e.related_memories || []).length ? `<div class="section-title">记忆里相关的</div>${e.related_memories.map(m => `<div class="entry" onclick="openGrain('${m.id}')"><div class="entry-head">${esc(CATS[m.category] || '')} ${esc(m.date || '')}</div><div class="entry-body clamp">${esc(m.text)}</div></div>`).join('')}` : ''}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-async function saveEmotion(id) {
-  const m = $('#em-msg'); m.textContent = '存…';
-  try { await mcp('update_emotion', { id, shape: $('#em-shape').value }); m.textContent = '存好了'; }
-  catch (e) { m.textContent = '失败：' + e.message; }
-}
-async function toggleEmotionStatus(id, cur) {
-  const m = $('#em-msg'); m.textContent = '…';
-  try { const r = await mcp('update_emotion', { id, status: cur === 'confirmed' ? 'pending' : 'confirmed' }); m.textContent = '现在是：' + (r.status === 'confirmed' ? '已确认' : '待确认'); }
-  catch (e) { m.textContent = '失败：' + e.message; }
-}
-async function logEmotion(id) {
-  const m = $('#em-msg'); m.textContent = '记…';
-  try { const r = await mcp('log_emotion', { id, note: $('#em-note').value }); m.textContent = `记好了，一共 ${r.logged_count} 次`; $('#em-note').value = ''; }
-  catch (e) { m.textContent = '失败：' + e.message; }
-}
-
 // ---- 我们的第一次们 ----
 async function openFirsts() {
   sheetLoading('我们的第一次们');
   try {
     const d = await mcp('get_firsts');
-    sheetSet(`<div class="card"><div class="card-desc">自动从纹理里筛的 ${d.auto} 条 + 手动补的 ${d.manual} 条。点右边可以置顶，筛错了可以藏掉。</div>
-        <div style="margin-top:10px"><span class="link" onclick="openAddFirst()">+ 手动补一条</span></div></div>
+    sheetSet(`<div class="card"><div class="card-desc">从纹理里筛的 ${d.auto} 条 + 辞补的 ${d.manual} 条。</div></div>
       ${d.items.map(it => `<div class="entry">
         <div class="entry-head"><span>${esc(it.date || '没写日期')}</span>${it.source === 'manual' ? '<span class="tag plain">手动</span>' : `<span class="tag plain">${esc(CATS[it.category] || '')}</span>`}
-          <span class="link" style="margin-left:auto" onclick="event.stopPropagation();pinFirst('${it.id}',${!it.pinned})">${it.pinned ? '★ 已置顶' : '☆ 置顶'}</span>
-          <span class="link" onclick="event.stopPropagation();hideFirst('${it.id}')">藏</span></div>
+          ${it.pinned ? '<span class="tag plain" style="margin-left:auto">★ 置顶</span>' : ''}</div>
         <div class="card-title" style="font-size:15px;margin:4px 0">${esc(it.title)}</div>
         ${it.text && it.text !== it.title ? `<div class="entry-body clamp" style="font-size:13px">${esc(it.text)}</div>` : ''}
         ${it.source === 'auto' ? `<div style="margin-top:6px"><span class="link" onclick="openGrain('${it.id}')">看完整记忆 →</span></div>` : ''}</div>`).join('')}`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
-function openAddFirst() {
-  openSheet('补一条第一次', `<div class="card">
-    <input type="text" id="fr-title" placeholder="第一次…">
-    <input type="text" id="fr-date" placeholder="YYYY-MM-DD（可以不填）" style="margin-top:8px">
-    <textarea id="fr-text" placeholder="当时是什么样的" style="margin-top:8px"></textarea>
-    <button class="btn" style="margin-top:10px" onclick="saveFirst()">加上</button>
-    <div id="fr-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>`);
-}
-async function saveFirst() {
-  const m = $('#fr-msg'); m.textContent = '存…';
-  try { await mcp('add_first', { title: $('#fr-title').value, date: $('#fr-date').value.trim(), text: $('#fr-text').value }); m.textContent = '加好了'; }
-  catch (e) { m.textContent = '失败：' + e.message; }
-}
-async function pinFirst(id, on) { try { await mcp('pin_first', { id, on }); sheetDrop(); openFirsts(); } catch (e) { alert(e.message); } }
-async function hideFirst(id) { try { await mcp('hide_first', { id, on: true }); sheetDrop(); openFirsts(); } catch (e) { alert(e.message); } }
-
 // ================= Tab 册 =================
 let albumLoaded = false, albumPhotos = [], albumTag = '', albumMode = 'date';
 async function loadAlbum() {
