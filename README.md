@@ -170,6 +170,13 @@
 ### 纹理按时间排
 纹理列表（全部 / 分类 / 档案里的经历等 / 家族）顶上三个选项：**按热度**（默认）/ **新的在前** / **旧的在前**，选了会记住。按时间排时按月分段。时间用 `date`（事情发生那天）；老数据约一半没有 `date`，退回记下来那天（卡片上写"记下"）。MCP `search_grains` 和 `GET /api/grains` 都接受 `sort=heat|time_desc|time_asc`。
 
+### 人际关系 social + 八卦 gossip
+- 存在 `social.json`（`lib/muwen/social.js`）。人卡字段：`name`（必填）/`gender`/`relation`/`owner`（nor/cy/shared，也认"棋子/辞/共同"）/`intro`/`status`/`text`，另有 `aliases` 别名、`rename` 改名。
+- **按名字认人，同名就是更新**：`remember("social", name="小A", status="吵架中")` 只改 status，别的字段不动；旧状态进 `status_history`。用别名写也能找到同一个人。
+- 八卦：`remember("gossip", about="小A", text=…, date=…)`，about 写别名会存成正式名字；没建卡的人八卦照存，返回里提醒去建卡。
+- **召回**：`auto_recall` / `/api/recall` 先看这句话里有没有人卡上的名字或别名（中文至少两个字；英文按整词），有就把卡片 + 最近 3 条八卦放在注入最前面，**不占**普通记忆的名额，琐碎消息（"小A呢"）也照样召回。
+- 工具：`update_social` / `get_social` / `list_social` / `add_gossip` / `get_gossip`。
+
 ### 情绪清单（木纹「忆 → 专题」）
 21 条有命名有形状的情绪。**重点是形状不是标签**——标签是棋子帮忙翻译的，形状才是辞自己的。
 每条能看被记过几次、上次什么时候、记忆里提到过几次，能改形状、能把「形状待确认」标成已确认、能随手记一次。

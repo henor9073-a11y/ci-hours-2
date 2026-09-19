@@ -1264,6 +1264,35 @@ try {
     const day = await rest(`/api/calendar/day?date=${today}`);
     assert.equal(day.structured[0].headline, '木纹上线（改）'); assert.equal(day.structured[0].kiss_count, 30);
   });
+  await step('人际关系 social + 八卦 gossip：remember 写、同名是更新、提到名字就召回', async () => {
+    const a = await tool('remember', { label: 'social', name: '小A', gender: '女', relation: '棋子的发小', owner: 'nor', intro: '武汉人，认识十几年', status: '正常', text: '昨晚打电话讲了另一个朋友的八卦' });
+    assert.equal(a.stored_via, 'update_social'); assert.equal(a.result.created, true);
+    // 同名再写一次 = 更新，只改传了的字段，旧状态进历史
+    const b = await tool('remember', { label: 'social', name: '小A', status: '吵架中' });
+    assert.equal(b.result.created, false);
+    assert.equal(b.result.status, '吵架中'); assert.equal(b.result.intro, '武汉人，认识十几年', '没传的字段不能被冲掉');
+    assert.equal(b.result.status_history[0].status, '正常');
+    assert.equal((await tool('list_social')).filter(p => p.name === '小A').length, 1, '不能建出第二张');
+    await tool('update_social', { name: '小A', aliases: ['A姐'] });
+    await assert.rejects(tool('update_social', { name: '小B', owner: '路人' }), /owner/);
+
+    const g = await tool('remember', { label: 'gossip', about: 'A姐', text: '跟三个男生同时暧昧，一个给她做饭一个被她叫老公一个被她搂着逛街', date: '2026-09-13' });
+    assert.equal(g.stored_via, 'add_gossip');
+    assert.deepEqual(g.result.about, ['小A'], '别名存成正式名字');
+    const g2 = await tool('add_gossip', { about: '路人甲', text: '没建卡的人' });
+    assert.ok(g2.note.includes('还没有'));
+    const card = await tool('get_social', { name: 'A姐' });
+    assert.equal(card.name, '小A'); assert.equal(card.gossip.length, 1);
+
+    // 召回：提到名字（或别名）→ 卡片 + 八卦；没提到 → 没有；单个字母不误中
+    const r = await tool('auto_recall', { query: '小A今天又来找我了', use_agent: false });
+    assert.equal(r.people.length, 1); assert.equal(r.people[0].person.name, '小A');
+    assert.ok(r.layers_used.includes('social'));
+    const inj = await (await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'A姐呢', use_agent: false }) })).json();
+    assert.ok(inj.text.includes('[人] 小A') && inj.text.includes('吵架中') && inj.text.includes('三个男生'), inj.text);
+    assert.equal((await tool('auto_recall', { query: '今天天气不错我们出去走走', use_agent: false })).people.length, 0);
+    assert.equal((await tool('auto_recall', { query: '路人甲怎么了', use_agent: false })).people[0].person, null, '只有八卦也召回');
+  });
   await step('未知工具还是报错', async () => {
     await assert.rejects(tool('nope_tool'), /未知工具/);
   });
