@@ -205,15 +205,55 @@ app.post('/api/songs/:id', (req, res) => {
 });
 app.get('/api/firsts', (req, res) => res.json(mw.firsts.getFirsts({ limit: Number(req.query.limit) || 200 })));
 app.get('/api/chat', (req, res) => {
-  res.json(mw.chat.getMessages({ since: req.query.since || '', limit: Number(req.query.limit) || 200 }));
+  res.json(mw.chat.getMessages({
+    since: req.query.since || '', before: req.query.before || '',
+    limit: Math.min(Number(req.query.limit) || 200, 500), starred: req.query.starred === '1'
+  }));
 });
 app.get('/api/chat/unread', (req, res) => res.json(mw.chat.unreadSummary(req.query.who === 'cy' ? 'cy' : 'nor')));
-app.post('/api/chat', (req, res) => {
-  // 棋子发消息走这里，不经过 MCP
+app.post('/api/chat', async (req, res) => {
+  // 棋子发消息走这里，不经过 MCP。网页上发的一律算棋子的——辞说话只能走 MCP 的 chat_reply，
+  // 跟状态文字一个道理：两边各自的入口卡住，网页冒充不了辞。
   try {
     const b = req.body || {};
-    res.json(mw.chat.sendMessage({ ...b, sender: b.sender === 'cy' ? 'cy' : 'nor' }));
+    res.json(await mw.chat.sendMessage({ ...b, sender: 'nor', thinking: '', tools: [], voice_id: '' }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+// GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
+app.get('/api/chat/pending', (_, res) => res.json(mw.chat.pendingForCy()));
+app.post('/api/chat/delivered', (req, res) => {
+  try { res.json(mw.chat.markDelivered((req.body || {}).ids || [])); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/chat/star', (req, res) => {
+  const { id, on } = req.body || {};
+  const m = mw.chat.setStar(String(id || ''), on !== false, '棋子');
+  if (!m) return res.status(404).json({ error: '找不到这条消息' });
+  res.json(m);
+});
+// 状态文字：网页只能改棋子的（辞的由 MCP 的 set_status 改）
+app.get('/api/chat/status', (_, res) => res.json(mw.chat.getStatus()));
+app.post('/api/chat/status', (req, res) => {
+  try { res.json(mw.chat.setStatus('nor', (req.body || {}).text)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/chat/pats', (_, res) => res.json(mw.chat.getPats()));
+app.post('/api/chat/pats', (req, res) => {
+  try { res.json(mw.chat.setPats((req.body || {}).list)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/chat/image/:id', (req, res) => {
+  const r = mw.chat.imageRef(req.params.id);
+  if (!r) return res.status(404).json({ error: '找不到这张图' });
+  if (r.photo_id) {
+    const p = mw.album.getPhotoPath(r.photo_id);
+    if (!p) return res.status(404).json({ error: '相册里这张图没了' });
+    res.setHeader('Cache-Control', 'private, max-age=604800');
+    return res.sendFile(path.resolve(p));
+  }
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  res.setHeader('Content-Type', r.mime);
+  fs.createReadStream(r.path).pipe(res);
 });
 app.post('/api/chat/read', (req, res) => {
   try { const b = req.body || {}; res.json(mw.chat.markRead(b.ids || [], b.who === 'cy' ? 'cy' : 'nor')); }

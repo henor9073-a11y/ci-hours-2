@@ -120,6 +120,8 @@
     <span style="font-size:13px;color:var(--text-secondary)">也搜记忆</span>
     <span class="chip on" id="s-toggle" onclick="toggleMemSearch()">开</span>
   </div>
+  <div class="card tap" onclick="openStarred()" style="margin-top:14px"><div class="card-row"><div class="card-icon accent">★</div>
+    <div><div class="card-title">收藏的消息</div><div class="card-desc">聊天里长按标星的，两个人共用</div></div></div></div>
   <div id="s-body"></div>
 </div>
 
@@ -132,6 +134,10 @@
 <!-- 设 -->
 <div class="page" id="page-settings">
   <div class="greeting"><div class="greeting-date sm">设置</div><div class="greeting-sub">木屋装修 · 改完立刻生效，木纹也跟着变</div></div>
+  <div class="section-title">聊天配色</div>
+  <div id="st-chat-theme" class="grid-3"></div>
+  <div class="section-title">拍一拍库 <span class="link" style="font-weight:400">长按辞的头像时从这里选</span></div>
+  <div class="card" id="st-pats"><div class="loading">…</div></div>
   <div class="section-title">配色预设</div>
   <div id="st-presets" class="grid-2"></div>
   <div class="section-title">单独调色 <span class="link" onclick="resetCustom()">清掉自定义</span></div>

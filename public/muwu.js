@@ -882,6 +882,8 @@ const WALLPAPERS = [
 ];
 function loadSettings() {
   setLoaded = true;
+  renderChatThemes();
+  renderPats();
   const t = MW.loadTheme();
   $('#st-presets').innerHTML = Object.entries(THEMES).map(([k, v]) => `<div class="card tap" onclick="pickPreset('${k}')" style="${t.preset === k ? 'outline:2px solid var(--accent)' : ''}">
     <div style="display:flex;gap:5px;margin-bottom:8px">${['bg', 'primary', 'accent', 'text'].map(c => `<span style="width:20px;height:20px;border-radius:6px;background:${v.vars[c]};border:1px solid rgba(0,0,0,.08)"></span>`).join('')}</div>
@@ -918,3 +920,43 @@ applyAvatars(); loadHome(); CX.init();
 // 上次解锁过就直接开始轮询（解锁状态记在本地，不用每次都点）
 if (localStorage.getItem('muwen-voice-unlocked') === '1') { voiceUnlocked = true; startVoicePolling(); }
 window.switchPage = switchPage; window.closeSheet = closeSheet;
+
+// ---------- 设置页：聊天配色 + 拍一拍库 ----------
+function renderChatThemes() {
+  const cur = CX.theme();
+  $('#st-chat-theme').innerHTML = Object.entries(CX.themes).map(([k, t]) => `<div class="card tap" onclick="pickChatTheme('${k}')"
+    style="background:${t.bg};text-align:center;padding:14px 8px;${cur === k ? 'outline:2px solid ' + t.accent : ''}">
+    <div style="display:flex;gap:4px;justify-content:center;margin-bottom:6px"><span style="width:16px;height:16px;border-radius:50%;background:rgb(${t.me})"></span><span style="width:16px;height:16px;border-radius:50%;background:${t.accent}"></span></div>
+    <div style="font-size:14px;font-weight:600;color:${t.text}">${t.name}</div></div>`).join('');
+}
+function pickChatTheme(k) { CX.setTheme(k); renderChatThemes(); }
+async function renderPats() {
+  const box = $('#st-pats');
+  const list = await CX.loadPats();
+  box.innerHTML = `${list.map((p, i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">拍了拍 小辞<b>${esc(p)}</b>${p ? '' : '<span style="color:var(--text-light)">（光拍一下）</span>'}</span>
+      <span class="link" onclick="removePat(${i})">删</span></div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:10px"><input id="st-pat-new" placeholder="比如：的脑袋说乖" maxlength="30" style="flex:1">
+    <button class="btn" onclick="addPat()">加</button></div>
+    <div id="st-pat-msg" style="font-size:12px;color:var(--text-light);margin-top:6px"></div>`;
+}
+async function addPat() {
+  const v = $('#st-pat-new').value.trim(); if (!v) return;
+  try { await CX.savePats([...(await CX.loadPats()), v]); renderPats(); } catch (e) { $('#st-pat-msg').textContent = '没存上：' + e.message; }
+}
+async function removePat(i) {
+  const list = (await CX.loadPats()).slice(); list.splice(i, 1);
+  try { await CX.savePats(list); renderPats(); } catch (e) { $('#st-pat-msg').textContent = '没删掉：' + e.message; }
+}
+// ---------- 搜索页：收藏的消息 ----------
+async function openStarred() {
+  sheetLoading('收藏的消息');
+  try {
+    const list = await rest('/api/chat?starred=1&limit=500');
+    sheetSet(list.length ? list.slice().reverse().map(m => `<div class="entry">
+        <div class="entry-head"><span>${m.sender === 'cy' ? '辞' : '棋子'}</span><span>${esc(fmtTime(m.at))}</span></div>
+        <div class="entry-body">${m.type === 'image' ? `<img src="${MW.apiUrl('/api/chat/image/' + m.id)}" style="max-width:160px;border-radius:10px">` :
+          m.type === 'voice' ? '🎤 ' + esc(m.transcript || '语音') : m.type === 'pat' ? '👋 拍了拍' + esc(m.content || '') : esc(m.content)}</div></div>`).join('')
+      : '<div class="empty">还没有收藏。聊天里长按一条消息 → 收藏</div>');
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}

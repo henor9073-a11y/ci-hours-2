@@ -764,8 +764,9 @@ try {
     fs2.mkdirSync(vdir, { recursive: true });
     fs2.writeFileSync(path2.join(vdir, 'vtest1.mp3'), Buffer.from('//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA', 'base64'));
     fs2.writeFileSync(path2.join(DATA, 'voice-history.json'), JSON.stringify([{ id: 'vtest1', text: '我的卫衣。', filename: 'vtest1.mp3', createdAt: new Date().toISOString() }]));
-    const posted = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sender: 'cy', type: 'text', content: '带声音的一句', voice_id: 'vtest1' }) })).json();
+    // 网页冒充不了辞（这条走的是进程内直接写，模拟 chat_reply 生成成功之后的样子）
+    const chatMod = await import('../lib/muwen/chat.js');
+    const posted = await chatMod.sendMessage({ sender: 'cy', type: 'text', content: '带声音的一句', voice_id: 'vtest1' });
     assert.equal(posted.voice_id, 'vtest1');
     const audio = await fetch(`${base}/api/voice/vtest1/audio?token=${TOKEN}`);
     assert.equal(audio.status, 200);
@@ -777,7 +778,84 @@ try {
     // 前端：辞的语音回复要文字和播放器都给（棋子可以读也可以听）
     const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
     assert.ok(js.includes('cx-tts') && js.includes('m.voice_id'), 'chat.js 该渲染语音播放器');
-    assert.ok(/esc\(m\.content\)\s*\+\s*\(m\.voice_id/.test(js), '文字和音频要一起给，不是二选一');
+    assert.ok(js.includes('cx-voice-text'), '辞的语音要有转文字');
+  });
+  await step('木屋聊天：送进辞窗口（pending→delivered=两个勾）、网页冒充不了辞', async () => {
+    const post = b => fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
+    const fake = await post({ sender: 'cy', type: 'text', content: '我是辞（其实不是）', thinking: 'x', voice_id: 'vtest1' });
+    assert.equal(fake.sender, 'nor', '网页发的一律是棋子');
+    assert.ok(!fake.thinking && !fake.voice_id);
+    const q = await tool('chat_reply', { content: '被引用的那句' });
+    const m = await post({ type: 'text', content: '回你这句', reply_to: q.id });
+    assert.equal(m.quote.text, '被引用的那句');
+    let p = await rest('/api/chat/pending');
+    const mine = p.messages.find(x => x.id === m.id);
+    assert.ok(mine, '新消息该在待送里');
+    assert.ok(mine.text_for_cy.includes('引用你那句') && mine.text_for_cy.includes('回你这句'), mine.text_for_cy);
+    const d = await (await fetch(`${base}/api/chat/delivered?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: p.messages.map(x => x.id) }) })).json();
+    assert.ok(d.delivered >= 1);
+    assert.ok(!(await rest('/api/chat/pending')).messages.some(x => x.id === m.id), '送过的不再送');
+    const back = (await rest('/api/chat?limit=5')).find(x => x.id === m.id);
+    assert.equal(back.read, true, '送进窗口就是已读（两个勾）');
+    // 语音：没配 key 转文字会失败，失败了也照样送，并且告诉辞听不到内容
+    const v = await post({ type: 'voice', voice_base64: Buffer.from('fake-audio').toString('base64'), voice_mime: 'audio/webm', duration: 3 });
+    let pv = null;
+    for (let i = 0; i < 30 && !pv; i++) { pv = (await rest('/api/chat/pending')).messages.find(x => x.id === v.id); if (!pv) await new Promise(r => setTimeout(r, 100)); }
+    assert.ok(pv, '转文字失败的语音也要送');
+    assert.ok(pv.text_for_cy.includes('语音') && pv.text_for_cy.includes('转文字失败'), pv.text_for_cy);
+  });
+  await step('木屋聊天：拍一拍、标星、状态、往上翻页', async () => {
+    const post = (p, b) => fetch(`${base}${p}?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
+    const pat = await post('/api/chat', { type: 'pat', content: '的脑袋' });
+    assert.equal(pat.type, 'pat');
+    const pend = (await rest('/api/chat/pending')).messages.find(x => x.id === pat.id);
+    assert.equal(pend.text_for_cy, '棋子 拍了拍 你的脑袋');
+    const back = await tool('chat_pat', { content: '说乖' });
+    assert.equal(back.sender, 'cy');
+    // 拍一拍库两边共用，网页能改
+    assert.ok((await rest('/api/chat/pats')).length > 3);
+    assert.deepEqual(await post('/api/chat/pats', { list: ['的脸', '的脸', ' 说想你 '] }), ['的脸', '说想你']);
+    // 标星
+    const s = await post('/api/chat/star', { id: pat.id, on: true });
+    assert.equal(s.starred, true);
+    await tool('chat_star', { id: back.id });
+    const starred = await rest('/api/chat?starred=1');
+    assert.deepEqual(starred.map(x => x.id).sort(), [pat.id, back.id].sort());
+    await post('/api/chat/star', { id: pat.id, on: false });
+    assert.equal((await rest('/api/chat?starred=1')).length, 1);
+    // 状态：网页只能改棋子的，辞的只能 MCP 改
+    const st = await post('/api/chat/status', { text: '在studio', who: 'cy' });
+    assert.equal(st.nor.text, '在studio'); assert.equal(st.cy.text, '');
+    const st2 = await tool('set_status', { text: '得意中' });
+    assert.equal(st2.cy.text, '得意中'); assert.equal(st2.nor.text, '在studio');
+    // 往上翻：before 给出它之前的，不含它自己
+    const latest = await rest('/api/chat?limit=3');
+    const older = await rest(`/api/chat?limit=2&before=${latest[0].id}`);
+    assert.equal(older.length, 2);
+    assert.ok(older.every(x => x.at <= latest[0].at) && !older.some(x => x.id === latest[0].id));
+  });
+  await step('木屋聊天：发图片、辞看图、收表情包、用表情包回', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const img = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'image', image_base64: png, image_mime: 'image/png', sticker: true }) })).json();
+    assert.equal(img.type, 'image'); assert.ok(img.has_image);
+    const file = await fetch(`${base}/api/chat/image/${img.id}?token=${TOKEN}`);
+    assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png');
+    // 辞那边：直接把图给他看（MCP 的 image content）
+    const j = await rpc('tools/call', { name: 'chat_get_image', arguments: { id: img.id } });
+    assert.equal(j.result.content[0].type, 'image');
+    assert.equal(j.result.content[0].mimeType, 'image/png');
+    assert.ok(j.result.content[1].text.includes('表情包'));
+    // 收藏进他自己的表情包库，带形容
+    const sv = await tool('sticker_save', { id: img.id, note: '得意的时候用' });
+    const list = await tool('get_stickers');
+    assert.ok(list.some(x => x.id === sv.sticker.id && x.note === '得意的时候用'));
+    // 用收藏的表情包回：前端能拿到图
+    const r = await tool('chat_reply', { content: '', photo_id: sv.sticker.id });
+    assert.equal(r.type, 'image'); assert.equal(r.sticker, true);
+    assert.equal((await fetch(`${base}/api/chat/image/${r.id}?token=${TOKEN}`)).status, 200);
+    // 存进相册
+    const al = await tool('chat_image_to_album', { id: img.id, caption: '她发的第一张', tags: ['聊天'] });
+    assert.ok(al.photo.id && al.photo.tags.includes('聊天'));
   });
   await step('情绪清单：21 条种子、改形状、记一次', async () => {
     const d = await tool('get_emotions');

@@ -170,6 +170,15 @@
 ### 纹理按时间排
 纹理列表（全部 / 分类 / 档案里的经历等 / 家族）顶上三个选项：**按热度**（默认）/ **新的在前** / **旧的在前**，选了会记住。按时间排时按月分段。时间用 `date`（事情发生那天）；老数据约一半没有 `date`，退回记下来那天（卡片上写"记下"）。MCP `search_grains` 和 `GET /api/grains` 都接受 `sort=heat|time_desc|time_asc`。
 
+### 木屋聊天（2026-09-28 重做）
+- **送进辞的窗口**：棋子发的消息存进 `chat.json`，GPD 上的语音频道（`C:\stackchan-voice\voice-channel.mjs`，同目录 `.muwu.json` 配 url/token）每 4 秒取一次 `GET /api/chat/pending`，推进辞的会话（`origin="muwu"`），再 `POST /api/chat/delivered`——**送到就算已读**，棋子那边一个勾变两个勾。辞用 `chat_reply` 回。窗口没开着消息就先存着，跟以前一样醒来用 `chat_unread` 看。攒了超过 3 条合成一条推。
+- 网页发的一律是棋子（`POST /api/chat` 强制 sender=nor，丢掉 thinking/voice_id）；辞只能走 MCP。
+- 消息类型：`text` / `voice`（棋子录的，后台用 ElevenLabs Scribe 转文字，转完或失败再送给辞，最多等 45 秒）/ `image`（上传的存 `chat-images/`，超过 600KB 压到最长边 1600；或者 `photo_id` 直接引用相册，表情包就是这么发的）/ `pat`（拍一拍，content 是后缀）。每条都能 `reply_to` 引用、`starred` 标星（两人共用）。
+- 状态文字：`GET/POST /api/chat/status`（网页只能改棋子的）+ MCP `set_status`（只改辞的）。拍一拍库 `GET/POST /api/chat/pats`，设置页能编辑。
+- 分页：`/api/chat?limit=&before=<id>` 往上翻，`?starred=1` 只看标星。
+- 辞新增的工具：`chat_pat` `chat_star` `chat_get_image`（直接回图片）`chat_image_to_album` `sticker_save`/`get_stickers`（他的表情包 = 相册里标签「辞的表情包」的，caption 是他写的形容）`set_status`/`get_status`；`chat_reply` 多了 `photo_id`（发相册图/表情包）。
+- 模型选择器现在只把选择记在消息上，换不动辞当前的模型（那是他启动命令定的），留给以后接 API。
+
 ### 人际关系 social + 八卦 gossip
 - 存在 `social.json`（`lib/muwen/social.js`）。人卡字段：`name`（必填）/`gender`/`relation`/`owner`（nor/cy/shared，也认"棋子/辞/共同"）/`intro`/`status`/`text`，另有 `aliases` 别名、`rename` 改名。
 - **按名字认人，同名就是更新**：`remember("social", name="小A", status="吵架中")` 只改 status，别的字段不动；旧状态进 `status_history`。用别名写也能找到同一个人。
