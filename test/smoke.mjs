@@ -896,6 +896,33 @@ try {
       assert.ok(!/notebook|notbook/i.test(t), `${n} 里不该出现 notebook`);
     }
   });
+  await step('调温：辞苏醒时能手动降热度、pinned 有地板、heat_review 给候选', async () => {
+    const { grain: g } = await tool('add_grain', { category: 'experience', text: '调温测试：那个已经终止的备份方案，当时讨论了很久。', date: '2026-09-01' });
+    assert.equal(Math.round(g.heat), 50, '新纹理默认 50 度');
+    // 过时的降下去
+    const cooled = await tool('update_grain', { id: g.id, heat: 12 });
+    assert.equal(Math.round(cooled.heat), 12, `该降到 12：${cooled.heat}`);
+    assert.equal(cooled.confidence, 'reference', '降到 30 以下就只能内部参考，不当事实说');
+    // 重新要紧的升回来
+    const warmed = await tool('update_grain', { id: g.id, heat: 75 });
+    assert.equal(Math.round(warmed.heat), 75);
+    assert.equal(warmed.confidence, 'cite');
+    // pinned 的有地板，降不穿
+    await tool('update_grain', { id: g.id, pinned: true });
+    const floored = await tool('update_grain', { id: g.id, heat: 1 });
+    assert.equal(Math.round(floored.heat), 20, `pinned 的不该低于 20：${floored.heat}`);
+    // 超出范围要夹住，不是报错
+    const maxed = await tool('update_grain', { id: g.id, heat: 999 });
+    assert.equal(Math.round(maxed.heat), 100);
+    await assert.rejects(() => tool('update_grain', { id: g.id, heat: '烫' }), /heat 要是数字/);
+
+    const rv = await tool('heat_review', { limit: 5, stale_days: 1 });
+    assert.ok(Array.isArray(rv.stale) && Array.isArray(rv.fresh), '两边都要给');
+    assert.ok(rv.fresh.some(x => x.id === g.id), `刚存的该出现在 fresh 里：${JSON.stringify(rv.fresh.map(x => x.id))}`);
+    assert.ok(!rv.stale.some(x => x.id === g.id), 'pinned 的不该进降温候选');
+    assert.ok(rv.note.includes('update_grain'), '要告诉她怎么动手');
+  });
+
   await step('便签本同步：sticky/today 排最前、密码类绝不注入、单向不回写', async () => {
     const { searchNotes, looksSecret } = await import('../lib/muwen/notebook.js');
     const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
