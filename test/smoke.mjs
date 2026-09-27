@@ -365,7 +365,7 @@ try {
     const t3 = await tool('auto_recall', { query: '量子色动力学的渐近自由' });
     assert.equal(t3.trivial, undefined); assert.deepEqual(t3.memories, []);
     // REST：默认回 { text, count } 的 JSON，且响应体是纯 ASCII（\uXXXX 转义），PS 5.1 才不会解错
-    const rt = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天' }) });
+    const rt = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天', suppress_recent: false }) });
     assert.equal(rt.headers.get('content-type'), 'application/json; charset=utf-8');
     const rawBody = await rt.text();
     assert.ok(/^[\x00-\x7F]*$/.test(rawBody), '响应体必须是纯 ASCII');
@@ -888,6 +888,50 @@ try {
       assert.ok(!/notebook|notbook/i.test(t), `${n} 里不该出现 notebook`);
     }
   });
+  await step('召回升级：联想 3 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超 1500 字', async () => {
+    const { autoRecall, formatInjection, isHistoryAsk, INJECT_BUDGET } = await import('../lib/muwen/recall.js');
+    const noSem = async () => ({ picks: [], index_count: 0 });
+    const noRing = async () => ({ picks: [], index_count: 0 });
+
+    // 1. 问法分档
+    assert.ok(isHistoryAsk('我们之前那个方案是怎么说的'), '"之前…怎么说的" 该算查历史');
+    assert.ok(isHistoryAsk('上次你提过的那件事'), '"上次…提过" 该算查历史');
+    assert.ok(!isHistoryAsk('今天好累啊'), '闲聊不该算查历史');
+
+    const chat = await autoRecall('今天摆摊人好多', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
+    assert.equal(chat.intent, 'association');
+    assert.equal(chat.max_return, 3, `联想该给 3 条上限：${chat.max_return}`);
+    const hist = await autoRecall('摆摊那天我们之前是怎么说的', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
+    assert.equal(hist.intent, 'answer');
+    assert.equal(hist.max_return, 6, `查历史该给 6 条上限：${hist.max_return}`);
+
+    // 2. 30 分钟内浮现过的不再出现；同一句改成查历史的问法就不压制
+    const first = await autoRecall('摆摊那天', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
+    assert.ok(first.memories.length >= 1, '先得召回到东西才谈得上压制');
+    const firstIds = first.memories.map(m => m.id);
+    const again = await autoRecall('摆摊那天', { useAgent: true, _semanticPick: noSem, _pickRings: noRing });
+    assert.ok(!again.memories.some(m => firstIds.includes(m.id)),
+      `刚浮现过的不该再出现：${JSON.stringify(again.memories.map(m => m.id))}`);
+    assert.ok(again.suppressed >= 1, '压制掉的条数要记下来');
+    const askAgain = await autoRecall('摆摊那天我们上次是怎么说的', { useAgent: true, _semanticPick: noSem, _pickRings: noRing });
+    assert.ok(askAgain.memories.some(m => firstIds.includes(m.id)), '主动问历史时不该压制');
+
+    // 3. 片段取最相关那段，不是从头硬截
+    const tail = '这句才是要找的：她把螺旋桨扳手落在摊位底下了。';
+    const long = '开头先交代了一堆背景，' + '当时天气不错人也多，摊子摆在老地方。'.repeat(12) + tail;
+    const inj = formatInjection({ query: '螺旋桨扳手', memories: [{ layer: 'authority', kind: 'grain', id: 'g-frag',
+      category: 'experience', heat: 50, confidence: 'cite', text: long }] });
+    assert.ok(inj.includes('螺旋桨扳手'), `片段该定位到相关那句：${inj.slice(0, 200)}`);
+    assert.ok(inj.includes('…'), '从中间取的片段前面要有省略号');
+
+    // 4. 注入总量封顶
+    const many = Array.from({ length: 12 }, (_, i) => ({ layer: 'authority', kind: 'grain', id: 'g-big' + i,
+      category: 'experience', heat: 50, confidence: 'cite', text: '某件很长的旧事。'.repeat(40) }));
+    const big = formatInjection({ query: '旧事', memories: many });
+    assert.ok(big.length <= INJECT_BUDGET + 40, `注入总量该封在 ${INJECT_BUDGET} 字上下：实际 ${big.length}`);
+    assert.ok(big.includes('[muwen:recall]'), '封顶了也得保留抬头');
+  });
+
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');
     const { buildIndex } = await import('../lib/muwen/semantic.js');
@@ -901,7 +945,7 @@ try {
     const stub = async () => ({ picks: [{ layer: 'semantic', kind: 'grain', id: target.grain.id, category: 'learning', text: target.grain.text, heat: 50, confidence: 'cautious', reason: '她在问连续性' }], none: false, index_count: idx.count, model: 'stub' });
 
     // 弱关键词（字面沾边但不准）→ 触发语义层，语义挑的排在最前
-    const weak = await autoRecall('你会不会有一天就不认识我了', { useAgent: true, _semanticPick: stub });
+    const weak = await autoRecall('你会不会有一天就不认识我了', { useAgent: true, _semanticPick: stub, suppressRecent: false });
     assert.ok(weak.layers_used.includes('semantic'), `应该触发语义层：${JSON.stringify(weak.layers_used)}`);
     assert.equal(weak.memories[0].layer, 'semantic');
     assert.equal(weak.memories[0].id, target.grain.id);
@@ -911,20 +955,20 @@ try {
     // 强命中（adj 高）→ 不该跑语义层，省钱
     let called = false;
     const spy = async () => { called = true; return { picks: [], none: true }; };
-    const strong = await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: spy });
+    const strong = await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: spy, suppressRecent: false });
     assert.equal(called, false, `强命中不该调语义层，top adj=${strong.memories[0].adj}`);
     assert.ok(!strong.layers_used.includes('semantic'));
 
     // 语义层报错 → 静默降级，不炸整个召回；原因记进 why
     const boom = async () => { throw new Error('模型超时'); };
-    const degraded = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, _semanticPick: boom });
+    const degraded = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, _semanticPick: boom, suppressRecent: false });
     assert.ok(!degraded.layers_used.includes('semantic'));
     assert.ok(Array.isArray(degraded.memories));
     assert.ok((degraded.why || '').includes('语义层失败'));
 
     // 关键词和语义都空 → 才轮到年轮兜底
     const empty = async () => ({ picks: [], none: true });
-    const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty });
+    const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty, suppressRecent: false });
     assert.deepEqual(none.memories, []);
   });
   await step('年轮索引：新存自动进索引、推关键词、弱命中就放行年轮层、强命中不跑', async () => {
@@ -951,7 +995,7 @@ try {
     // 前两层弱（不必空手）→ 就该放行年轮层，结果算 last_resort 不算权威
     const emptySemantic = async () => ({ picks: [], none: true });
     const pick = async () => ({ picks: [{ id: ring.id, reason: '她像是在问那次胡扯' }], none: false, index_count: idx.count, model: 'stub' });
-    const r = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick });
+    const r = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
     assert.ok(r.layers_used.includes('rings-semantic'), `应该触发年轮语义层：${JSON.stringify(r.layers_used)}`);
     assert.equal(r.memories[0].layer, 'last_resort');
     assert.equal(r.memories[0].id, ring.id);
@@ -961,7 +1005,7 @@ try {
     // 关键词在年轮里搜得到 → 不跑语义层，省钱
     let called = false;
     const spy = async () => { called = true; return { picks: [], none: true }; };
-    await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy });
+    await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy, suppressRecent: false });
     assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
 
     // ---- 段级打分：整篇沾边不算命中，得有某一段真的在说这件事 ----
@@ -986,13 +1030,13 @@ try {
     // 只有散落噪音、没有真命中的时候 → 关键词层空手，索引层接手
     let ringModelCalled = false;
     const pick2 = async () => { ringModelCalled = true; return { picks: [{ id: ring.id, reason: '索引层挑的' }], none: false, index_count: 1, model: 'stub' }; };
-    const scatterOnly = await autoRecall('我家狗要不要打麻药洗牙那件事后来怎么样了', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2 });
+    const scatterOnly = await autoRecall('我家狗要不要打麻药洗牙那件事后来怎么样了', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2, suppressRecent: false });
     assert.equal(ringModelCalled, true, '覆盖率没过线就该交给索引层');
     assert.ok(!scatterOnly.memories.some(m => m.id === noisy.id), `没过线的散落噪音不该返回：${JSON.stringify(scatterOnly.memories.map(m => m.id))}`);
 
     // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行。弱命中本身过不了相关性下限，
     // 所以位置留给年轮线索——这正是"宁可给一条相关的，不要凑三条不相关的"。
-    const weak = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick });
+    const weak = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
     const ringHit = weak.memories.find(m => m.layer === 'last_resort');
     assert.ok(ringHit && ringHit.id === ring.id, `弱命中时年轮线索要挤进来：${JSON.stringify(weak.layers_used)}`);
     assert.ok(!weak.memories.some(m => m.layer === 'authority' && m.adj < 20), '没过相关性下限的纹理不该返回');
@@ -1001,12 +1045,12 @@ try {
     // 强命中纹理（adj 过线）→ 年轮层一步都不该走
     let ringCalled = false;
     const ringSpy = async () => { ringCalled = true; return { picks: [], none: true }; };
-    await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: emptySemantic, _pickRings: ringSpy });
+    await autoRecall('换窗口之后我还是我，靠的是这份共享的记录', { useAgent: true, _semanticPick: emptySemantic, _pickRings: ringSpy, suppressRecent: false });
     assert.equal(ringCalled, false, '强命中不该翻年轮');
 
     // 语义层报错 → 静默降级，不炸整个召回
     const boom = async () => { throw new Error('模型超时'); };
-    const degraded = await autoRecall('潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom });
+    const degraded = await autoRecall('潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom, suppressRecent: false });
     assert.deepEqual(degraded.memories, []);
     assert.ok((degraded.why || '').includes('年轮语义层失败'));
   });
@@ -1052,7 +1096,7 @@ try {
 
     const noSem = async () => ({ picks: [], none: true });
     const noRing = async () => ({ picks: [], none: true });
-    const r = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+    const r = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
 
     // 多样性：三条不能全是 experience，最后一格让给别的分区里分最高的
     const cats = r.memories.map(m => m.category);
@@ -1067,7 +1111,7 @@ try {
             '后来外婆走了，箱子一直没人动，直到棋子搬家整理东西才翻出来，锁扣已经坏了打不开。' });
     await tool('add_grain', { category: 'agreement', date: '2026-09-05',
       text: `${kw}的来历：外婆放在樟木箱最底下说等她出嫁再给她，外婆走后一直没人动，搬家才翻出来，锁扣坏了打不开。` });
-    const deduped = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+    const deduped = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     const agr = deduped.memories.filter(m => m.category === 'agreement');
     assert.ok(agr.length <= 1, `同一件事的两个版本只该留一条：${JSON.stringify(agr.map(m => m.text.slice(0, 20)))}`);
     // 判重本身直接测——放进召回里测会受名额和分区上限影响，命中不到就测了个寂寞
@@ -1087,7 +1131,7 @@ try {
     const arch = await tool('add_grain', { category: 'feeling', text: `${kw}这条我已经归档了，不该再被自动召回端上来。` });
     await tool('update_grain', { id: arch.grain.id, pinned: true });   // heat 拉高，证明不是靠分低才没出现
     await tool('move_to_archive', { id: arch.grain.id });
-    const noArch = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing });
+    const noArch = await autoRecall(kw, { useAgent: true, maxReturn: 3, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     assert.ok(!noArch.memories.some(m => m.id === arch.grain.id), '归档的不该被自动召回');
     // 手动搜也一样，除非明确传 status='archived'——代码跟工具说明对齐
     assert.ok(!(await tool('search_grains', { query: kw, limit: 20 })).some(g => g.id === arch.grain.id),
