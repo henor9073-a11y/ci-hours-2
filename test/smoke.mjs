@@ -1025,6 +1025,15 @@ try {
     assert.ok(hit && hit.id === 'sticky:1', `语义层挑的便签该出现：${JSON.stringify(bySense.memories.map(m => m.layer))}`);
     assert.ok(formatInjection(bySense).includes('[便签·sticky]'), '注入里照样标成便签');
 
+    // 6. 意图 agent 说"这句不用翻记忆"时，当下的便签照样要给
+    //    （实测"备份"被判成操作指令，整轮召回连便签一起掐掉了）
+    const skipAgent = async () => { throw new Error('不该走到这'); };
+    const skipped = await autoRecall('备份', { useAgent: true, _semanticPick: skipAgent, _pickRings: noRing,
+      _intent: async () => ({ skip: true, intent: 'association', queries: [], why: '操作指令，跟历史记忆无关' }) });
+    assert.ok(skipped.skipped_by_agent, '该是被 agent 跳过的那条路');
+    assert.ok(skipped.memories.some(m => m.layer === 'notebook'),
+      `跳过记忆检索时便签还是要给：${JSON.stringify(skipped.memories.map(m => m.layer))}`);
+
     fs.rmSync(path.join(DATA, 'notebook_notes.json'), { force: true });
   });
 
