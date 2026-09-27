@@ -973,11 +973,15 @@ try {
         { id: 'sticky:1', note_id: 1, section: 'sticky', text: '铁律：写脚本先备份，棋子说过两次了。', tags: [], at: '2026-09-20T10:00:00Z', secret: false, priority: true },
         { id: 'today:2', note_id: 2, section: 'today', text: '今天要把备份脚本改完，还差 rclone 那段。', tags: [], at: '2026-09-27T01:00:00Z', secret: false, priority: true },
         { id: 'for_nor:3', note_id: 3, section: 'for_nor', text: '给棋子：备份这件事我记着，你别操心。', tags: [], at: '2026-09-25T01:00:00Z', secret: false, priority: false },
+        { id: 'today:7', note_id: 7, section: 'today', text: '10:00这次醒来：没有新留言，备份脚本那事没动静，日程空的。', tags: [], at: '2026-09-27T01:00:00Z', secret: false, priority: true, routine: true },
         { id: 'sticky:9', note_id: 9, section: 'sticky', text: '备份盘的密码是 hunter2，别写进聊天。', tags: ['密码'], at: '2026-09-01T01:00:00Z', secret: true, priority: true }
       ]
     }), 'utf8');
 
     assert.ok(looksSecret('密码是 xxx'), '带"密码"的该判成机密');
+    const { looksRoutine } = await import('../lib/muwen/notebook.js');
+    assert.ok(looksRoutine('10:00这次醒来：没有新留言，日程是空的'), '醒来流水该认出来');
+    assert.ok(!looksRoutine('铁律：写脚本先备份'), '正经便签不该被当成流水');
     assert.ok(looksSecret('备份盘', ['password']), '标签里带 password 也算');
     assert.ok(!looksSecret('今天把备份脚本改完'), '普通便签不该被误判');
 
@@ -985,6 +989,9 @@ try {
     const auto = searchNotes('备份', { limit: 5 });
     assert.ok(auto.length >= 2, `该搜到便签：${auto.length}`);
     assert.ok(!auto.some(n => n.secret), '自动召回路径不该出现密码类便签');
+    assert.ok(!auto.some(n => n.routine), '醒来流水不该进自动召回——today 里六成是这个，会把有用的挤掉');
+    assert.ok(searchNotes('备份', { limit: 9, includeSecret: true, includeRoutine: true }).some(n => n.routine),
+      '她自己搜的时候流水要搜得到');
     // 2. 辞自己搜得到
     const manual = searchNotes('备份', { limit: 5, includeSecret: true });
     assert.ok(manual.some(n => n.secret), '她主动搜的时候要搜得到');
