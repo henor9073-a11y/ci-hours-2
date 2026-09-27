@@ -990,6 +990,10 @@ try {
     assert.ok(auto.length >= 2, `该搜到便签：${auto.length}`);
     assert.ok(!auto.some(n => n.secret), '自动召回路径不该出现密码类便签');
     assert.ok(!auto.some(n => n.routine), '醒来流水不该进自动召回——today 里六成是这个，会把有用的挤掉');
+    // 泛泛的长问句不该把不相关的便签顶上来（实测垃圾命中覆盖率都在 0.26 以下）
+    const vague = searchNotes('搞之前是不是该先留个底', { limit: 5 });
+    assert.equal(vague.length, 0, `字面不沾边的不该命中：${JSON.stringify(vague.map(n => [n.section, n.coverage]))}`);
+    assert.ok(searchNotes('备份', { limit: 5 }).every(n => n.coverage >= 0.35), '留下来的都该是真命中');
     assert.ok(searchNotes('备份', { limit: 9, includeSecret: true, includeRoutine: true }).some(n => n.routine),
       '她自己搜的时候流水要搜得到');
     // 2. 辞自己搜得到
