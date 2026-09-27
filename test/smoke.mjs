@@ -1008,6 +1008,19 @@ try {
     const inj = formatInjection(r);
     assert.ok(inj.includes('[便签·'), `注入里该标明是便签：${inj.slice(0, 160)}`);
     assert.ok(!inj.includes('hunter2'), '密码绝对不能进注入');
+    // 5. 关键词搜不着的时候，语义层也能按意思挑便签（跟纹理共用同一次模型调用）
+    const { buildIndex } = await import('../lib/muwen/semantic.js');
+    const nbIdx = buildIndex();
+    assert.ok(nbIdx.text.includes('便签索引') && nbIdx.ids.has('sticky:1'),
+      '便签要进同一份索引，模型才能在一次调用里一起挑');
+    assert.ok(!nbIdx.text.includes('hunter2'), '密码类不能进索引——那是要发给模型的');
+    const semNote = async () => ({ picks: [{ layer: 'notebook', kind: 'note', id: 'sticky:1', section: 'sticky',
+      text: '铁律：写脚本先备份，棋子说过两次了。', reason: '她换了说法但说的是同一条规矩' }], index_count: 1 });
+    const bySense = await autoRecall('搞之前是不是该先留个底', { useAgent: true, _semanticPick: semNote, _pickRings: noRing, suppressRecent: false });
+    const hit = bySense.memories.find(m => m.layer === 'notebook');
+    assert.ok(hit && hit.id === 'sticky:1', `语义层挑的便签该出现：${JSON.stringify(bySense.memories.map(m => m.layer))}`);
+    assert.ok(formatInjection(bySense).includes('[便签·sticky]'), '注入里照样标成便签');
+
     fs.rmSync(path.join(DATA, 'notebook_notes.json'), { force: true });
   });
 
