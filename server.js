@@ -300,6 +300,7 @@ app.post('/api/recall', async (req, res) => {
 });
 app.get('/api/recall-logs', (req, res) => res.json(mw.recall.getRecallLogs(Number(req.query.limit) || 30)));
 app.get('/api/dream', (_, res) => res.json(mw.dream.lastDream() || {}));
+app.get('/api/notebook/status', (_, res) => res.json(mw.notebook.noteStats()));
 app.get('/api/migration', (_, res) => res.json(mw.migrate.migrationReport() || {}));
 // ---- 年轮索引：召回翻原始记录用的轻索引（标题+日期+关键词）----
 // 关键词由 Mac 上的 build_ring_index.py 生成再推上来；服务器自己只在新存年轮时
@@ -562,6 +563,22 @@ cron.schedule('* * * * *', async () => {
   }
 });
 // 木纹的梦境任务：每天凌晨 4 点（辞所在时区）跑一次——热度衰减、检查昨天的每日总结、
+// 便签本单向同步：每 10 分钟拉一份 notebook 过来给召回用，永不回写。
+// 没配 MUWEN_NOTEBOOK_URL 就整个跳过（syncNotebook 自己会判）。
+if (mw.notebook.enabled()) {
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      const r = await mw.notebook.syncNotebook();
+      if (r.added || r.removed) console.log('[muwen] 便签同步：', JSON.stringify(r));
+    } catch (e) {
+      console.error('[muwen] 便签同步失败（下个十分钟再试）：', e.message || e);
+    }
+  });
+  // 启动时先拉一次，别等到第一个十分钟
+  mw.notebook.syncNotebook().then(r => console.log('[muwen] 便签首次同步：', JSON.stringify(r)))
+    .catch(e => console.error('[muwen] 便签首次同步失败：', e.message || e));
+}
+
 // 列出刚掉到 cautious 线以下的记忆。一天只衰减一次，手动调 dream 工具不会重复扣。
 cron.schedule('0 4 * * *', () => {
   try {

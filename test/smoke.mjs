@@ -496,8 +496,16 @@ try {
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
-    assert.equal(crons.length, 2, `服务器该只剩两个 cron（日程提醒 + 记忆衰减），实际 ${crons.join(',')}`);
+    assert.equal(crons.length, 3, `服务器该只有三个 cron（日程提醒 + 记忆衰减 + 便签同步），实际 ${crons.join(',')}`);
     assert.ok(!/0 9 \* \* \*/.test(srv), '9:00 那个替辞写今日一句的 cron 该拆掉了');
+    // 守的是"不许有会说话的 cron"，不是数量：机械活可以加，调模型 / 发消息 / 写留言的不行。
+    // 便签同步（*/10）就是机械活——只是把 notebook 拉一份过来，不调模型、不开口。
+    const cronBodies = srv.split(/cron\.schedule\(/).slice(1)
+      .map(part => part.slice(0, part.indexOf('\n});') + 1 || part.length))
+      .join('\n').replace(/\/\/.*$/gm, '');   // 注释里会提到"今日一句归第一层"，只看真正的代码
+    // 日程提醒推 Bark 是第三层本来的活，不算"说话"；不许的是调模型、回留言、替她写今日一句。
+    assert.ok(!/Anthropic|messages\.create|chat_reply|replyMessage|writeDailyQuote|daily_quote/.test(cronBodies),
+      '服务器的 cron 不许调模型、不许替辞说话');
   });
   await step('相册：手机端 REST 上传（大图自动压）', async () => {
     const sharp = (await import('sharp')).default;
@@ -888,6 +896,47 @@ try {
       assert.ok(!/notebook|notbook/i.test(t), `${n} 里不该出现 notebook`);
     }
   });
+  await step('便签本同步：sticky/today 排最前、密码类绝不注入、单向不回写', async () => {
+    const { searchNotes, looksSecret } = await import('../lib/muwen/notebook.js');
+    const { autoRecall, formatInjection } = await import('../lib/muwen/recall.js');
+    // 直接种一份"同步下来的副本"，不连真的 notebook（测试不该碰她的本子）
+    fs.writeFileSync(path.join(DATA, 'notebook_notes.json'), JSON.stringify({
+      synced_at: new Date().toISOString(),
+      notes: [
+        { id: 'sticky:1', note_id: 1, section: 'sticky', text: '铁律：写脚本先备份，棋子说过两次了。', tags: [], at: '2026-09-20T10:00:00Z', secret: false, priority: true },
+        { id: 'today:2', note_id: 2, section: 'today', text: '今天要把备份脚本改完，还差 rclone 那段。', tags: [], at: '2026-09-27T01:00:00Z', secret: false, priority: true },
+        { id: 'for_nor:3', note_id: 3, section: 'for_nor', text: '给棋子：备份这件事我记着，你别操心。', tags: [], at: '2026-09-25T01:00:00Z', secret: false, priority: false },
+        { id: 'sticky:9', note_id: 9, section: 'sticky', text: '备份盘的密码是 hunter2，别写进聊天。', tags: ['密码'], at: '2026-09-01T01:00:00Z', secret: true, priority: true }
+      ]
+    }), 'utf8');
+
+    assert.ok(looksSecret('密码是 xxx'), '带"密码"的该判成机密');
+    assert.ok(looksSecret('备份盘', ['password']), '标签里带 password 也算');
+    assert.ok(!looksSecret('今天把备份脚本改完'), '普通便签不该被误判');
+
+    // 1. 自动召回这条路拿不到密码类
+    const auto = searchNotes('备份', { limit: 5 });
+    assert.ok(auto.length >= 2, `该搜到便签：${auto.length}`);
+    assert.ok(!auto.some(n => n.secret), '自动召回路径不该出现密码类便签');
+    // 2. 辞自己搜得到
+    const manual = searchNotes('备份', { limit: 5, includeSecret: true });
+    assert.ok(manual.some(n => n.secret), '她主动搜的时候要搜得到');
+    // 3. sticky/today 排在 for_nor 前面
+    const idx = n => auto.findIndex(x => x.id === n);
+    assert.ok(idx('for_nor:3') === -1 || idx('for_nor:3') > Math.max(idx('sticky:1'), idx('today:2')),
+      `sticky/today 该排在前面：${JSON.stringify(auto.map(n => n.section))}`);
+
+    // 4. 进召回和注入：标成 [便签·xxx]，且密码那条无论如何不出现
+    const noSem = async () => ({ picks: [], index_count: 0 });
+    const noRing = async () => ({ picks: [], index_count: 0 });
+    const r = await autoRecall('备份脚本', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
+    assert.ok(r.layers_used.includes('notebook'), `该走便签层：${JSON.stringify(r.layers_used)}`);
+    const inj = formatInjection(r);
+    assert.ok(inj.includes('[便签·'), `注入里该标明是便签：${inj.slice(0, 160)}`);
+    assert.ok(!inj.includes('hunter2'), '密码绝对不能进注入');
+    fs.rmSync(path.join(DATA, 'notebook_notes.json'), { force: true });
+  });
+
   await step('召回升级：联想 3 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超 1500 字', async () => {
     const { autoRecall, formatInjection, isHistoryAsk, INJECT_BUDGET } = await import('../lib/muwen/recall.js');
     const noSem = async () => ({ picks: [], index_count: 0 });
