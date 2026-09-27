@@ -190,13 +190,15 @@ async function loadHome() {
 
   refreshWeather();
   if (!weatherTimer) weatherTimer = setInterval(refreshWeather, 20 * 60 * 1000);   // 每 20 分钟自己刷
-  loadKiss();
+  // 唤醒包一次读回来，首页和亲亲进度共用——以前两处各调一次，一次 1.8 秒
+  const wakePacket = mcp('get_wake_packet');
+  loadKiss(wakePacket);
 
   loadQuote(d);
 
   loadTodayActivity($('#h-activity'), 4);
   loadCountdowns();
-  mcp('get_wake_packet').then(w => {
+  wakePacket.then(w => {
     if (w.nor_health) $('#nor-state').textContent = oneLine(w.nor_health.text).slice(0, 10);
     const p = w.today_plan || {};
     $('#cy-state').textContent = (p.pendingWakes || []).length ? '待醒 ' + p.pendingWakes[0] : (p.doneWakes || []).length ? '今天醒过' : '在线';
@@ -232,10 +234,10 @@ function refreshWeather() {
     }).catch(() => { const w = $('#h-weather'); if (w) w.textContent = ''; });
 }
 // 亲亲进度条：进度来自每日总结里 kiss_count 的累计（+ 服务器的 KISS_BASELINE）
-async function loadKiss() {
+async function loadKiss(packet) {
   const node = $('#h-kiss'); if (!node) return;
   try {
-    const w = await mcp('get_wake_packet');
+    const w = await (packet || mcp('get_wake_packet'));
     const k = w.kiss_progress; if (!k) { node.innerHTML = ''; return; }
     const pct = Math.min(100, k.total / k.goal * 100);
     node.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline">
