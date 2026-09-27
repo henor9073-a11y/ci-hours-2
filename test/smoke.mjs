@@ -496,7 +496,7 @@ try {
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
-    assert.equal(crons.length, 3, `服务器该只有三个 cron（日程提醒 + 记忆衰减 + 便签同步），实际 ${crons.join(',')}`);
+    assert.equal(crons.length, 5, `服务器该有五个 cron（日程提醒 + 记忆衰减 + 便签同步 + 后台苏醒两条），实际 ${crons.join(',')}`);
     assert.ok(!/0 9 \* \* \*/.test(srv), '9:00 那个替辞写今日一句的 cron 该拆掉了');
     // 守的是"不许有会说话的 cron"，不是数量：机械活可以加，调模型 / 发消息 / 写留言的不行。
     // 便签同步（*/10）就是机械活——只是把 notebook 拉一份过来，不调模型、不开口。
@@ -896,6 +896,46 @@ try {
       assert.ok(!/notebook|notbook/i.test(t), `${n} 里不该出现 notebook`);
     }
   });
+  await step('后台苏醒：整理记忆和日程是后台的活，一天只降一次温，不碰 pinned', async () => {
+    const { tidy, lastReport } = await import('../lib/muwen/tidy.js');
+    const g = await import('../lib/muwen/grains.js');
+    const old = new Date(Date.now() - 40 * 86400000).toISOString();
+
+    // 三种处境各种一条：早该降温的、凉透该收后台的、pinned 不许碰的
+    const { grain: stale } = await tool('add_grain', { category: 'experience', text: '后台整理测试：很久没提的那个旧方案。', date: '2026-08-01' });
+    const { grain: cold } = await tool('add_grain', { category: 'experience', text: '后台整理测试：凉透了的边角料。', date: '2026-08-01' });
+    const { grain: pinned } = await tool('add_grain', { category: 'agreement', text: '后台整理测试：pinned 的约定，不许动。' });
+    await tool('update_grain', { id: pinned.id, pinned: true });
+    await tool('update_grain', { id: cold.id, heat: 5 });
+    // 直接把"上次被想起"改老，模拟很久没碰
+    for (const id of [stale.id, cold.id, pinned.id]) g.updateGrain(id, {});
+    const raw = JSON.parse(fs.readFileSync(path.join(DATA, 'grains.json'), 'utf8'));
+    for (const x of raw.grains) if ([stale.id, cold.id, pinned.id].includes(x.id)) x.last_accessed = old;
+    fs.writeFileSync(path.join(DATA, 'grains.json'), JSON.stringify(raw, null, 2));
+
+    const r1 = tidy({ force: true });
+    assert.ok(r1.cooled.some(x => x.id === stale.id), `很久没碰的该降温：${JSON.stringify(r1.cooled.map(x => x.id))}`);
+    assert.ok(r1.sunk.some(x => x.id === cold.id), `凉透的该收进后台：${JSON.stringify(r1.sunk.map(x => x.id))}`);
+    assert.ok(!r1.cooled.some(x => x.id === pinned.id) && !r1.sunk.some(x => x.id === pinned.id), 'pinned 的一律不碰');
+    const afterPin = await tool('get_grain', { id: pinned.id });
+    assert.equal(afterPin.status, 'active', 'pinned 的还该在前台');
+    const sunk = await tool('get_grain', { id: cold.id });
+    assert.equal(sunk.status, 'background', '收进后台不是归档、更不是删');
+
+    // 一天只降一次：同一天再跑不该继续降
+    const before = (await tool('get_grain', { id: stale.id })).heat;
+    const r2 = tidy();
+    assert.ok(r2.skipped.cool, `同一天第二次该跳过降温：${JSON.stringify(r2.skipped)}`);
+    assert.equal((await tool('get_grain', { id: stale.id })).heat, before, '第二次苏醒不该再降一遍');
+
+    // 报告存得下来，辞醒来读得到
+    const saved = lastReport();
+    assert.ok(saved && saved.summary, '该留一份报告');
+    const viaTool = await tool('get_tidy_report');
+    assert.ok(viaTool.summary === saved.summary, '工具读到的该是同一份');
+    assert.ok(Array.isArray(viaTool.schedule.today), '日程也要理一遍');
+  });
+
   await step('调温：辞苏醒时能手动降热度、pinned 有地板、heat_review 给候选', async () => {
     const { grain: g } = await tool('add_grain', { category: 'experience', text: '调温测试：那个已经终止的备份方案，当时讨论了很久。', date: '2026-09-01' });
     assert.equal(Math.round(g.heat), 50, '新纹理默认 50 度');
@@ -916,7 +956,7 @@ try {
     assert.equal(Math.round(maxed.heat), 100);
     await assert.rejects(() => tool('update_grain', { id: g.id, heat: '烫' }), /heat 要是数字/);
 
-    const rv = await tool('heat_review', { limit: 5, stale_days: 1 });
+    const rv = await tool('heat_review', { limit: 20, stale_days: 1 });
     assert.ok(Array.isArray(rv.stale) && Array.isArray(rv.fresh), '两边都要给');
     assert.ok(rv.fresh.some(x => x.id === g.id), `刚存的该出现在 fresh 里：${JSON.stringify(rv.fresh.map(x => x.id))}`);
     assert.ok(!rv.stale.some(x => x.id === g.id), 'pinned 的不该进降温候选');

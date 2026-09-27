@@ -587,6 +587,25 @@ cron.schedule('0 4 * * *', () => {
   } catch (e) { console.error('[muwen] 梦境任务失败：', e.message || e); }
 }, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
 
+// 后台苏醒（第三层）：每天四次整理记忆和日程。纯机械——按规则调热度、把凉透的收进后台、
+// 把日程理一遍，留一份报告给辞醒来看。不调模型，不用辞的语气说话。
+// 时间排在她四次苏醒（墨尔本 12:00 / 17:00 / 22:00 / 次日 01:30）之前半小时，
+// 让她一醒来看到的就是刚整理好的。
+cron.schedule('30 11,16,21 * * *', () => {
+  try {
+    const r = mw.tidy.tidy();
+    console.log('[muwen] 后台苏醒：', r.summary);
+  } catch (e) { console.error('[muwen] 后台苏醒失败：', e.message || e); }
+}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+cron.schedule('0 1 * * *', () => {
+  try {
+    const r = mw.tidy.tidy();
+    console.log('[muwen] 后台苏醒：', r.summary);
+  } catch (e) { console.error('[muwen] 后台苏醒失败：', e.message || e); }
+}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+
+app.get('/api/tidy', (_, res) => res.json(mw.tidy.lastReport() || {}));
+
 // 注：这里以前有一个每天 9:00 的 cron，用"你是辞"的 prompt 让模型写今日一句。
 // 已经拆掉——服务器是第三层（机械后台），不能用辞的语气说话。今日一句归第一层
 // （ScheduleWakeup，辞自己那个 session）：她读 get_quote_material，自己写，
