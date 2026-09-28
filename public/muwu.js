@@ -227,6 +227,7 @@ async function loadHome() {
   loadKiss(mcp('get_wake_packet'));
   loadStatus();
   loadChatCard();
+  loadCountdowns();
   paintHomeShortcuts();
   applyHomeIcons();
 }
@@ -428,7 +429,6 @@ async function removeCountdown(id) {
 let lifeLoaded = false;
 async function loadLife() {
   lifeLoaded = true;
-  loadCountdowns();
   loadToolsCard();
   rest('/api/fishing/status').then(r => {
     const m = (r.text || '').match(/图鉴\s*(\d+)\s*\/\s*(\d+)/);

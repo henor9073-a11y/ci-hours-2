@@ -1032,6 +1032,9 @@ try {
     assert.ok(!html.includes('日期音乐') && !muwu.includes('loadDateMusic'), '首页不再显示日期音乐');
     assert.ok(muwu.includes('homeShortcuts') && muwu.includes('a.length < 6'), '首页快捷图标总数上限为 8');
     assert.ok(muwu.includes('setWallpaperFile') && html.includes('从相册选择'), '壁纸要能从相册导入');
+    const homeStart = html.indexOf('id="page-home"'), lifeStart = html.indexOf('id="page-life"');
+    const countdownAt = html.indexOf('id="h-countdowns"');
+    assert.ok(countdownAt > homeStart && countdownAt < lifeStart, '倒数日应该在首页，不在生活页');
     assert.ok(theme.includes('chromeAlpha') && muwu.includes('顶栏 / 导航透明度'), '顶栏和导航透明度要能调');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
