@@ -225,6 +225,13 @@ app.post('/api/chat/delivered', (req, res) => {
   try { res.json(mw.chat.markDelivered((req.body || {}).ids || [])); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+// GPD 上的钩子在辞调完 chat_reply 后补真实的 thinking / 工具列表
+app.post('/api/chat/annotate', (req, res) => {
+  const { id, thinking, tools } = req.body || {};
+  const m = mw.chat.annotate(String(id || ''), { thinking, tools });
+  if (!m) return res.status(404).json({ error: '找不到这条辞的消息' });
+  res.json(m);
+});
 app.post('/api/chat/star', (req, res) => {
   const { id, on } = req.body || {};
   const m = mw.chat.setStar(String(id || ''), on !== false, '棋子');
@@ -236,6 +243,17 @@ app.get('/api/chat/status', (_, res) => res.json(mw.chat.getStatus()));
 app.post('/api/chat/status', (req, res) => {
   try { res.json(mw.chat.setStatus('nor', (req.body || {}).text)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+// 按住说话 → 往右滑「转文字」：只转不存，文字回填到输入框由她改完再发
+app.post('/api/chat/transcribe', async (req, res) => {
+  try {
+    const { audio_base64, mime } = req.body || {};
+    const buf = Buffer.from(String(audio_base64 || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
+    if (!buf.length) return res.status(400).json({ error: '没有音频' });
+    if (buf.length > mw.chat.MAX_VOICE_BYTES) return res.status(400).json({ error: '录音太大了' });
+    const { transcribeAudio } = await import('./lib/voice.js');
+    res.json({ text: await transcribeAudio(buf, mime || 'audio/webm') });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 app.get('/api/chat/pats', (_, res) => res.json(mw.chat.getPats()));
 app.post('/api/chat/pats', (req, res) => {

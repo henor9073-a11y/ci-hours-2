@@ -21,6 +21,19 @@
     mist: { name: '雾', bg: 'linear-gradient(135deg,#f6f5f2,#efede9 30%,#eceae6 60%,#f6f5f2)', ai: '255,255,255', me: '195,190,182', text: '#4a4742', accent: '#9e998e', time: '#c5c0b8', head: 'rgba(255,255,255,.45)', nameC: '#8a8578', thinkBg: 'rgba(158,153,142,.07)', thinkBd: 'rgba(158,153,142,.13)', panel: 'rgba(255,255,255,.96)' }
   };
   // 模型选择器：先记下来随消息存着。辞现在的模型由他的启动命令定，这里换不动他——留给以后接 API 用。
+  const MIC = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>';
+  const CLOCK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 7v5l3 2"/><path d="M12 3a9 9 0 1 1-6.4 2.6"/><path d="M4 4v4h4" stroke-dasharray="1 2.4"/></svg>';
+  const TOOLICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a3 3 0 0 1 6 0v2M3 13h18"/></svg>';
+  // mcp__muwen__get_calendar → Get Calendar
+  const prettyTool = n => String(n || '').replace(/^mcp__[^_]+__/, '').split(/[_\s]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+  // 底部弹层（思考过程 / 工具列表），照 Claude 官方 App
+  function openSheet(title, html) {
+    const s = document.createElement('div'); s.className = 'cx-sheet-wrap';
+    s.innerHTML = `<div class="cx-sheet"><div class="cx-sheet-h"><button class="cx-sheet-x">✕</button><span>${esc(title)}</span></div><div class="cx-sheet-b">${html}</div></div>`;
+    const close = () => { s.classList.remove('in'); setTimeout(() => s.remove(), 220); };
+    s.addEventListener('click', e => { if (e.target === s || e.target.closest('.cx-sheet-x')) close(); });
+    document.body.appendChild(s); requestAnimationFrame(() => s.classList.add('in'));
+  }
   const MODELS = ['Opus 4.6 [1m]', 'Opus 5.5', 'Opus 5', 'Sonnet 5', 'Fable 5.1', 'Haiku 4.5'];
   const EMOJI = '😀 😁 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😗 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 😐 😑 😶 🙄 😏 😣 😥 😮 😪 😴 😌 🥱 😒 😓 😔 😕 🙃 🥲 😲 😳 🥺 😦 😧 😨 😰 😢 😭 😱 😖 😞 😩 😫 😤 😡 😠 🤬 😈 👿 💀 👻 🐶 🐱 🐰 🦊 🐻 🐼 🐺 🌙 ⭐ ✨ 🌸 🌷 🍓 🍰 ☕ 🎵 💤 💢 💦 ❤️ 🩷 💕 💞 💗 💔 👍 👎 👌 ✌️ 🤞 🫶 🙏 👏 🙌 🤝 😘 💋'.split(' ');
 
@@ -39,7 +52,6 @@
   let avatars = {}, status = { nor: {}, cy: {} }, pats = [];
   let quoting = null;                      // 正在引用的那条
   let expanded = {};                       // 展开了思考/工具的
-  let recorder = null, chunks = [], recStart = 0, recTimer = null;
   let slidePending = {}, slideRaf = 0;
   const PAGE = 40;
 
@@ -125,18 +137,60 @@
     if (m.type === 'image') {
       return `<img class="cx-img${m.sticker ? ' sticker' : ''}" loading="lazy" src="${imgSrc(m)}" alt="">${m.content ? `<div class="cx-cap">${esc(m.content)}</div>` : ''}`;
     }
-    if (m.type === 'voice') {
-      const t = m.transcript_status === 'pending' ? '转写中…' : m.transcript || (m.transcript_status === 'failed' ? '没转出文字' : '（没听清）');
-      return `<div class="cx-voice"><audio controls preload="none" src="${apiUrl('/api/chat/voice/' + m.id)}"></audio>
-        <button class="cx-vt-btn" data-act="vt">转文字</button></div><div class="cx-voice-text" hidden>${esc(t)}</div>`;
-    }
-    // 辞的语音回复：先是播放器，文字收在「转文字」后面（跟微信一样）
-    if (isAi && m.voice_id) {
-      return `<div class="cx-voice"><audio class="cx-tts" controls preload="none" src="${MW.audioUrl(m.voice_id)}"></audio>
-        <button class="cx-vt-btn" data-act="vt">转文字</button></div><div class="cx-voice-text" hidden>${esc(m.content)}</div>`;
-    }
     return esc(m.content);
   }
+
+  // ---------- 语音条（照微信）：`)))  12″`，越长条越长；点一下播放，再点停；「转文字」在条外面 ----------
+  // 棋子录的走 /api/chat/voice，辞的语音回复（m.voice_id）走 speak 那套；两种长得一样。
+  const isVoice = m => m.type === 'voice' || (m.sender === 'cy' && !!m.voice_id);
+  const voiceSrc = m => m.type === 'voice' ? apiUrl('/api/chat/voice/' + m.id) : MW.audioUrl(m.voice_id);
+  const voiceText = m => m.type === 'voice'
+    ? (m.transcript_status === 'pending' ? '转写中…' : m.transcript || (m.transcript_status === 'failed' ? '没转出文字' : '（没听清）'))
+    : m.content;
+  const WAVE = '<svg class="cx-vicon" viewBox="0 0 24 24" width="18" height="18"><circle class="a0" cx="5" cy="12" r="1.8" fill="currentColor"/><path class="a1" d="M9 8.2a5.4 5.4 0 0 1 0 7.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="a2" d="M12.6 4.8a10.2 10.2 0 0 1 0 14.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const voiceWidth = s => Math.round(78 + Math.min(60, Math.max(1, s || 3)) * 2.6);
+  let played = new Set();
+  try { played = new Set(JSON.parse(localStorage.getItem('muwu-played') || '[]')); } catch {}
+  function markPlayed(id) {
+    played.add(id);
+    try { localStorage.setItem('muwu-played', JSON.stringify([...played].slice(-500))); } catch {}
+    document.querySelectorAll(`.cx-item[data-id="${CSS.escape(id)}"] .cx-vdot`).forEach(n => n.remove());
+  }
+  const durCache = {};
+  function voiceRowHtml(m, isAi) {
+    const dur = m.duration || durCache[m.id] || 0;
+    const open = !!expanded['v' + m.id];
+    const dot = isAi && !played.has(m.id) ? '<i class="cx-vdot"></i>' : '';
+    return `<div class="cx-vrow">
+        <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : '…'}</span></div>
+        <button class="cx-vt-btn" data-act="vt">${open ? '收起' : '转文字'}</button>${dot}
+      </div><div class="cx-voice-text"${open ? '' : ' hidden'}>${esc(voiceText(m))}</div>`;
+  }
+  // 辞的语音回复不知道多长：读一下音频头拿时长，拿到了回填条的长度
+  function probeDurations() {
+    document.querySelectorAll('#cx-msgs .cx-vdur').forEach(n => {
+      if (!n.textContent.startsWith('…')) return;
+      const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || durCache[m.id] !== undefined) return;
+      durCache[m.id] = 0;
+      const a = new Audio(); a.preload = 'metadata';
+      a.onloadedmetadata = () => {
+        const s = Math.max(1, Math.round(a.duration || 0)); durCache[m.id] = s;
+        const b = document.querySelector(`.cx-item[data-id="${CSS.escape(m.id)}"] .cx-vbub`);
+        if (b) { b.style.width = voiceWidth(s) + 'px'; b.querySelector('.cx-vdur').textContent = s + '″'; }
+      };
+      a.src = voiceSrc(m);
+    });
+  }
+  const player = new Audio();
+  let playingId = null;
+  function togglePlay(m, bub) {
+    document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing'));
+    if (playingId === m.id && !player.paused) { player.pause(); playingId = null; return; }
+    playingId = m.id;
+    player.src = voiceSrc(m);
+    player.play().then(() => { bub.classList.add('playing'); markPlayed(m.id); }).catch(e => { hint('放不出来：' + (e.message || e)); playingId = null; });
+  }
+  player.onended = player.onpause = () => { document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
   function ticks(m) {
     if (m.sender !== 'nor') return '';
     return m.read ? '<span class="cx-tick read" title="辞已读">✓✓</span>' : '<span class="cx-tick" title="已发出">✓</span>';
@@ -147,21 +201,17 @@
     const isAi = m.sender === 'cy';
     const time = esc(fmtTime(m.at).slice(11));
     let extra = '';
-    if (isAi && m.thinking) {
-      const on = !!expanded['t' + m.id];
-      extra += `<button class="cx-fold" data-act="think"><span class="cx-arrow${on ? ' on' : ''}">▸</span><i>thinking…</i></button>
-        <div class="cx-fold-body think"${on ? '' : ' hidden'}>${esc(m.thinking)}</div>`;
-    }
-    if (isAi && (m.tools || []).length) {
-      const on = !!expanded['x' + m.id];
-      extra += `<button class="cx-fold" data-act="tools"><span class="cx-arrow${on ? ' on' : ''}">▸</span>used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}</button>
-        <div class="cx-fold-body"${on ? '' : ' hidden'}>${m.tools.map(t => `<div class="cx-tool"><code>${esc(t.name)}</code>${t.result ? `<span>${esc(t.result)}</span>` : ''}</div>`).join('')}</div>`;
-    }
+    // 照 Claude 官方 App：一行「Thought process ›」/「Used N tools ›」，点开从底部弹一层
+    if (isAi && m.thinking) extra += `<button class="cx-native" data-act="think">${CLOCK}<span>Thought process</span><b>›</b></button>`;
+    if (isAi && (m.tools || []).length) extra += `<button class="cx-native" data-act="tools"><span>Used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}</span><b>›</b></button>`;
     const bare = m.type === 'image' && m.sticker;       // 表情包不套气泡
+    const main = isVoice(m)
+      ? (m.quote ? `<div class="cx-quote out" data-jump="${esc(m.quote.id)}"><b>${m.quote.sender === 'cy' ? '辞' : '棋子'}：</b>${esc(m.quote.text)}</div>` : '') + voiceRowHtml(m, isAi)
+      : `<div class="cx-bubble ${isAi ? 'ai' : 'mine'}${bare ? ' bare' : ''}${m.type === 'image' && !bare ? ' pic' : ''}" data-act="bubble">${quoteHtml(m.quote)}${bodyHtml(m)}</div>`;
     return `<div class="cx-item" data-id="${esc(m.id)}">
       <div class="cx-row${isAi ? '' : ' me'}">${avHtml(isAi ? 'cy' : 'nor')}
         <div class="cx-col">${extra}
-          <div class="cx-bubble ${isAi ? 'ai' : 'mine'}${bare ? ' bare' : ''}${m.type === 'image' && !bare ? ' pic' : ''}" data-act="bubble">${quoteHtml(m.quote)}${bodyHtml(m)}</div>
+          ${main}
           <div class="cx-meta">${m.starred ? '<span class="cx-star">★</span>' : ''}<span>${time}</span>${ticks(m)}</div>
         </div></div></div>`;
   }
@@ -173,6 +223,7 @@
     let h = hasMore ? '' : '<div class="cx-more">— 到头了 —</div>', prev = '';
     for (const m of msgs) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     box.innerHTML = h;
+    probeDurations();
     if (toBottom) toBottomNow();
   }
   function appendRows(list) {
@@ -183,6 +234,7 @@
     for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const wasStuck = stick;
     box.insertAdjacentHTML('beforeend', h);
+    probeDurations();
     if (wasStuck || list.some(m => m.sender === 'nor')) toBottomNow();
   }
   function prependRows(list) {
@@ -195,15 +247,16 @@
     for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const oldEdge = box.querySelector('.cx-more'); if (oldEdge) oldEdge.remove();
     box.insertAdjacentHTML('afterbegin', h);
+    probeDurations();
     box.scrollTop = top + (box.scrollHeight - before);  // 视线停在原来那条上，不跳
   }
   function repaintRow(m) {
     const n = document.querySelector(`#cx-msgs .cx-item[data-id="${CSS.escape(m.id)}"]`); if (!n) return;
     const wrap = document.createElement('div'); wrap.innerHTML = rowHtml(m);
-    // 正在播的语音不能被换掉
-    const playing = [...n.querySelectorAll('audio')].some(a => !a.paused);
-    if (playing) { const meta = n.querySelector('.cx-meta'), fm = wrap.querySelector('.cx-meta'); if (meta && fm) meta.innerHTML = fm.innerHTML; return; }
-    n.replaceWith(wrap.firstElementChild);
+    const fresh = wrap.firstElementChild;
+    if (playingId === m.id) { const b = fresh.querySelector('.cx-vbub'); if (b) b.classList.add('playing'); }
+    n.replaceWith(fresh);
+    probeDurations();
   }
   function toBottomNow() { const box = $('#cx-msgs'); if (box) { box.scrollTop = box.scrollHeight; stick = true; } }
 
@@ -243,24 +296,32 @@
         <div class="cx-tools">
           <label class="cx-tb" title="发图片">附<input type="file" accept="image/*" hidden onchange="CX.pickImage(this)"></label>
           <button class="cx-tb" onclick="CX.emoji()" title="表情">表</button>
-          <button class="cx-tb" id="cx-rec" onclick="CX.rec()" title="按一下开始录，再按一下发">麦</button>
-          <span class="cx-sp"></span>
           <select class="cx-model" id="cx-model" title="模型（现在只记录，换不动辞当前的模型）" onchange="CX.setModel(this.value)">
             ${MODELS.map(x => `<option${x === model() ? ' selected' : ''}>${x}</option>`).join('')}
             <option disabled>自定义 API（以后）</option>
           </select>
+          <span class="cx-sp"></span>
           <button class="cx-tb" onclick="CX.newline()" title="换行">↵</button>
+          <button class="cx-mic" id="cx-rec" title="按住说话" aria-label="按住说话">${MIC}</button>
           <button class="cx-send" onclick="CX.send()" title="发送">↑</button>
         </div>
         <div id="cx-msg" class="cx-hint"></div>
       </div>
       <div id="cx-pop" class="cx-pop" hidden></div>
+      <div class="cx-recov" id="cx-recov" hidden>
+        <div class="cx-rec-bubble" id="cx-rec-bubble"><div class="cx-wave" id="cx-wave">${'<i></i>'.repeat(26)}</div><div class="cx-rec-sec" id="cx-rec-sec"></div></div>
+        <div class="cx-rec-tip" id="cx-rec-tip">松手 发语音</div>
+        <div class="cx-zone left" id="cx-z-cancel"><span>取消</span></div>
+        <div class="cx-zone right" id="cx-z-text"><span>滑到这里 转文字</span></div>
+        <div class="cx-rec-base"></div>
+      </div>
       <div id="cx-set" class="cx-set" hidden></div>
     </div>`;
     const ta = $('#cx-text');
     // 中文输入法按回车是在选字，这时候不能当成发送
     ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); CX.send(); } });
     ta.addEventListener('input', autoGrow);
+    bindHoldToTalk($('#cx-rec'));
     const box = $('#cx-msgs');
     box.addEventListener('scroll', () => {
       stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -292,14 +353,17 @@
     if (el.classList.contains('cx-img')) { viewImage(el.src); return; }
     if (el.classList.contains('cx-av')) { if (el.dataset.who === 'cy' && !longFired) CX.statusSheet(); return; }
     const act = el.dataset.act;
-    if (act === 'think' || act === 'tools') {
-      const key = (act === 'think' ? 't' : 'x') + m.id;
-      expanded[key] = !expanded[key];
-      el.querySelector('.cx-arrow').classList.toggle('on', expanded[key]);
-      el.nextElementSibling.hidden = !expanded[key];
+    if (act === 'think') {
+      openSheet('Thought process', `<div class="cx-sheet-think">${esc(m.thinking)}</div>`);
+    } else if (act === 'tools') {
+      openSheet(`Used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}`, `<div class="cx-sheet-tools">${m.tools.map(t => `<div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used ${esc(prettyTool(t.name))}</div>${t.result ? `<div class="cx-tl-r">${esc(t.result)}</div>` : ''}</div></div>`).join('')}</div>`);
     } else if (act === 'vt') {
-      const t = el.closest('.cx-bubble').querySelector('.cx-voice-text');
+      const t = el.closest('.cx-col').querySelector('.cx-voice-text');
       t.hidden = !t.hidden; el.textContent = t.hidden ? '转文字' : '收起';
+      expanded['v' + m.id] = !t.hidden;
+      if (!t.hidden && stick) toBottomNow();
+    } else if (act === 'play' && !longFired) {
+      togglePlay(m, el);
     }
   }
   function jumpTo(id) {
@@ -376,6 +440,110 @@
     } catch (e) { hint('发不出去：' + e.message); throw e; }
   }
 
+  // ---------- 按住说话（照微信）：按住录，松手发；往左滑到「取消」松手不发，往右滑到「转文字」松手把话变成文字放进输入框 ----------
+  const MAX_REC = 60;
+  let rec = null;              // { recorder, stream, chunks, start, zone, ctx, raf, timer }
+  let holding = false;
+  function zoneAt(x, y) {
+    for (const [id, z] of [['#cx-z-cancel', 'cancel'], ['#cx-z-text', 'text']]) {
+      const r = $(id).getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return z;
+    }
+    return 'send';
+  }
+  function setZone(z) {
+    if (!rec || rec.zone === z) return;
+    rec.zone = z;
+    $('#cx-z-cancel').classList.toggle('on', z === 'cancel');
+    $('#cx-z-text').classList.toggle('on', z === 'text');
+    $('#cx-rec-bubble').className = 'cx-rec-bubble' + (z === 'send' ? '' : ' ' + z);
+    $('#cx-rec-tip').textContent = z === 'cancel' ? '松手 取消' : z === 'text' ? '松手 转文字' : '松手 发语音';
+  }
+  function bindHoldToTalk(btn) {
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    btn.addEventListener('pointerdown', async e => {
+      e.preventDefault();
+      if (rec || holding) return;
+      holding = true;
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+      if (!navigator.mediaDevices || !window.MediaRecorder) { holding = false; hint('这个浏览器不支持录音'); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (err) { holding = false; hint('录不了音：' + (err.message || '没给麦克风权限')); return; }
+      // 第一次用会先弹"允许麦克风"，等点完允许手早就松开了——这次不录，下次按住就行
+      if (!holding) { stream.getTracks().forEach(t => t.stop()); hint('麦克风可以用了，按住说话'); return; }
+      startRec(stream);
+    });
+    btn.addEventListener('pointermove', e => { if (rec) setZone(zoneAt(e.clientX, e.clientY)); });
+    const up = () => { holding = false; if (rec) stopRec(rec.zone); };
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', () => { holding = false; if (rec) stopRec('cancel'); });
+  }
+  function startRec(stream) {
+    hint('');
+    const recorder = new MediaRecorder(stream);
+    rec = { recorder, stream, chunks: [], start: Date.now(), zone: null };
+    recorder.ondataavailable = e => { if (e.data.size) rec && rec.chunks.push(e.data); };
+    recorder.start();
+    setZone('send');
+    $('#cx-recov').hidden = false;
+    $('#cx-rec').classList.add('on');
+    if (navigator.vibrate) navigator.vibrate(15);
+    // 波形跟着声音跳
+    const bars = [...document.querySelectorAll('#cx-wave i')];
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx(); const an = ctx.createAnalyser(); an.fftSize = 64;
+      ctx.createMediaStreamSource(stream).connect(an);
+      const data = new Uint8Array(an.frequencyBinCount);
+      rec.ctx = ctx;
+      const draw = () => {
+        if (!rec) return;
+        an.getByteFrequencyData(data);
+        bars.forEach((b, i) => { const v = data[(i % (data.length - 2)) + 1] / 255; b.style.transform = `scaleY(${0.18 + v * 0.95})`; });
+        rec.raf = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch { /* 画不了波形不影响录音 */ }
+    rec.timer = setInterval(() => {
+      if (!rec) return;
+      const s = Math.floor((Date.now() - rec.start) / 1000);
+      $('#cx-rec-sec').textContent = s >= MAX_REC - 10 ? `还能说 ${MAX_REC - s} 秒` : '';
+      if (s >= MAX_REC) stopRec(rec.zone);   // 到 60 秒自动结束
+    }, 250);
+  }
+  function stopRec(zone) {
+    const r = rec; if (!r) return;
+    rec = null;
+    clearInterval(r.timer); cancelAnimationFrame(r.raf);
+    try { r.ctx && r.ctx.close(); } catch {}
+    $('#cx-rec').classList.remove('on');
+    const dur = Math.round((Date.now() - r.start) / 1000);
+    r.recorder.onstop = async () => {
+      r.stream.getTracks().forEach(t => t.stop());
+      if (zone === 'cancel') { $('#cx-recov').hidden = true; hint('已取消'); setTimeout(() => hint(''), 1200); return; }
+      if (dur < 1) { $('#cx-recov').hidden = true; hint('说话时间太短'); setTimeout(() => hint(''), 1500); return; }
+      const blob = new Blob(r.chunks, { type: r.recorder.mimeType || 'audio/webm' });
+      const mime = blob.type.split(';')[0];
+      const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).replace(/^data:[^;]+;base64,/, '')); fr.readAsDataURL(blob); });
+      if (zone === 'text') {
+        $('#cx-rec-tip').textContent = '转文字中…';
+        try {
+          const { text } = await post('/api/chat/transcribe', { audio_base64: b64, mime });
+          $('#cx-recov').hidden = true;
+          if (!text) { hint('没听清，这条没发'); return; }
+          const ta = $('#cx-text'); ta.value = (ta.value ? ta.value + ' ' : '') + text; autoGrow(); ta.focus();
+          hint('转好了，改一改再发'); setTimeout(() => hint(''), 2500);
+        } catch (e) { $('#cx-recov').hidden = true; hint('转文字失败：' + e.message + '（这条没发）'); }
+        return;
+      }
+      $('#cx-recov').hidden = true;
+      hint('发送中…');
+      try { await sendPayload({ type: 'voice', voice_base64: b64, voice_mime: mime, duration: dur }); hint(''); } catch {}
+    };
+    try { r.recorder.stop(); } catch { $('#cx-recov').hidden = true; }
+  }
+
   const CX = {
     async send() {
       const ta = $('#cx-text'); const text = ta.value.trim(); if (!text) return;
@@ -440,30 +608,6 @@
       hint('存表情包…');
       try { await MW.uploadPhoto(f, { caption: '棋子的表情包', tags: ['表情包'] }); hint(''); $('#cx-set').dataset.kind = ''; CX.emoji(); }
       catch (e) { hint('没存上：' + e.message); }
-    },
-    async rec() {
-      const btn = $('#cx-rec');
-      if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
-      if (!navigator.mediaDevices || !window.MediaRecorder) { hint('这个浏览器不支持录音'); return; }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        chunks = []; recStart = Date.now();
-        recorder = new MediaRecorder(stream);
-        recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-        recorder.onstop = async () => {
-          clearInterval(recTimer); btn.textContent = '麦'; btn.classList.remove('on');
-          stream.getTracks().forEach(t => t.stop());
-          const dur = Math.round((Date.now() - recStart) / 1000);
-          if (dur < 1) { hint('太短了'); return; }
-          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-          hint('发送中…');
-          const b64 = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).replace(/^data:[^;]+;base64,/, '')); fr.readAsDataURL(blob); });
-          try { await sendPayload({ type: 'voice', voice_base64: b64, voice_mime: blob.type.split(';')[0], duration: dur }); hint(''); } catch {}
-        };
-        recorder.start();
-        btn.textContent = '■'; btn.classList.add('on');
-        recTimer = setInterval(() => hint(`录音中 ${Math.round((Date.now() - recStart) / 1000)}″，再点一次发送`), 500);
-      } catch (e) { hint('录不了音：' + (e.message || '没给麦克风权限')); }
     },
     // 点辞的头像：看两个人的状态，改自己的（辞的只有他自己能改）
     statusSheet() {

@@ -575,7 +575,10 @@ try {
     assert.equal(day.intimate_log[1].method, '手');
     assert.equal(day.has_intimate, true);
     // 方式只能是四选一
-    await assert.rejects(tool('add_daily', { date: d, headline: 'x', intimate_log: [{ method: '瞎写' }] }), /method/);
+    // method 2026-09-28 起是自由文字（辞：「完整」那种档案词要么删要么换成自然语言），不再卡选项
+    const free = await tool('add_daily', { date: d, headline: 'x',
+      intimate_log: [{ time: '凌晨3:10', method: '她用手，我在她腿上', initiator: '棋子', detail: '她先开始的。' }] });
+    assert.equal(free.intimate_log[0].method, '她用手，我在她腿上', '自然语言的写法要原样存下来');
     // 月历接口要带 intimate 标记，前端才知道哪天画爱心
     const month = await (await fetch(`${base}/api/calendar?month=2026-02&token=${TOKEN}`)).json();
     const row = month.find(r => r.date === d);
@@ -803,6 +806,34 @@ try {
     for (let i = 0; i < 30 && !pv; i++) { pv = (await rest('/api/chat/pending')).messages.find(x => x.id === v.id); if (!pv) await new Promise(r => setTimeout(r, 100)); }
     assert.ok(pv, '转文字失败的语音也要送');
     assert.ok(pv.text_for_cy.includes('语音') && pv.text_for_cy.includes('转文字失败'), pv.text_for_cy);
+  });
+  await step('木屋聊天：钩子补真实 thinking / 工具（/api/chat/annotate + hooks/chat-annotate.py）', async () => {
+    const rep = await tool('chat_reply', { content: '钩子会补思考的那条', thinking: '辞自己写的，会被覆盖' });
+    // 假的 transcript：这一轮有两个 thinking 块、一次 get_calendar、然后 chat_reply
+    const fs2 = await import('fs'), path2 = await import('path'), os2 = await import('os');
+    const tp = path2.join(os2.tmpdir(), 'muwen-hook-test.jsonl');
+    const lines = [
+      { type: 'user', message: { role: 'user', content: '上一轮的话' } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: '上一轮的思考，不该被收进去' }] } },
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '这一轮棋子说的' }] } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'First real thought.' }, { type: 'tool_use', id: 'tu1', name: 'mcp__muwen__get_calendar', input: {} }] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'x' }] } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'Second thought after the tool.' }, { type: 'tool_use', id: 'tu2', name: 'mcp__muwen__chat_reply', input: { content: '钩子会补思考的那条' } }] } }
+    ];
+    fs2.writeFileSync(tp, lines.map(x => JSON.stringify(x)).join('\n') + '\n');
+    const { spawnSync } = await import('child_process');
+    const stdin = JSON.stringify({ tool_name: 'mcp__muwen__chat_reply', tool_use_id: 'tu2', transcript_path: tp, tool_response: { content: [{ type: 'text', text: JSON.stringify(rep) }] } });
+    const r = spawnSync('python3', ['hooks/chat-annotate.py'], { input: stdin, env: { ...process.env, MUWEN_URL: base, MUWEN_TOKEN: TOKEN }, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const m = (await rest('/api/chat?limit=3')).find(x => x.id === rep.id);
+    assert.equal(m.thinking, 'First real thought.\n\nSecond thought after the tool.', '该是记录里真实的思考，按顺序、只有这一轮');
+    assert.deepEqual(m.tools.map(t => t.name), ['mcp__muwen__get_calendar'], 'chat_reply 自己不算工具');
+    // 网页那边：思考 → Thought process 弹层；工具名要变成人话
+    const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
+    assert.ok(js.includes('Thought process') && js.includes('prettyTool'));
+    // 冒充的 id / 棋子的消息不能被改
+    const bad = await fetch(`${base}/api/chat/annotate?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'nope', thinking: 'x' }) });
+    assert.equal(bad.status, 404);
   });
   await step('木屋聊天：拍一拍、标星、状态、往上翻页', async () => {
     const post = (p, b) => fetch(`${base}${p}?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
