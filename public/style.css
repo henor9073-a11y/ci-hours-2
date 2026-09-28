@@ -8,7 +8,7 @@
   --shadow: 0 2px 12px rgba(45,49,48,0.06);
   --radius: 16px; --radius-sm: 12px;
   --font-size: 16px; --line-height: 1.6;
-  --blur: 20px; --chrome-alpha: 82%; --card-alpha: 1; --wallpaper: none;
+  --blur: 20px; --chrome-alpha: 82%; --card-alpha: 100%; --wallpaper: none; --wallpaper-alpha: 1;
   --icon-size: 40px; --icon-radius: 12px; --card-blur: 0px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -23,6 +23,7 @@ body {
 body::before {
   content: ''; position: fixed; inset: 0; z-index: -1;
   background-image: var(--wallpaper); background-size: cover; background-position: center;
+  opacity: var(--wallpaper-alpha);
 }
 .header { padding: 18px 22px 10px; position: sticky; top: 0; background: color-mix(in srgb, var(--bg) var(--chrome-alpha), transparent); z-index: 100; backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur)); border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 .header-top { display: flex; justify-content: space-between; align-items: center; }
@@ -50,7 +51,7 @@ body::before {
 .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 20px 0 10px 4px; display: flex; justify-content: space-between; align-items: center; }
 .section-title a, .link { color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: none; font-weight: 500; }
 
-.card { background: var(--card); border-radius: var(--radius-sm); padding: 16px 18px; box-shadow: var(--shadow); margin-top: 10px; opacity: var(--card-alpha); }
+.card { background: color-mix(in srgb, var(--card) var(--card-alpha), transparent); border-radius: var(--radius-sm); padding: 16px 18px; box-shadow: var(--shadow); margin-top: 10px; }
 .card.tap { cursor: pointer; transition: transform .15s; }
 .card.tap:active { transform: scale(.975); }
 .card-title { font-size: 15px; font-weight: 600; }
@@ -62,7 +63,7 @@ body::before {
 .grid-2 .card, .grid-3 .card { margin-top: 0; }
 .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
-.summary-card { background: var(--card); border-radius: var(--radius); padding: 20px; margin-top: 14px; box-shadow: var(--shadow); }
+.summary-card { background: color-mix(in srgb, var(--card) var(--card-alpha), transparent); border-radius: var(--radius); padding: 20px; margin-top: 14px; box-shadow: var(--shadow); }
 .summary-label { font-size: 11px; color: var(--text-light); letter-spacing: 1px; margin-bottom: 8px; }
 .summary-text { font-size: 15px; line-height: 1.7; white-space: pre-wrap; }
 .summary-text.clamp { display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
@@ -93,7 +94,7 @@ body::before {
 
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 10px; }
 .cal-head { font-size: 11px; color: var(--text-light); text-align: center; padding: 4px 0; }
-.cal-day { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 9px; font-size: 13px; color: var(--text-secondary); cursor: pointer; position: relative; background: var(--card); box-shadow: var(--shadow); }
+.cal-day { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 9px; font-size: 13px; color: var(--text-secondary); cursor: pointer; position: relative; background: color-mix(in srgb, var(--card) var(--card-alpha), transparent); box-shadow: var(--shadow); backdrop-filter: blur(var(--card-blur)); -webkit-backdrop-filter: blur(var(--card-blur)); }
 .cal-day.blank { background: none; box-shadow: none; cursor: default; }
 .cal-day.today { background: var(--accent); color: #fff; font-weight: 700; }
 .cal-day.sel { outline: 2px solid var(--accent); }
@@ -106,7 +107,7 @@ body::before {
 .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
 .cal-nav button { background: var(--card); border: none; box-shadow: var(--shadow); color: var(--text); border-radius: 10px; padding: 6px 14px; font-size: 14px; cursor: pointer; font-family: inherit; }
 
-.search-box { background: var(--card); border-radius: var(--radius); padding: 13px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow); margin-top: 8px; }
+.search-box { background: color-mix(in srgb, var(--card) var(--card-alpha), transparent); border-radius: var(--radius); padding: 13px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow); margin-top: 8px; backdrop-filter: blur(var(--card-blur)); -webkit-backdrop-filter: blur(var(--card-blur)); }
 .search-box input { flex: 1; border: none; outline: none; font-size: 16px; color: var(--text); background: transparent; font-family: inherit; }
 .search-box input::placeholder { color: var(--text-light); }
 .group { background: var(--card); border-radius: var(--radius-sm); margin-top: 10px; box-shadow: var(--shadow); overflow: hidden; }
@@ -259,6 +260,8 @@ body.chat-open > .header { display: none; }
 .cx [hidden] { display: none !important; }
 /* 用 dvh 不用 vh：iPhone 上 vh 把地址栏也算进去，地址栏一伸一缩整页就跳。--nav-h 是底部导航的实际高度，chat.js 量出来的 */
 .cx { display: flex; flex-direction: column; height: calc(100vh - var(--nav-h, 72px)); height: calc(100dvh - var(--nav-h, 72px)); position: relative; overflow: hidden; color: var(--cx-text); }
+.cx::before { content: ''; position: absolute; inset: 0; background-image: var(--cx-wallpaper); background-size: cover; background-position: center; opacity: var(--cx-bg-alpha); pointer-events: none; z-index: 0; }
+.cx > * { position: relative; z-index: 1; }
 .cx-head { padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--cx-think-bd); background: var(--cx-head); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; }
 .cx-prof { display: flex; align-items: center; gap: 10px; }
 .cx-title { font-size: 16px; font-weight: 600; letter-spacing: .5px; }

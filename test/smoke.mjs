@@ -1036,6 +1036,10 @@ try {
     const countdownAt = html.indexOf('id="h-countdowns"');
     assert.ok(countdownAt > homeStart && countdownAt < lifeStart, '倒数日应该在首页，不在生活页');
     assert.ok(theme.includes('chromeAlpha') && muwu.includes('顶栏 / 导航透明度'), '顶栏和导航透明度要能调');
+    assert.ok(theme.includes('wallpaperAlpha') && muwu.includes('整体背景图透明度'), '整体背景图透明度要能调');
+    assert.ok(chat.includes('bgAlpha') && muwu.includes('聊天背景图透明度'), '聊天背景图透明度要能调');
+    assert.ok(css.includes('color-mix(in srgb, var(--card) var(--card-alpha), transparent)') && !css.includes('opacity: var(--card-alpha)'), '卡片透明度不能把文字一起变淡');
+    assert.ok(css.includes('.search-box') && css.includes('.cal-day') && css.includes('backdrop-filter: blur(var(--card-blur))'), '日期、搜索和日历要共用磨砂透明卡片');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {

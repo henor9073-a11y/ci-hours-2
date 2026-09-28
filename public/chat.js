@@ -46,7 +46,7 @@
   const MODELS = ['Opus 4.6 [1m]', 'Opus 5.5', 'Opus 5', 'Sonnet 5', 'Fable 5.1', 'Haiku 4.5'];
   const EMOJI = '😀 😁 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😗 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 😐 😑 😶 🙄 😏 😣 😥 😮 😪 😴 😌 🥱 😒 😓 😔 😕 🙃 🥲 😲 😳 🥺 😦 😧 😨 😰 😢 😭 😱 😖 😞 😩 😫 😤 😡 😠 🤬 😈 👿 💀 👻 🐶 🐱 🐰 🦊 🐻 🐼 🐺 🌙 ⭐ ✨ 🌸 🌷 🍓 🍰 ☕ 🎵 💤 💢 💦 ❤️ 🩷 💕 💞 💗 💔 👍 👎 👌 ✌️ 🤞 🫶 🙏 👏 🙌 🤝 😘 💋'.split(' ');
 
-  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, alpha: 72, frost: true, bg: '' };
+  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, alpha: 72, frost: true, bg: '', bgAlpha: 100 };
   function cfg() { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('muwen-chat-cfg') || '{}')); } catch { return { ...DEF }; } }
   function saveCfg(c) {
     try { localStorage.setItem('muwen-chat-cfg', JSON.stringify(c)); }
@@ -286,13 +286,14 @@
   function applyLook() {
     const root = $('#chat-root .cx'); if (!root) return;
     const c = cfg(), t = THEMES[c.theme] || THEMES.sakura;
-    root.style.background = c.bg ? `url("${c.bg}") center/cover` : t.bg;
+    root.style.background = t.bg;
     const a = Math.max(.15, Math.min(1, c.alpha / 100));
     const v = {
       '--cx-ai': `rgba(${t.ai},${(t.aiA || .75) * a / .75})`, '--cx-me': `rgba(${t.me},${(t.meA || .38) * a / .75})`,
       '--cx-text': t.text, '--cx-accent': t.accent, '--cx-time': t.time, '--cx-head': t.head, '--cx-name': t.nameC,
       '--cx-think-bg': t.thinkBg, '--cx-think-bd': t.thinkBd, '--cx-panel': t.panel,
       '--cx-av-bg': t.accent + '28', '--cx-radius': c.radius + 'px', '--cx-font': c.fontSize + 'px',
+      '--cx-wallpaper': c.bg ? `url("${c.bg}")` : 'none', '--cx-bg-alpha': Math.max(0, Math.min(1, c.bgAlpha / 100)),
       '--cx-blur': c.frost ? '12px' : '0px'
     };
     for (const k in v) root.style.setProperty(k, v[k]);
@@ -666,6 +667,8 @@
         <div class="cx-set-l">背景图</div>
         <label class="cx-file">选图片<input type="file" accept="image/*" hidden onchange="CX.bg(this)"></label>
         ${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','')">清除</span>` : ''}
+        <div class="cx-set-l">背景图透明度 <span id="cx-v-bgAlpha">${c.bgAlpha}</span>%</div>
+        <input type="range" min="0" max="100" value="${c.bgAlpha}" oninput="CX.slide('bgAlpha',this.value)">
         <div class="cx-set-l" style="margin-top:10px">配色（樱海石夜雾）和拍一拍库在「设置」页</div>`;
     },
     set(k, v) { const c = cfg(); c[k] = v; saveCfg(c); if ($('#cx-set').dataset.kind === 'look') CX.panel(true); },

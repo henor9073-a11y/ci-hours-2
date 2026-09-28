@@ -1042,7 +1042,7 @@ function loadSettings() {
     <input type="color" value="${cur[k]}" onchange="setColor('${k}',this.value)" style="width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer">
   </div>`).join('');
   $('#st-wall').innerHTML = WALLPAPERS.map(([v, n]) => `<div onclick="setWall('${v}')" style="aspect-ratio:1;border-radius:12px;background:${v || 'var(--bg)'};border:2px solid ${t.ui.wallpaper === v ? 'var(--accent)' : 'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-light);cursor:pointer">${n}</div>`).join('');
-  const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片不透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['iconSize', '图标大小', 36, 72, 2, 'px'], ['iconRadius', '图标圆角', 0, 36, 1, 'px'], ['chromeAlpha', '顶栏 / 导航透明度', 20, 100, 5, '%'], ['blur', '顶栏 / 导航模糊', 0, 30, 1, 'px']];
+  const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片背景透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['wallpaperAlpha', '整体背景图透明度', 0, 100, 5, '%'], ['iconSize', '图标大小', 36, 72, 2, 'px'], ['iconRadius', '图标圆角', 0, 36, 1, 'px'], ['chromeAlpha', '顶栏 / 导航透明度', 20, 100, 5, '%'], ['blur', '顶栏 / 导航模糊', 0, 30, 1, 'px']];
   $('#st-sliders').innerHTML = sliders.map(([k, n, min, max, step, unit]) => `<div class="card">
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" onchange="commitUI()" style="width:100%;margin-top:8px"></div>`).join('');
@@ -1056,7 +1056,7 @@ function renderChatLook() {
   const c = CX.cfg();
   box.innerHTML = `<div class="cx-set-row" style="font-size:14px"><span>磨砂玻璃</span><button class="cx-tg${c.frost ? ' on' : ''}" onclick="CX.set('frost',${!c.frost});renderChatLook()"><i></i></button></div>
     <div class="cx-set-row" style="font-size:14px"><span>显示头像</span><button class="cx-tg${c.avatars ? ' on' : ''}" onclick="CX.set('avatars',${!c.avatars});renderChatLook()"><i></i></button></div>
-    ${[['alpha', '气泡透明度', 20, 100, '%'], ['radius', '气泡圆角', 4, 24, 'px'], ['fontSize', '气泡字号', 12, 22, 'px']].map(([k, n, lo, hi, u]) => `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px"><span>${n}</span><span style="color:var(--text-light)"><span id="cx-v-${k}">${c[k]}</span>${u}</span></div>
+    ${[['alpha', '气泡透明度', 20, 100, '%'], ['bgAlpha', '聊天背景图透明度', 0, 100, '%'], ['radius', '气泡圆角', 4, 24, 'px'], ['fontSize', '气泡字号', 12, 22, 'px']].map(([k, n, lo, hi, u]) => `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px"><span>${n}</span><span style="color:var(--text-light)"><span id="cx-v-${k}">${c[k]}</span>${u}</span></div>
       <input type="range" min="${lo}" max="${hi}" value="${c[k]}" oninput="CX.slide('${k}',this.value)" style="width:100%">`).join('')}
     <div style="margin-top:12px;font-size:13px">聊天背景图 <label class="cx-file">选图片<input type="file" accept="image/*" hidden onchange="CX.bg(this);setTimeout(renderChatLook,800)"></label>${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','');renderChatLook()">清除</span>` : ''}</div>`;
 }
