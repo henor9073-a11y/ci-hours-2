@@ -565,18 +565,21 @@ async function openFirsts() {
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 // ================= Tab 册 =================
-let albumLoaded = false, albumPhotos = [], albumTag = '', albumMode = 'date';
-async function loadAlbum() {
+let albumLoaded = false, albumPhotos = [], albumTag = '', albumMode = 'date', albumShown = 60;
+async function loadAlbum(force) {
   albumLoaded = true;
   try {
-    albumPhotos = await rest('/api/album?limit=500');
-    const tags = [...new Set(albumPhotos.flatMap(p => p.tags || []))];
-    $('#a-tags').innerHTML = [`<div class="chip${!albumTag ? ' on' : ''}" onclick="setAlbumTag('')">全部 ${albumPhotos.length}</div>`]
-      .concat(tags.map(t => `<div class="chip${albumTag === t ? ' on' : ''}" onclick="setAlbumTag('${esc(t)}')">${esc(t)}</div>`)).join('');
+    if (force || !albumPhotos.length) albumPhotos = await rest('/api/album?limit=500');
+    renderAlbumTags();
     renderAlbum();
   } catch (e) { fail($('#a-body'), e); }
 }
-function setAlbumTag(t) { albumTag = t; loadAlbum(); }
+function renderAlbumTags() {
+  const tags = [...new Set(albumPhotos.flatMap(p => p.tags || []))];
+  $('#a-tags').innerHTML = [`<div class="chip${!albumTag ? ' on' : ''}" onclick="setAlbumTag('')">全部 ${albumPhotos.length}</div>`]
+    .concat(tags.map(t => `<div class="chip${albumTag === t ? ' on' : ''}" onclick="setAlbumTag('${esc(t)}')">${esc(t)}</div>`)).join('');
+}
+function setAlbumTag(t) { albumTag = t; albumShown = 60; renderAlbumTags(); renderAlbum(); }
 function openUpload() {
   openSheet('传照片', `<div class="card">
     <input type="text" id="up-cap" placeholder="描述：谁、在干嘛、当时什么感觉">
@@ -598,7 +601,7 @@ async function doUpload(input) {
     catch (e) { msg.textContent = `第 ${done + 1} 张失败：${e.message}`; return; }
   }
   msg.textContent = `传好了 ${done} 张`;
-  closeSheet(); loadAlbum();
+  closeSheet(); loadAlbum(true);
 }
 
 const ALBUM_MODES = [['date', '按日期'], ['tag', '按标签'], ['timeline', '时间线']];
@@ -611,16 +614,22 @@ function toggleAlbumMode() {
 function renderAlbum() {
   const list = albumTag ? albumPhotos.filter(p => (p.tags || []).includes(albumTag)) : albumPhotos;
   if (!list.length) { $('#a-body').innerHTML = '<div class="empty">还没有照片</div>'; return; }
-  if (albumMode === 'timeline') return renderTimeline(list);
+  const visible = list.slice(0, albumShown);
+  if (albumMode === 'timeline') renderTimeline(visible);
+  else {
   const groups = {};
-  list.forEach(p => {
+  visible.forEach(p => {
     const keys = albumMode === 'date' ? [p.date || '未标日期'] : ((p.tags || []).length ? p.tags : ['未分类']);
     keys.forEach(k => (groups[k] = groups[k] || []).push(p));
   });
   $('#a-body').innerHTML = Object.keys(groups).sort().reverse().map(k =>
     `<div class="section-title">${esc(k)} <span style="color:var(--text-light);font-weight:400">${groups[k].length}</span></div>
      <div class="album-grid">${groups[k].map(p => `<div class="album-item" onclick="openPhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}" alt=""></div>`).join('')}</div>`).join('');
+  }
+  if (visible.length < list.length) $('#a-body').insertAdjacentHTML('beforeend',
+    `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="showMoreAlbum()">再显示 ${Math.min(60, list.length - visible.length)} 张</button>`);
 }
+function showMoreAlbum() { albumShown += 60; renderAlbum(); }
 // 时间线：按月分段，每张一行，带 caption——翻的是"什么时候拍的"不是"有哪些图"
 function renderTimeline(list) {
   const sorted = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));

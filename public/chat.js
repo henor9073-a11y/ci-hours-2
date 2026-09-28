@@ -55,8 +55,14 @@
   let slidePending = {}, slideRaf = 0;
   const PAGE = 40;
 
-  function sigOf(m) { return [m.read, m.starred, m.transcript_status, m.transcript, m.has_image].join('|'); }
-  let sigs = new Map();
+  // 后端会在回复送达后继续补 thinking/tools；这些字段也必须参与变更判断，
+  // 否则数据已经到了，页面却要刷新后才看得见。
+  function sigOf(m) {
+    return JSON.stringify([
+      m.read, m.starred, m.transcript_status, m.transcript, m.has_image,
+      m.content, m.thinking, m.tools, m.voice_id, m.duration, m.quote
+    ]);
+  }
 
   function merge(list, where) {
     const fresh = [];
@@ -73,6 +79,8 @@
 
   async function poll(initial) {
     try {
+      // 最近一页里除了新消息，还可能有后台稍后补上的转写、thinking 和 tools，
+      // 所以这里保留最近一页的同步；merge 只会重画真正变化的那一条。
       const list = await rest(`/api/chat?limit=${PAGE}`);
       if (initial && list.length < PAGE) hasMore = false;
       const { fresh, changed } = merge(list, 'bottom');
@@ -167,8 +175,8 @@
       </div><div class="cx-voice-text"${open ? '' : ' hidden'}>${esc(voiceText(m))}</div>`;
   }
   // 辞的语音回复不知道多长：读一下音频头拿时长，拿到了回填条的长度
-  function probeDurations() {
-    document.querySelectorAll('#cx-msgs .cx-vdur').forEach(n => {
+  function probeDurations(scope) {
+    (scope || document).querySelectorAll('.cx-vdur').forEach(n => {
       if (!n.textContent.startsWith('…')) return;
       const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || durCache[m.id] !== undefined) return;
       durCache[m.id] = 0;
@@ -223,7 +231,7 @@
     let h = hasMore ? '' : '<div class="cx-more">— 到头了 —</div>', prev = '';
     for (const m of msgs) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     box.innerHTML = h;
-    probeDurations();
+    probeDurations(box);
     if (toBottom) toBottomNow();
   }
   function appendRows(list) {
@@ -234,7 +242,10 @@
     for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const wasStuck = stick;
     box.insertAdjacentHTML('beforeend', h);
-    probeDurations();
+    for (const m of list) {
+      const n = box.querySelector(`.cx-item[data-id="${CSS.escape(m.id)}"]`);
+      if (n) probeDurations(n);
+    }
     if (wasStuck || list.some(m => m.sender === 'nor')) toBottomNow();
   }
   function prependRows(list) {
@@ -247,7 +258,10 @@
     for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const oldEdge = box.querySelector('.cx-more'); if (oldEdge) oldEdge.remove();
     box.insertAdjacentHTML('afterbegin', h);
-    probeDurations();
+    for (const m of list) {
+      const n = box.querySelector(`.cx-item[data-id="${CSS.escape(m.id)}"]`);
+      if (n) probeDurations(n);
+    }
     box.scrollTop = top + (box.scrollHeight - before);  // 视线停在原来那条上，不跳
   }
   function repaintRow(m) {
@@ -256,7 +270,7 @@
     const fresh = wrap.firstElementChild;
     if (playingId === m.id) { const b = fresh.querySelector('.cx-vbub'); if (b) b.classList.add('playing'); }
     n.replaceWith(fresh);
-    probeDurations();
+    probeDurations(fresh);
   }
   function toBottomNow() { const box = $('#cx-msgs'); if (box) { box.scrollTop = box.scrollHeight; stick = true; } }
 
@@ -434,8 +448,8 @@
       const m = await post('/api/chat', { ...body, model: model(), reply_to: quoting ? quoting.id : '' });
       if (clear) clear();
       CX.cancelQuote();
-      merge([m], 'bottom');
-      appendRows([m]);
+      const { fresh } = merge([m], 'bottom');
+      if (fresh.length) appendRows(fresh);
       return m;
     } catch (e) { hint('发不出去：' + e.message); throw e; }
   }
@@ -686,22 +700,25 @@
       paintHeader();
       if (!$('#cx-msgs').children.length) paintAll(true);
       else if (stick) toBottomNow();
-      if (timer) clearInterval(timer);
-      timer = setInterval(() => poll(), 5000);   // 在聊天页 5 秒一次，辞回得快也能及时看到
+      setPollInterval(5000);   // 在聊天页 5 秒一次，辞回得快也能及时看到
       poll(); markRead(); CX.refreshStatus(); CX.loadPats();
     },
     onHide() {
       open = false;
       document.body.classList.remove('chat-open');
-      if (timer) clearInterval(timer);
-      timer = setInterval(() => poll(), 30000);  // 不在聊天页只更新角标
+      setPollInterval(30000);  // 不在聊天页只更新角标
     },
     async init() {
       MW.loadPrefs().then(p => { avatars = p; }).catch(() => {});
       await poll(true);
-      timer = setInterval(() => poll(), 30000);
+      // init 等请求时用户可能已经进了聊天页；按当前状态设置，不能再叠一个定时器。
+      setPollInterval(open ? 5000 : 30000);
       CX.refreshStatus(); CX.loadPats();
     }
   };
+  function setPollInterval(ms) {
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => poll(), ms);
+  }
   window.CX = CX;
 })();

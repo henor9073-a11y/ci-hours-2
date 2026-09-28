@@ -7,6 +7,13 @@ const byId = id => $('#' + CSS.escape(id));
 function fail(n, e) { n.innerHTML = `<div class="err">读不到：${esc(e.message || e)}</div>`; }
 
 function switchPage(name, node) {
+  // 从搜索上下文等抽屉跳页时，旧抽屉不能继续盖在新页面上。
+  if (sheetStack.length) {
+    sheetStack.forEach(s => s.node && s.node.remove());
+    sheetStack = [];
+    const sheet = document.getElementById('sheet');
+    if (sheet) sheet.classList.remove('open');
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   $('#page-' + name).classList.add('active');
@@ -640,13 +647,20 @@ async function checkShelf() {
   } catch (e) { box.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 // 相册：手机上直接传照片，带描述和标签
-let albumCache = [];
+let albumCache = [], albumShown = 60, albumCurrentTag = '';
 async function openAlbum(tag) {
   sheetLoading('相册');
   try {
     albumCache = await rest('/api/album?limit=500');
+    albumCurrentTag = tag || '';
+    albumShown = 60;
+    renderMuwuAlbumSheet();
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function renderMuwuAlbumSheet() {
     const tags = [...new Set(albumCache.flatMap(p => p.tags || []))];
-    const list = tag ? albumCache.filter(p => (p.tags || []).includes(tag)) : albumCache;
+    const list = albumCurrentTag ? albumCache.filter(p => (p.tags || []).includes(albumCurrentTag)) : albumCache;
+    const visible = list.slice(0, albumShown);
     sheetSet(`<div class="card"><div class="card-title" style="font-size:14px">传一张新的</div>
         <input type="text" id="up-cap" placeholder="描述：谁、在干嘛、当时什么感觉" style="margin-top:8px">
         <input type="text" id="up-tags" placeholder="标签，逗号分开（比如 日常,lolita）" style="margin-top:8px">
@@ -654,12 +668,13 @@ async function openAlbum(tag) {
         <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">选照片并上传<input type="file" accept="image/*" multiple style="display:none" onchange="doUpload(this)"></label>
         <div id="up-msg" style="margin-top:8px;font-size:13px;color:var(--text-light)"></div></div>
       <div class="chip-row" style="margin-top:12px">
-        <div class="chip${!tag ? ' on' : ''}" onclick="reopenAlbum('')">全部 ${albumCache.length}</div>
-        ${tags.map(t => `<div class="chip${tag === t ? ' on' : ''}" onclick="reopenAlbum('${esc(t)}')">${esc(t)}</div>`).join('')}</div>
-      ${list.length ? `<div class="album-grid">${list.map(p => `<div class="album-item" onclick="openOnePhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">还没有照片</div>'}`);
-  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+        <div class="chip${!albumCurrentTag ? ' on' : ''}" onclick="reopenAlbum('')">全部 ${albumCache.length}</div>
+        ${tags.map(t => `<div class="chip${albumCurrentTag === t ? ' on' : ''}" onclick="reopenAlbum('${esc(t)}')">${esc(t)}</div>`).join('')}</div>
+      ${visible.length ? `<div class="album-grid">${visible.map(p => `<div class="album-item" onclick="openOnePhoto('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}"></div>`).join('')}</div>` : '<div class="empty">还没有照片</div>'}
+      ${visible.length < list.length ? `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="showMoreMuwuAlbum()">再显示 ${Math.min(60, list.length - visible.length)} 张</button>` : ''}`);
 }
-function reopenAlbum(tag) { sheetDrop(); openAlbum(tag || undefined); }
+function reopenAlbum(tag) { albumCurrentTag = tag || ''; albumShown = 60; renderMuwuAlbumSheet(); }
+function showMoreMuwuAlbum() { albumShown += 60; renderMuwuAlbumSheet(); }
 async function doUpload(input) {
   const files = [...(input.files || [])]; if (!files.length) return;
   const msg = $('#up-msg');
@@ -892,10 +907,11 @@ async function openVoice() {
 const scopes = { chat: true, rings: true, mem: true, life: true };
 function toggleScope(el) { const k = el.dataset.scope; scopes[k] = !scopes[k]; el.classList.toggle('on', scopes[k]); const q = $('#s-input').value.trim(); if (q) doSearch(q); }
 $('#s-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.target.blur(); doSearch(e.target.value.trim()); } });
-let lastQ = '';
+let lastQ = '', searchRequestId = 0;
 async function doSearch(q) {
   if (!q) return;
   lastQ = q;
+  const requestId = ++searchRequestId;
   $('#s-body').innerHTML = '<div class="loading">搜索中…</div>';
   try {
     const [chat, rings, mem, life] = await Promise.all([
@@ -904,7 +920,8 @@ async function doSearch(q) {
       scopes.mem ? mcp('search_all', { query: q, limit: 10 }).catch(() => ({ results: [] })) : null,
       scopes.life ? searchLife(q) : []
     ]);
-    if (lastQ !== q) return;
+    // 同一个关键词切换搜索范围时，旧请求也不能覆盖较新的结果。
+    if (requestId !== searchRequestId) return;
     let h = '';
     if (chat && chat.hits.length) {
       h += `<div class="section-title">木屋聊天 <span style="font-weight:400;color:var(--text-light)">${chat.total} 条</span></div>` +

@@ -284,7 +284,9 @@ body.chat-open > .header { display: none; }
 .cx.no-av .cx-col { max-width: 86%; }
 .cx-row.me .cx-col { align-items: flex-end; }
 .cx-bubble { padding: 9px 13px; border-radius: var(--cx-radius); font-size: var(--cx-font); line-height: 1.55; letter-spacing: .2px; word-break: break-word; white-space: pre-wrap;
-  backdrop-filter: blur(var(--cx-blur)); -webkit-backdrop-filter: blur(var(--cx-blur)); box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  /* 每条气泡单独做 backdrop-filter 会产生大量合成层，手机滚动时非常卡。
+     毛玻璃只留在固定的头部/输入栏；气泡用半透明背景就够了。 */
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
   -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; max-width: 100%; }
 .cx-bubble.ai { background: var(--cx-ai); border-top-left-radius: 4px; }
 .cx-bubble.mine { background: var(--cx-me); border-top-right-radius: 4px; }

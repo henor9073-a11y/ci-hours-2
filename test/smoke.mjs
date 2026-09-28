@@ -1003,6 +1003,19 @@ try {
     const enc = await (await fetch(`${base}/api/fishing/encyclopedia?token=${TOKEN}`)).json();
     assert.ok('text' in enc || 'error' in enc);
   });
+  await step('前端性能守卫：气泡不逐条模糊、相册分批、聊天只保留一个轮询器', async () => {
+    const [css, chat, muwu, muwen] = await Promise.all([
+      fetch(`${base}/style.css?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/chat.js?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/muwu.js?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/muwen.js?token=${TOKEN}`).then(r => r.text())
+    ]);
+    const cssWithoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const bubbleRule = cssWithoutComments.match(/\.cx-bubble\s*\{[^}]*\}/s)?.[0] || '';
+    assert.ok(bubbleRule && !bubbleRule.includes('backdrop-filter'), '每条聊天气泡不能单独做毛玻璃');
+    assert.ok(chat.includes('m.thinking, m.tools') && chat.includes('function setPollInterval'), '聊天更新和轮询守卫要保留');
+    assert.ok(muwu.includes('showMoreMuwuAlbum') && muwen.includes('showMoreAlbum'), '两个相册都要分批渲染');
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);
