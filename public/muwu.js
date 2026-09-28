@@ -301,12 +301,7 @@ function pickCustomBlock() {
     `<div class="card tap" onclick="setCustomBlock('')"><div class="card-row"><div class="card-icon">×</div><div class="card-title">留空</div></div></div>`);
 }
 function setCustomBlock(k) { try { localStorage.setItem('muwu-home-custom', k); } catch {} closeSheet(); paintCustomBlock(); }
-// 四个块的图标字：可以换（设置页改，存本机）
-function homeIcons() { try { return JSON.parse(localStorage.getItem('muwu-home-icons') || '{}'); } catch { return {}; } }
-function applyHomeIcons() {
-  const ic = homeIcons();
-  document.querySelectorAll('#page-home .fn-icon[data-icon]').forEach(n => { const v = ic[n.dataset.icon]; if (v) n.textContent = v; });
-}
+
 
 let weatherTimer = null;
 function refreshWeather() {
@@ -1021,14 +1016,22 @@ const WALLPAPERS = [
   ['', '默认'], ['linear-gradient(135deg,#E8EAF0,#EDE7F0)', '薰衣草'], ['linear-gradient(135deg,#E4EBE8,#F0E8DF)', '森林'],
   ['linear-gradient(135deg,#F5EDE4,#FAECD8)', '暖阳'], ['linear-gradient(135deg,#E0E8F0,#D8E4F0)', '雨天']
 ];
+const MAIN_PRESETS = ['sakura', 'ocean', 'stone', 'night', 'mist'];
+function toggleMore(id, head) { const b = byId(id); const on = b.style.display === 'none'; b.style.display = on ? '' : 'none'; const l = head.querySelector('.link'); if (l) l.textContent = on ? '收起' : '展开'; }
 function loadSettings() {
   setLoaded = true;
   renderChatThemes();
+  renderChatLook();
+  renderAvatarMgmt();
   renderPats();
+  renderIcons();
+  renderHomeOrder();
   const t = MW.loadTheme();
-  $('#st-presets').innerHTML = Object.entries(THEMES).map(([k, v]) => `<div class="card tap" onclick="pickPreset('${k}')" style="${t.preset === k ? 'outline:2px solid var(--accent)' : ''}">
-    <div style="display:flex;gap:5px;margin-bottom:8px">${['bg', 'primary', 'accent', 'text'].map(c => `<span style="width:20px;height:20px;border-radius:6px;background:${v.vars[c]};border:1px solid rgba(0,0,0,.08)"></span>`).join('')}</div>
-    <div class="card-title" style="font-size:13px">${esc(v.label)}</div></div>`).join('');
+  const presetCard = (k, v, big) => `<div class="card tap" onclick="pickPreset('${k}')" style="background:${v.vars.bg};${t.preset === k ? 'outline:2px solid ' + v.vars.accent : ''};${big ? 'text-align:center;padding:14px 8px' : ''}">
+    <div style="display:flex;gap:5px;margin-bottom:8px;${big ? 'justify-content:center' : ''}">${['primary', 'accent', 'text'].map(c => `<span style="width:16px;height:16px;border-radius:50%;background:${v.vars[c]}"></span>`).join('')}</div>
+    <div class="card-title" style="font-size:${big ? 15 : 13}px;color:${v.vars.text}">${esc(v.label)}</div></div>`;
+  $('#st-presets').innerHTML = MAIN_PRESETS.map(k => presetCard(k, THEMES[k], true)).join('');
+  $('#st-more-presets').innerHTML = Object.entries(THEMES).filter(([k]) => !MAIN_PRESETS.includes(k)).map(([k, v]) => presetCard(k, v)).join('');
   const cur = Object.assign({}, THEMES[t.preset].vars, t.custom);
   $('#st-colors').innerHTML = COLOR_FIELDS.map(([k, name]) => `<div class="card" style="display:flex;justify-content:space-between;align-items:center">
     <div class="card-title" style="font-size:14px">${name}</div>
@@ -1036,12 +1039,84 @@ function loadSettings() {
   </div>`).join('');
   $('#st-wall').innerHTML = WALLPAPERS.map(([v, n]) => `<div onclick="setWall('${v}')" style="aspect-ratio:1;border-radius:12px;background:${v || 'var(--bg)'};border:2px solid ${t.ui.wallpaper === v ? 'var(--accent)' : 'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-light);cursor:pointer">${n}</div>`).join('');
   $('#st-wall-url').value = /^https?:|^data:/.test(t.ui.wallpaper || '') ? t.ui.wallpaper : '';
-  const sliders = [['radius', '圆角', 0, 28, 1, 'px'], ['fontSize', '字体大小', 13, 20, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['opacity', '卡片不透明度', 40, 100, 5, '%'], ['blur', '导航模糊', 0, 30, 1, 'px']];
+  const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片不透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['iconSize', '图标大小', 28, 64, 2, 'px'], ['iconRadius', '图标圆角', 0, 32, 1, 'px'], ['blur', '导航模糊', 0, 30, 1, 'px']];
   $('#st-sliders').innerHTML = sliders.map(([k, n, min, max, step, unit]) => `<div class="card">
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" style="width:100%;margin-top:8px"></div>`).join('');
 }
-function pickPreset(k) { const t = MW.loadTheme(); t.preset = k; t.custom = {}; MW.saveTheme(t); loadSettings(); }
+// 选樱海石夜雾之一：全站换，聊天页也跟着换同一套；选别的（暖灰绿那七套）聊天页不动
+function pickPreset(k) { const t = MW.loadTheme(); t.preset = k; t.custom = {}; MW.saveTheme(t); if (CX.themes[k]) CX.setTheme(k); loadSettings(); }
+
+// ---------- 聊天外观（跟聊天页右上角 ✧ 那个面板是同一份设置）----------
+function renderChatLook() {
+  const box = $('#st-chat-look'); if (!box) return;
+  const c = CX.cfg();
+  box.innerHTML = `<div class="cx-set-row" style="font-size:14px"><span>磨砂玻璃</span><button class="cx-tg${c.frost ? ' on' : ''}" onclick="CX.set('frost',${!c.frost});renderChatLook()"><i></i></button></div>
+    <div class="cx-set-row" style="font-size:14px"><span>显示头像</span><button class="cx-tg${c.avatars ? ' on' : ''}" onclick="CX.set('avatars',${!c.avatars});renderChatLook()"><i></i></button></div>
+    ${[['alpha', '气泡透明度', 20, 100, '%'], ['radius', '气泡圆角', 4, 24, 'px'], ['fontSize', '气泡字号', 12, 22, 'px']].map(([k, n, lo, hi, u]) => `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px"><span>${n}</span><span style="color:var(--text-light)"><span id="cx-v-${k}">${c[k]}</span>${u}</span></div>
+      <input type="range" min="${lo}" max="${hi}" value="${c[k]}" oninput="CX.slide('${k}',this.value)" style="width:100%">`).join('')}
+    <div style="margin-top:12px;font-size:13px">聊天背景图 <label class="cx-file">选图片<input type="file" accept="image/*" hidden onchange="CX.bg(this);setTimeout(renderChatLook,800)"></label>${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','');renderChatLook()">清除</span>` : ''}</div>`;
+}
+// ---------- 头像管理 ----------
+async function renderAvatarMgmt() {
+  const box = $('#st-avatars'); if (!box) return;
+  const p = await MW.loadPrefs(true).catch(() => ({}));
+  box.innerHTML = ['cy', 'nor'].map(w => { const id = p['avatar_' + w]; return `<div><div class="avatar big${w === 'nor' ? ' accent' : ''}" onclick="openAvatarPicker('${w}')">${id ? `<img src="${imageUrl(id)}" alt="">` : (w === 'cy' ? '辞' : '棋')}</div>
+    <div style="font-size:13px">${w === 'cy' ? '辞' : '棋子'}</div><span class="link" onclick="openAvatarPicker('${w}')">换一张</span></div>`; }).join('');
+}
+// ---------- 图标：每个图标可以改字或换成图片（存本机，图片缩到 96px 存 dataURL）----------
+const ICON_KEYS = [['chat', '首页 · 留言', '聊'], ['kiss', '首页 · 亲亲', '亲'], ['music', '首页 · 日期音乐', '音'], ['custom', '首页 · 自定义', '+'],
+  ['fish', '生活 · 钓鱼', '鱼'], ['sched', '生活 · 日程', '程'], ['songs', '生活 · 歌单', '歌'], ['tools', '生活 · 工具', '具'], ['voice', '生活 · 语音', '语'], ['album', '生活 · 相册', '册'],
+  ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['sleep', '身体 · 睡眠', '眠'], ['cycle', '身体 · 生理期', '期'], ['health', '身体 · 身体状况', '健']];
+function iconsCfg() { try { return JSON.parse(localStorage.getItem('muwu-icons') || '{}'); } catch { return {}; } }
+function saveIcons(c) { try { localStorage.setItem('muwu-icons', JSON.stringify(c)); } catch { alert('存不下了，图片太多，换小一点的'); } applyIcons(); }
+function applyIcons() {
+  const c = iconsCfg();
+  document.querySelectorAll('[data-icon]').forEach(n => {
+    const v = c[n.dataset.icon]; if (!v) return;
+    if (v.img) n.innerHTML = `<img src="${v.img}" alt="">`; else if (v.text) n.textContent = v.text;
+  });
+}
+// 首页那四个块以前单独存过一份（muwu-home-icons），合并进来
+function homeIcons() { const c = iconsCfg(); const out = {}; for (const k of ['chat', 'kiss', 'music', 'custom']) if (c[k] && c[k].text) out[k] = c[k].text; return out; }
+function applyHomeIcons() { applyIcons(); }
+function renderIcons() {
+  const box = $('#st-icons'); if (!box) return;
+  const c = iconsCfg();
+  box.innerHTML = ICON_KEYS.map(([k, name, def]) => { const v = c[k] || {}; return `<div class="st-icon-row">
+      <span class="fn-icon${['kiss', 'fish', 'tools', 'shelf', 'sleep'].includes(k) ? '' : ' accent'}">${v.img ? `<img src="${v.img}" alt="">` : esc(v.text || def)}</span>
+      <span style="flex:1;font-size:13px">${name}</span>
+      <input type="text" maxlength="2" value="${esc(v.text || '')}" placeholder="${esc(def)}" onchange="setIconText('${k}',this.value)">
+      <label class="link" style="cursor:pointer">图<input type="file" accept="image/*" hidden onchange="setIconImage('${k}',this)"></label>
+      ${v.img || v.text ? `<span class="link" onclick="resetIcon('${k}')">还原</span>` : ''}</div>`; }).join('');
+}
+function setIconText(k, v) { const c = iconsCfg(); c[k] = { text: String(v || '').trim().slice(0, 2) }; if (!c[k].text) delete c[k]; saveIcons(c); renderIcons(); }
+function setIconImage(k, input) {
+  const f = input.files && input.files[0]; input.value = ''; if (!f) return;
+  const img = new Image(), fr = new FileReader();
+  fr.onload = () => { img.src = fr.result; };
+  img.onload = () => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 96;
+    const s0 = Math.min(img.width, img.height); cv.getContext('2d').drawImage(img, (img.width - s0) / 2, (img.height - s0) / 2, s0, s0, 0, 0, 96, 96);
+    const c = iconsCfg(); c[k] = { img: cv.toDataURL('image/png') }; saveIcons(c); renderIcons();
+  };
+  fr.readAsDataURL(f);
+}
+function resetIcon(k) { const c = iconsCfg(); delete c[k]; saveIcons(c); renderIcons(); location.reload(); }
+// ---------- 首页四个块的顺序 ----------
+const HOME_KEYS = { chat: '给辞留言', kiss: '亲亲记数', music: '日期音乐', custom: '自定义' };
+function homeOrder() { try { const o = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return Object.keys(HOME_KEYS).every(k => o.includes(k)) ? o : Object.keys(HOME_KEYS); } catch { return Object.keys(HOME_KEYS); } }
+function applyHomeOrder() {
+  const grid = document.querySelector('#page-home .fn-grid'); if (!grid) return;
+  homeOrder().forEach(k => { const n = grid.querySelector(`[data-key="${k}"]`); if (n) grid.appendChild(n); });
+}
+function renderHomeOrder() {
+  const box = $('#st-order'); if (!box) return;
+  const o = homeOrder();
+  box.innerHTML = o.map((k, i) => `<div class="st-order"><span style="font-size:14px">${i + 1}. ${HOME_KEYS[k]}</span><span>
+    <button onclick="moveHome(${i},-1)"${i === 0 ? ' disabled' : ''}>▲</button><button onclick="moveHome(${i},1)"${i === o.length - 1 ? ' disabled' : ''}>▼</button></span></div>`).join('');
+}
+function moveHome(i, d) { const o = homeOrder(); const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; try { localStorage.setItem('muwu-home-order', JSON.stringify(o)); } catch {} applyHomeOrder(); renderHomeOrder(); }
 function setColor(k, v) { const t = MW.loadTheme(); t.custom[k] = v; MW.saveTheme(t); }
 function resetCustom() { const t = MW.loadTheme(); t.custom = {}; MW.saveTheme(t); loadSettings(); }
 function setWall(v) { const t = MW.loadTheme(); t.ui.wallpaper = v; MW.saveTheme(t); loadSettings(); }
@@ -1057,7 +1132,7 @@ function setUI(k, v, unit) {
 }
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
-applyAvatars(); loadHome(); CX.init();
+applyAvatars(); applyIcons(); applyHomeOrder(); loadHome(); CX.init();
 // 从木纹跳过来：#search 直接到搜索页；#chatlog=2026-09-12 直接打开那天的聊天记录
 (function () {
   const h = location.hash.slice(1); if (!h) return;

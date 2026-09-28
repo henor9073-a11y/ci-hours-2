@@ -666,8 +666,9 @@
       };
       fr.readAsDataURL(f);
     },
-    // 设置页用：配色选择和拍一拍库
+    // 设置页用：配色选择、拍一拍库、外观
     themes: THEMES,
+    cfg,
     theme() { return cfg().theme; },
     setTheme(k) { const c = cfg(); c.theme = k; saveCfg(c); },
     async loadPats() { try { pats = await rest('/api/chat/pats'); } catch {} return pats; },

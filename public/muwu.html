@@ -41,24 +41,24 @@
   </div>
 
   <div class="fn-grid">
-    <div class="fn-card tap" onclick="switchPage('chat')">
+    <div class="fn-card tap" data-key="chat" onclick="switchPage('chat')">
       <span class="fn-icon accent" data-icon="chat">聊</span>
       <span class="fn-label">给辞留言</span>
       <span class="fn-sub" id="fn-chat-sub">直接到他窗口里</span>
       <span class="nav-badge fn-badge" data-chat-badge></span>
     </div>
-    <div class="fn-card tap" id="fn-kiss" onclick="openKissDetail()">
+    <div class="fn-card tap" id="fn-kiss" data-key="kiss" onclick="openKissDetail()">
       <span class="fn-icon" data-icon="kiss">亲</span>
       <span class="fn-label">亲亲记数</span>
       <span class="fn-sub" id="fn-kiss-sub">…</span>
       <div class="kiss-bar"><div class="kiss-fill" id="fn-kiss-fill"></div></div>
     </div>
-    <div class="fn-card tap" id="fn-music" onclick="openDateMusic()">
+    <div class="fn-card tap" id="fn-music" data-key="music" onclick="openDateMusic()">
       <span class="fn-icon accent" data-icon="music">音</span>
       <span class="fn-label">日期音乐</span>
       <span class="fn-sub" id="fn-music-sub">…</span>
     </div>
-    <div class="fn-card tap" id="fn-custom" onclick="tapCustomBlock()">
+    <div class="fn-card tap" id="fn-custom" data-key="custom" onclick="tapCustomBlock()">
       <span class="fn-icon dim" data-icon="custom">+</span>
       <span class="fn-label dim">可加别的</span>
       <span class="fn-sub">自定义</span>
@@ -86,26 +86,26 @@
 
   <div class="section-title">日常</div>
   <div class="grid-3">
-    <div class="lc tap" onclick="openFishing()"><div class="lc-i">鱼</div><div class="lc-l">钓鱼</div><div class="lc-s" id="l-fish">…</div></div>
-    <div class="lc tap" onclick="openSchedule()"><div class="lc-i">程</div><div class="lc-l">日程</div><div class="lc-s" id="l-sched">…</div></div>
-    <div class="lc tap" onclick="openSongs()"><div class="lc-i">歌</div><div class="lc-l">歌单</div><div class="lc-s" id="l-songs">…</div></div>
+    <div class="lc tap" onclick="openFishing()"><div class="lc-i" data-icon="fish">鱼</div><div class="lc-l">钓鱼</div><div class="lc-s" id="l-fish">…</div></div>
+    <div class="lc tap" onclick="openSchedule()"><div class="lc-i" data-icon="sched">程</div><div class="lc-l">日程</div><div class="lc-s" id="l-sched">…</div></div>
+    <div class="lc tap" onclick="openSongs()"><div class="lc-i" data-icon="songs">歌</div><div class="lc-l">歌单</div><div class="lc-s" id="l-songs">…</div></div>
   </div>
   <div class="grid-3" style="margin-top:8px">
-    <div class="lc tap" onclick="openTools()"><div class="lc-i">具</div><div class="lc-l">工具</div><div class="lc-s" id="l-tools">…</div></div>
-    <div class="lc tap" onclick="openVoice()"><div class="lc-i">语</div><div class="lc-l">语音</div><div class="lc-s" id="l-voice">…</div></div>
-    <div class="lc tap" onclick="openAlbum()"><div class="lc-i">册</div><div class="lc-l">相册</div><div class="lc-s" id="l-album">…</div></div>
+    <div class="lc tap" onclick="openTools()"><div class="lc-i" data-icon="tools">具</div><div class="lc-l">工具</div><div class="lc-s" id="l-tools">…</div></div>
+    <div class="lc tap" onclick="openVoice()"><div class="lc-i" data-icon="voice">语</div><div class="lc-l">语音</div><div class="lc-s" id="l-voice">…</div></div>
+    <div class="lc tap" onclick="openAlbum()"><div class="lc-i" data-icon="album">册</div><div class="lc-l">相册</div><div class="lc-s" id="l-album">…</div></div>
   </div>
   <div class="grid-2" style="margin-top:8px">
-    <div class="lc tap" onclick="openShelf()"><div class="lc-i">书</div><div class="lc-l">书架</div><div class="lc-s" id="l-shelf">…</div></div>
-    <div class="lc tap" onclick="openPushHistory()"><div class="lc-i">推</div><div class="lc-l">推送历史</div><div class="lc-s" id="l-push">…</div></div>
+    <div class="lc tap" onclick="openShelf()"><div class="lc-i" data-icon="shelf">书</div><div class="lc-l">书架</div><div class="lc-s" id="l-shelf">…</div></div>
+    <div class="lc tap" onclick="openPushHistory()"><div class="lc-i" data-icon="push">推</div><div class="lc-l">推送历史</div><div class="lc-s" id="l-push">…</div></div>
   </div>
 
   <div class="section-title">身体</div>
   <div class="grid-2">
-    <div class="lc left tap" onclick="openSleep()"><div class="lc-i">眠</div><div class="lc-l">睡眠</div><div class="lc-s" id="l-sleep">…</div></div>
-    <div class="lc left tap" onclick="openCycle()"><div class="lc-i">期</div><div class="lc-l">生理期</div><div class="lc-s" id="l-cycle">…</div></div>
+    <div class="lc left tap" onclick="openSleep()"><div class="lc-i" data-icon="sleep">眠</div><div class="lc-l">睡眠</div><div class="lc-s" id="l-sleep">…</div></div>
+    <div class="lc left tap" onclick="openCycle()"><div class="lc-i" data-icon="cycle">期</div><div class="lc-l">生理期</div><div class="lc-s" id="l-cycle">…</div></div>
   </div>
-  <div class="lc left tap" style="margin-top:8px" onclick="openHealth()"><div class="lc-i">健</div><div class="lc-l">身体状况</div><div class="lc-s" id="l-health">…</div></div>
+  <div class="lc left tap" style="margin-top:8px" onclick="openHealth()"><div class="lc-i" data-icon="health">健</div><div class="lc-l">身体状况</div><div class="lc-s" id="l-health">…</div></div>
 
   <div class="section-title">倒数 / 正数 <span class="link" onclick="openAddCountdown()">+ 加一个</span></div>
   <div id="h-countdowns"><div class="loading">…</div></div>
@@ -138,22 +138,43 @@
   <div class="greeting"><div class="greeting-date sm">设置</div><div class="greeting-sub">木屋装修 · 改完立刻生效，木纹也跟着变</div></div>
   <div class="card tap" onclick="openWake()"><div class="card-row"><div class="card-icon">醒</div>
     <div><div class="card-title">苏醒管理</div><div class="card-desc">ci-hours 后台 · heartbeat · watchdog</div></div></div></div>
-  <div class="section-title">聊天配色</div>
+
+  <div class="section-title">全局配色 <span class="link" style="font-weight:400">樱 · 海 · 石 · 夜 · 雾，聊天页跟着变</span></div>
+  <div id="st-presets" class="grid-3"></div>
+  <div class="section-title" onclick="toggleMore('st-more-presets', this)" style="cursor:pointer">更多配色 <span class="link">展开</span></div>
+  <div id="st-more-presets" class="grid-2" style="display:none"></div>
+
+  <div class="section-title">聊天外观</div>
+  <div class="card" id="st-chat-look"></div>
+  <div class="section-title">聊天配色 <span class="link" style="font-weight:400">单独给聊天页选一套</span></div>
   <div id="st-chat-theme" class="grid-3"></div>
+
+  <div class="section-title">头像管理</div>
+  <div class="card"><div class="st-av" id="st-avatars"></div>
+    <div class="card-desc" style="text-align:center;margin-top:10px">首页大头像点了也能换。两个人、两台设备看到的是同一张。</div></div>
+
   <div class="section-title">拍一拍库 <span class="link" style="font-weight:400">长按辞的头像时从这里选</span></div>
   <div class="card" id="st-pats"><div class="loading">…</div></div>
-  <div class="section-title">配色预设</div>
-  <div id="st-presets" class="grid-2"></div>
-  <div class="section-title">单独调色 <span class="link" onclick="resetCustom()">清掉自定义</span></div>
-  <div id="st-colors"></div>
-  <div class="section-title">壁纸</div>
-  <div class="grid-3" id="st-wall"></div>
-  <div class="card"><div class="card-title" style="font-size:13px">自定义壁纸（图片 URL）</div>
-    <input type="text" id="st-wall-url" placeholder="https://… 留空就是不用" style="margin-top:8px">
-    <button class="btn" style="margin-top:8px" onclick="setWallpaperUrl()">用这张</button></div>
-  <div class="section-title">外观</div>
+
+  <div class="section-title">图标 <span class="link" style="font-weight:400">改字 / 换成图片</span></div>
+  <div class="card" id="st-icons"></div>
+  <div class="section-title">首页四个块的顺序</div>
+  <div class="card" id="st-order"></div>
+
+  <div class="section-title">卡片和文字</div>
   <div id="st-sliders"></div>
+  <div class="section-title" onclick="toggleMore('st-adv', this)" style="cursor:pointer">单独调色 / 壁纸 <span class="link">展开</span></div>
+  <div id="st-adv" style="display:none">
+    <div class="section-title">单独调色 <span class="link" onclick="resetCustom()">清掉自定义</span></div>
+    <div id="st-colors"></div>
+    <div class="section-title">壁纸</div>
+    <div class="grid-3" id="st-wall"></div>
+    <div class="card"><div class="card-title" style="font-size:13px">自定义壁纸（图片 URL）</div>
+      <input type="text" id="st-wall-url" placeholder="https://… 留空就是不用" style="margin-top:8px">
+      <button class="btn" style="margin-top:8px" onclick="setWallpaperUrl()">用这张</button></div>
+  </div>
   <div class="card tap" onclick="resetAll()" style="margin-top:16px"><div class="card-title" style="color:#C05B5B">全部恢复默认</div></div>
+  <div class="card-desc" style="margin:14px 4px 0">桌宠小狗：还没设计，先不做。</div>
 </div>
 
 <div class="sheet" id="sheet"><div class="sheet-head"><button class="sheet-back" onclick="closeSheet()">‹ 返回</button><div class="sheet-title" id="sheet-title"></div></div><div id="sheet-body"></div></div>

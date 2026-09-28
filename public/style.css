@@ -9,6 +9,7 @@
   --radius: 16px; --radius-sm: 12px;
   --font-size: 16px; --line-height: 1.6;
   --blur: 20px; --card-alpha: 1; --wallpaper: none;
+  --icon-size: 40px; --icon-radius: 12px; --card-blur: 0px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { background: var(--bg); }
@@ -445,3 +446,19 @@ body.chat-open > .header { display: none; }
 .tool-dot.on { background: #6fbf8a; opacity: 1; box-shadow: 0 0 6px rgba(111,191,138,.5); }
 .tool-dot.off { background: #d48a8a; opacity: 1; }
 .tool-dot.unknown { background: var(--text-light); opacity: .5; }
+
+/* ---- 设置页可调：图标大小/圆角、图标换成图片、卡片磨砂（配合不透明度） ---- */
+.fn-icon, .lc-i, .card-icon { width: var(--icon-size); height: var(--icon-size); border-radius: var(--icon-radius); overflow: hidden; }
+.lc-i { width: calc(var(--icon-size) - 4px); height: calc(var(--icon-size) - 4px); }
+.fn-icon img, .lc-i img, .card-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card, .fn-card, .lc, .summary-card { backdrop-filter: blur(var(--card-blur)); -webkit-backdrop-filter: blur(var(--card-blur)); }
+.st-icon-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.st-icon-row:last-child { border-bottom: none; }
+.st-icon-row .fn-icon { margin: 0; flex-shrink: 0; }
+.st-icon-row input[type=text] { width: 54px; text-align: center; padding: 6px 4px; }
+.st-icon-row .link { font-size: 12px; }
+.st-order { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.st-order:last-child { border-bottom: none; }
+.st-order button { background: var(--primary-light); border: none; border-radius: 8px; padding: 4px 10px; color: var(--text); cursor: pointer; margin-left: 6px; font-family: inherit; }
+.st-av { display: flex; gap: 20px; justify-content: center; }
+.st-av > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
