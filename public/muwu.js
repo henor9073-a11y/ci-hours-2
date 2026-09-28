@@ -24,26 +24,6 @@ function switchPage(name, node) {
   if (name === 'chat') CX.onShow(); else CX.onHide();
 }
 document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage(n.dataset.p, n));
-// 左右滑动翻页（聊天页有自己的手势，不算）。横向滑够 60px、竖向没怎么动才算翻页，不然跟上下滚打架。
-(function () {
-  const ORDER = ['life', 'chat', 'home', 'search', 'settings'];
-  let sx = 0, sy = 0, on = false;
-  document.addEventListener('touchstart', e => {
-    const p = document.querySelector('.page.active');
-    const interactive = e.target.closest('input,textarea,select,button,label,a,[contenteditable],.chip,.tap');
-    // 设置页有大量横向滑块；在那里完全关闭翻页手势，避免调数值时跳去搜索页。
-    on = !!p && p.id !== 'page-chat' && p.id !== 'page-settings' && !interactive && !$('#sheet').classList.contains('open');
-    if (!on) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
-  }, { passive: true });
-  document.addEventListener('touchend', e => {
-    if (!on) return; on = false;
-    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) < 60 || Math.abs(dy) > 50) return;
-    const cur = document.querySelector('.page.active').id.replace('page-', '');
-    const next = ORDER[ORDER.indexOf(cur) + (dx < 0 ? 1 : -1)];
-    if (next) switchPage(next);
-  }, { passive: true });
-})();
 
 let sheetStack = [];
 // 每一层是真的 DOM 节点，往里走只是把下面那层藏起来；返回的时候原样露出来。
@@ -247,8 +227,7 @@ async function loadHome() {
   loadKiss(mcp('get_wake_packet'));
   loadStatus();
   loadChatCard();
-  loadDateMusic(d);
-  paintCustomBlock();
+  paintHomeShortcuts();
   applyHomeIcons();
 }
 // 首页「聊」块：最后一条说了什么
@@ -262,55 +241,52 @@ async function loadChatCard() {
     n.textContent = `${who}：${txt.slice(0, 16)}`;
   } catch {}
 }
-// 日期音乐：每天从歌单里按日期定一首（同一天两个人打开看到的是同一首），点进去看歌词
-let dateSong = null;
-async function loadDateMusic(d) {
-  const n = $('#fn-music-sub'); if (!n) return;
-  try {
-    const list = await rest('/api/songs');
-    if (!list.length) { n.textContent = '歌单还是空的'; return; }
-    const seed = [...d].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-    dateSong = list[seed % list.length];
-    n.textContent = `${dateSong.title}${dateSong.artist ? ' · ' + dateSong.artist : ''}`.slice(0, 22);
-  } catch { n.textContent = '读不到歌单'; }
-}
-function openDateMusic() { if (dateSong) openSong(dateSong.id); else openSongs(); }
 function openKissDetail() {
   const w = kissLast; if (!w) return;
   openSheet('亲亲', `<div class="card"><div style="font-size:32px;font-weight:700;color:var(--accent);text-align:center">${w.total} <span style="font-size:14px;color:var(--text-light)">/ ${w.goal}</span></div>
     <div class="card-desc" style="text-align:center;margin-top:6px">还差 ${w.remaining}${w.last ? ` · 上次记于 ${esc(w.last.date)}（${w.last.kiss_count} 次）` : ''}</div>
     <div class="card-desc" style="margin-top:12px">来源：每日总结里的 kiss_count 累计${w.baseline ? ` + 起始 ${w.baseline}` : ''}，一共记了 ${w.counted_days || 0} 天。</div></div>`);
 }
-// 自定义块：从生活页那些入口里挑一个放首页
+// 首页快捷入口：固定两枚（留言、亲亲）之外，可从生活页再选最多六枚，总数不超过 8。
 const CUSTOM_TARGETS = [
   ['album', '相册', '册', 'openAlbum()'], ['fishing', '钓鱼', '鱼', 'openFishing()'], ['schedule', '日程', '程', 'openSchedule()'],
   ['songs', '歌单', '歌', 'openSongs()'], ['voice', '语音', '语', 'openVoice()'], ['shelf', '书架', '书', 'openShelf()'],
   ['push', '推送历史', '推', 'openPushHistory()'], ['sleep', '睡眠', '眠', 'openSleep()'], ['cycle', '生理期', '期', 'openCycle()'],
   ['health', '身体状况', '健', 'openHealth()'], ['phone', '手机活动', '机', 'openPhone()'], ['calendar', '日历', '历', "switchPage('life')"]
 ];
-function customBlock() { try { return localStorage.getItem('muwu-home-custom') || ''; } catch { return ''; } }
-function paintCustomBlock() {
-  const card = $('#fn-custom'); if (!card) return;
-  const t = CUSTOM_TARGETS.find(x => x[0] === customBlock());
-  const icons = homeIcons();
-  card.querySelector('.fn-icon').textContent = t ? (icons.custom || t[2]) : (icons.custom || '+');
-  card.querySelector('.fn-icon').classList.toggle('dim', !t);
-  card.querySelector('.fn-label').textContent = t ? t[1] : '可加别的';
-  card.querySelector('.fn-label').classList.toggle('dim', !t);
-  card.querySelector('.fn-sub').textContent = t ? '自定义入口' : '自定义';
-  card.classList.toggle('dashed', !t);
+function homeShortcuts() {
+  try {
+    let a = JSON.parse(localStorage.getItem('muwu-home-shortcuts') || '[]');
+    if (!Array.isArray(a)) a = [];
+    const old = localStorage.getItem('muwu-home-custom');
+    if (old && !a.includes(old)) { a.push(old); localStorage.removeItem('muwu-home-custom'); }
+    return [...new Set(a)].filter(k => CUSTOM_TARGETS.some(x => x[0] === k)).slice(0, 6);
+  } catch { return []; }
 }
-function tapCustomBlock() {
-  const t = CUSTOM_TARGETS.find(x => x[0] === customBlock());
-  if (!t) return pickCustomBlock();
-  new Function(t[3])();
+function saveHomeShortcuts(a) { try { localStorage.setItem('muwu-home-shortcuts', JSON.stringify(a.slice(0, 6))); } catch {} }
+function paintHomeShortcuts() {
+  const grid = document.querySelector('#page-home .fn-grid'); if (!grid) return;
+  grid.querySelectorAll('.home-shortcut').forEach(n => n.remove());
+  const icons = iconsCfg();
+  for (const k of homeShortcuts()) {
+    const t = CUSTOM_TARGETS.find(x => x[0] === k); if (!t) continue;
+    const v = icons[k] || {};
+    const n = document.createElement('div'); n.className = 'fn-card tap home-shortcut'; n.dataset.key = k;
+    n.innerHTML = `<span class="fn-icon accent" data-icon="${k}">${v.img ? `<img src="${v.img}" alt="">` : esc(v.text || t[2])}</span><span class="fn-label">${esc(t[1])}</span>`;
+    n.onclick = () => new Function(t[3])(); grid.appendChild(n);
+  }
+  applyHomeOrder();
 }
 function pickCustomBlock() {
-  openSheet('这一格放什么', `<div class="card-desc" style="margin:6px 4px 10px">挑一个放在首页当快捷入口</div>` +
-    CUSTOM_TARGETS.map(x => `<div class="card tap" onclick="setCustomBlock('${x[0]}')"><div class="card-row"><div class="card-icon${customBlock() === x[0] ? ' accent' : ''}">${x[2]}</div><div class="card-title">${x[1]}</div></div></div>`).join('') +
-    `<div class="card tap" onclick="setCustomBlock('')"><div class="card-row"><div class="card-icon">×</div><div class="card-title">留空</div></div></div>`);
+  const selected = homeShortcuts();
+  openSheet('管理首页图标', `<div class="card-desc" style="margin:6px 4px 10px">已选 ${selected.length + 2}/8。点一下添加或移除。</div>` +
+    CUSTOM_TARGETS.map(x => `<div class="card tap" onclick="toggleHomeShortcut('${x[0]}')"><div class="card-row"><div class="card-icon${selected.includes(x[0]) ? ' accent' : ''}">${x[2]}</div><div class="card-title" style="flex:1">${x[1]}</div><span class="link">${selected.includes(x[0]) ? '移除' : '添加'}</span></div></div>`).join(''));
 }
-function setCustomBlock(k) { try { localStorage.setItem('muwu-home-custom', k); } catch {} closeSheet(); paintCustomBlock(); }
+function toggleHomeShortcut(k) {
+  const a = homeShortcuts(), i = a.indexOf(k);
+  if (i >= 0) a.splice(i, 1); else if (a.length < 6) a.push(k); else return;
+  saveHomeShortcuts(a); paintHomeShortcuts(); sheetDrop(); pickCustomBlock(); if (setLoaded) renderHomeOrder();
+}
 
 
 let weatherTimer = null;
@@ -1066,11 +1042,10 @@ function loadSettings() {
     <input type="color" value="${cur[k]}" onchange="setColor('${k}',this.value)" style="width:44px;height:30px;border:none;background:none;padding:0;cursor:pointer">
   </div>`).join('');
   $('#st-wall').innerHTML = WALLPAPERS.map(([v, n]) => `<div onclick="setWall('${v}')" style="aspect-ratio:1;border-radius:12px;background:${v || 'var(--bg)'};border:2px solid ${t.ui.wallpaper === v ? 'var(--accent)' : 'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-light);cursor:pointer">${n}</div>`).join('');
-  $('#st-wall-url').value = /^https?:|^data:/.test(t.ui.wallpaper || '') ? t.ui.wallpaper : '';
   const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片不透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['iconSize', '图标大小', 36, 72, 2, 'px'], ['iconRadius', '图标圆角', 0, 36, 1, 'px'], ['chromeAlpha', '顶栏 / 导航透明度', 20, 100, 5, '%'], ['blur', '顶栏 / 导航模糊', 0, 30, 1, 'px']];
   $('#st-sliders').innerHTML = sliders.map(([k, n, min, max, step, unit]) => `<div class="card">
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" style="width:100%;margin-top:8px"></div>`).join('');
+    <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" onchange="commitUI()" style="width:100%;margin-top:8px"></div>`).join('');
 }
 // 选樱海石夜雾之一：全站换，聊天页也跟着换同一套；选别的（暖灰绿那七套）聊天页不动
 function pickPreset(k) { const t = MW.loadTheme(); t.preset = k; t.custom = {}; MW.saveTheme(t); if (CX.themes[k]) CX.setTheme(k); loadSettings(); }
@@ -1093,9 +1068,10 @@ async function renderAvatarMgmt() {
     <div style="font-size:13px">${w === 'cy' ? '辞' : '棋子'}</div><span class="link" onclick="openAvatarPicker('${w}')">换一张</span></div>`; }).join('');
 }
 // ---------- 图标：每个图标可以改字或换成图片（存本机，图片缩到 96px 存 dataURL）----------
-const ICON_KEYS = [['chat', '首页 · 留言', '聊'], ['kiss', '首页 · 亲亲', '亲'], ['music', '首页 · 日期音乐', '音'], ['custom', '首页 · 自定义', '+'],
+const ICON_KEYS = [['chat', '首页 · 留言', '聊'], ['kiss', '首页 · 亲亲', '亲'],
   ['fish', '生活 · 钓鱼', '鱼'], ['sched', '生活 · 日程', '程'], ['songs', '生活 · 歌单', '歌'], ['tools', '生活 · 工具', '具'], ['voice', '生活 · 语音', '语'], ['album', '生活 · 相册', '册'],
-  ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['sleep', '身体 · 睡眠', '眠'], ['cycle', '身体 · 生理期', '期'], ['health', '身体 · 身体状况', '健']];
+  ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['sleep', '身体 · 睡眠', '眠'], ['cycle', '身体 · 生理期', '期'], ['health', '身体 · 身体状况', '健'],
+  ['phone', '生活 · 手机活动', '机'], ['calendar', '生活 · 日历', '历']];
 function iconsCfg() { try { return JSON.parse(localStorage.getItem('muwu-icons') || '{}'); } catch { return {}; } }
 function saveIcons(c) { try { localStorage.setItem('muwu-icons', JSON.stringify(c)); } catch { alert('存不下了，图片太多，换小一点的'); } applyIcons(); }
 function applyIcons() {
@@ -1105,8 +1081,6 @@ function applyIcons() {
     if (v.img) n.innerHTML = `<img src="${v.img}" alt="">`; else if (v.text) n.textContent = v.text;
   });
 }
-// 首页那四个块以前单独存过一份（muwu-home-icons），合并进来
-function homeIcons() { const c = iconsCfg(); const out = {}; for (const k of ['chat', 'kiss', 'music', 'custom']) if (c[k] && c[k].text) out[k] = c[k].text; return out; }
 function applyHomeIcons() { applyIcons(); }
 function renderIcons() {
   const box = $('#st-icons'); if (!box) return;
@@ -1131,10 +1105,17 @@ function setIconImage(k, input) {
   fr.readAsDataURL(f);
 }
 function resetIcon(k) { const c = iconsCfg(); delete c[k]; saveIcons(c); renderIcons(); location.reload(); }
-// ---------- 首页四个块的顺序 ----------
-const HOME_KEYS = { chat: '给辞留言', kiss: '亲亲记数', music: '日期音乐', custom: '自定义' };
-function homeOrder() { try { const o = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return Object.keys(HOME_KEYS).every(k => o.includes(k)) ? o : Object.keys(HOME_KEYS); } catch { return Object.keys(HOME_KEYS); } }
-function homeHidden() { try { return new Set(JSON.parse(localStorage.getItem('muwu-home-hidden') || '[]')); } catch { return new Set(); } }
+// ---------- 首页图标顺序 / 显示 ----------
+function homeLabels() { return Object.fromEntries([['chat', '给辞留言'], ['kiss', '亲亲记数'], ...CUSTOM_TARGETS.map(x => [x[0], x[1]])]); }
+function homeOrder() {
+  const keys = ['chat', 'kiss', ...homeShortcuts()];
+  try { const saved = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return [...saved.filter(k => keys.includes(k)), ...keys.filter(k => !saved.includes(k))]; }
+  catch { return keys; }
+}
+function homeHidden() {
+  const allowed = new Set(['chat', 'kiss', ...homeShortcuts()]);
+  try { return new Set(JSON.parse(localStorage.getItem('muwu-home-hidden') || '[]').filter(k => allowed.has(k))); } catch { return new Set(); }
+}
 function applyHomeOrder() {
   const grid = document.querySelector('#page-home .fn-grid'); if (!grid) return;
   const hidden = homeHidden();
@@ -1142,8 +1123,8 @@ function applyHomeOrder() {
 }
 function renderHomeOrder() {
   const box = $('#st-order'); if (!box) return;
-  const o = homeOrder(), hidden = homeHidden();
-  box.innerHTML = o.map((k, i) => `<div class="st-order"><span style="font-size:14px">${i + 1}. ${HOME_KEYS[k]}</span><span>
+  const o = homeOrder(), hidden = homeHidden(), labels = homeLabels();
+  box.innerHTML = o.map((k, i) => `<div class="st-order"><span style="font-size:14px">${i + 1}. ${labels[k] || k}</span><span>
     <button onclick="toggleHomeIcon('${k}')">${hidden.has(k) ? '显示' : '隐藏'}</button>
     <button onclick="moveHome(${i},-1)"${i === 0 ? ' disabled' : ''}>▲</button><button onclick="moveHome(${i},1)"${i === o.length - 1 ? ' disabled' : ''}>▼</button></span></div>`).join('');
 }
@@ -1151,23 +1132,38 @@ function moveHome(i, d) { const o = homeOrder(); const j = i + d; if (j < 0 || j
 function toggleHomeIcon(k) {
   const hidden = homeHidden();
   if (hidden.has(k)) hidden.delete(k);
-  else if (hidden.size < Object.keys(HOME_KEYS).length - 1) hidden.add(k);
+  else if (hidden.size < homeOrder().length - 1) hidden.add(k);
   try { localStorage.setItem('muwu-home-hidden', JSON.stringify([...hidden])); } catch {}
   applyHomeOrder(); renderHomeOrder();
 }
 function setColor(k, v) { const t = MW.loadTheme(); t.custom[k] = v; MW.saveTheme(t); }
 function resetCustom() { const t = MW.loadTheme(); t.custom = {}; MW.saveTheme(t); loadSettings(); }
 function setWall(v) { const t = MW.loadTheme(); t.ui.wallpaper = v; MW.saveTheme(t); loadSettings(); }
-function setWallpaperUrl() { const t = MW.loadTheme(); t.ui.wallpaper = $('#st-wall-url').value.trim(); MW.saveTheme(t); loadSettings(); }
+function setWallpaperFile(input) {
+  const f = input.files && input.files[0]; input.value = ''; if (!f) return;
+  const img = new Image(), fr = new FileReader();
+  fr.onload = () => { img.src = fr.result; };
+  img.onload = () => {
+    const scale = Math.min(1, 1400 / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas'); cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const t = MW.loadTheme(); t.ui.wallpaper = cv.toDataURL('image/jpeg', .78);
+    try { MW.saveTheme(t); loadSettings(); } catch { alert('这张图存不下，换一张尺寸小一点的'); }
+  };
+  fr.readAsDataURL(f);
+}
+function clearWallpaper() { const t = MW.loadTheme(); t.ui.wallpaper = ''; MW.saveTheme(t); loadSettings(); }
 // 滑块拖动时 oninput 一秒触发几十次。以前每次都把整站十几个 CSS 变量改一遍，
 // 整页跟着重算重画（底部导航还带模糊），拖起来一卡一卡的。合并成一帧最多改一次。
-let uiPending = {}, uiRaf = 0;
+let uiPending = {}, uiDraft = {}, uiRaf = 0;
 function setUI(k, v, unit) {
-  uiPending[k] = Number(v);
+  uiPending[k] = uiDraft[k] = Number(v);
   const s = $('#sv-' + k); if (s) s.textContent = v + (unit || '');
   if (uiRaf) return;
-  uiRaf = requestAnimationFrame(() => { uiRaf = 0; const t = MW.loadTheme(); Object.assign(t.ui, uiPending); uiPending = {}; MW.saveTheme(t); });
+  // 拖动时只预览 CSS，不反复把整张壁纸 dataURL 写入 localStorage；松手再保存一次。
+  uiRaf = requestAnimationFrame(() => { uiRaf = 0; const t = MW.loadTheme(); Object.assign(t.ui, uiPending); uiPending = {}; MW.applyTheme(t); });
 }
+function commitUI() { const t = MW.loadTheme(); Object.assign(t.ui, uiDraft); uiDraft = {}; MW.saveTheme(t); }
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
 applyAvatars(); applyIcons(); applyHomeOrder(); loadHome(); CX.init();

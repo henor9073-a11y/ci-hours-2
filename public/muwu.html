@@ -53,19 +53,7 @@
       <span class="fn-sub" id="fn-kiss-sub">…</span>
       <div class="kiss-bar"><div class="kiss-fill" id="fn-kiss-fill"></div></div>
     </div>
-    <div class="fn-card tap" id="fn-music" data-key="music" onclick="openDateMusic()">
-      <span class="fn-icon accent" data-icon="music">音</span>
-      <span class="fn-label">日期音乐</span>
-      <span class="fn-sub" id="fn-music-sub">…</span>
-    </div>
-    <div class="fn-card tap" id="fn-custom" data-key="custom" onclick="tapCustomBlock()">
-      <span class="fn-icon dim" data-icon="custom">+</span>
-      <span class="fn-label dim">可加别的</span>
-      <span class="fn-sub">自定义</span>
-      <span class="fn-edit" onclick="event.stopPropagation();pickCustomBlock()">改</span>
-    </div>
   </div>
-  <div class="swipe-hint">— 左右滑动翻页 —</div>
 
 </div>
 
@@ -156,6 +144,7 @@
   <div class="card" id="st-icons"></div>
   <div class="section-title">首页图标 <span class="link" style="font-weight:400">排序 / 显示 / 隐藏</span></div>
   <div class="card" id="st-order"></div>
+  <button class="btn ghost" style="width:100%;margin-top:8px" onclick="pickCustomBlock()">＋ 添加首页图标（最多 8 个）</button>
 
   <div class="section-title">卡片和文字</div>
   <div id="st-sliders"></div>
@@ -165,9 +154,10 @@
     <div id="st-colors"></div>
     <div class="section-title">壁纸</div>
     <div class="grid-3" id="st-wall"></div>
-    <div class="card"><div class="card-title" style="font-size:13px">自定义壁纸（图片 URL）</div>
-      <input type="text" id="st-wall-url" placeholder="https://… 留空就是不用" style="margin-top:8px">
-      <button class="btn" style="margin-top:8px" onclick="setWallpaperUrl()">用这张</button></div>
+    <div class="card"><div class="card-title" style="font-size:13px">自定义壁纸</div>
+      <div class="card-desc" style="margin-top:4px">直接从手机相册选择，会自动压缩后保存在这台设备上。</div>
+      <label class="btn" style="display:inline-block;margin-top:10px;cursor:pointer">从相册选择<input type="file" accept="image/*" hidden onchange="setWallpaperFile(this)"></label>
+      <button class="btn ghost" style="margin-top:10px" onclick="clearWallpaper()">清除壁纸</button></div>
   </div>
   <div class="card tap" onclick="resetAll()" style="margin-top:16px"><div class="card-title" style="color:#C05B5B">全部恢复默认</div></div>
   <div class="card-desc" style="margin:14px 4px 0">桌宠小狗：还没设计，先不做。</div>

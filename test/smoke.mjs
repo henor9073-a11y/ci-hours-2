@@ -995,7 +995,7 @@ try {
     // 辞的动态页不给输入框——他做了什么是自动来的
     assert.ok(/辞这边不手填/.test(muwu), '辞的动态页该是只读的');
     for (const [name, js, keys] of [
-      ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia', 'editMyStatus', 'loadDateMusic', 'pickCustomBlock', 'openWake']],
+      ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia', 'editMyStatus', 'pickCustomBlock', 'openWake']],
       ['muwen', muwen, ['setCalMode', 'renderIntimateList', 'renderTimeline', 'openEmotions', 'openFirsts']]
     ]) for (const k of keys) assert.ok(js.includes(k), `${name}.js 里该有 ${k}`);
     // 天气要能自己刷，不是只在打开时取一次
@@ -1016,7 +1016,7 @@ try {
     assert.ok(chat.includes('m.thinking, m.tools') && chat.includes('function setPollInterval'), '聊天更新和轮询守卫要保留');
     assert.ok(muwu.includes('showMoreMuwuAlbum') && muwen.includes('showMoreAlbum'), '两个相册都要分批渲染');
   });
-  await step('木屋界面：隐私折叠、四列图标、可拉高思考层、设置页不误翻页', async () => {
+  await step('木屋界面：隐私折叠、四列图标、可拉高思考层、相册壁纸', async () => {
     const [html, css, chat, muwu, muwen, theme] = await Promise.all([
       fetch(`${base}/muwu?token=${TOKEN}`).then(r => r.text()),
       fetch(`${base}/style.css?token=${TOKEN}`).then(r => r.text()),
@@ -1028,7 +1028,10 @@ try {
     assert.ok(html.includes('life-icon-grid') && /repeat\(4/.test(css), '首页和生活页要使用四列图标');
     assert.ok(muwen.includes('intimateFold') && muwu.includes('muwuIntimateFold'), '亲密记录要默认折叠');
     assert.ok(chat.includes('cx-sheet-drag') && css.includes('.cx-sheet.expanded'), '思考层要能上拉展开');
-    assert.ok(muwu.includes("p.id !== 'page-settings'"), '设置页要关闭横滑翻页');
+    assert.ok(!muwu.includes("addEventListener('touchstart'"), '木屋不再使用左右滑动翻页');
+    assert.ok(!html.includes('日期音乐') && !muwu.includes('loadDateMusic'), '首页不再显示日期音乐');
+    assert.ok(muwu.includes('homeShortcuts') && muwu.includes('a.length < 6'), '首页快捷图标总数上限为 8');
+    assert.ok(muwu.includes('setWallpaperFile') && html.includes('从相册选择'), '壁纸要能从相册导入');
     assert.ok(theme.includes('chromeAlpha') && muwu.includes('顶栏 / 导航透明度'), '顶栏和导航透明度要能调');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
