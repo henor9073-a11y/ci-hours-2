@@ -21,40 +21,51 @@
 
 <!-- 家 -->
 <div class="page active" id="page-home">
-  <div style="text-align:center;padding:18px 0 4px">
-    <div style="display:flex;justify-content:center;gap:18px;align-items:center">
-      <div style="text-align:center">
-        <div class="avatar" id="big-cy" style="width:56px;height:56px;font-size:18px;margin:0 auto">辞</div>
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px" id="cy-state">—</div>
-      </div>
-      <div style="font-size:20px;color:var(--accent)">♡</div>
-      <div style="text-align:center">
-        <div class="avatar accent" id="big-nor" style="width:56px;height:56px;font-size:18px;margin:0 auto">棋</div>
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px" id="nor-state">—</div>
-      </div>
+  <div class="couple">
+    <div class="couple-one">
+      <div class="avatar big" id="big-cy" title="换头像">辞</div>
+      <div class="couple-status" id="cy-state" data-who="cy">—</div>
+    </div>
+    <div class="couple-heart">♡</div>
+    <div class="couple-one">
+      <div class="avatar accent big" id="big-nor" title="换头像">棋</div>
+      <div class="couple-status me" id="nor-state" data-who="nor" onclick="editMyStatus()">—</div>
     </div>
   </div>
 
-  <div class="summary-card" style="margin-top:12px">
-    <div style="font-size:22px;font-weight:700;text-align:center" id="h-date">—</div>
-    <div style="display:flex;justify-content:center;gap:14px;margin-top:8px;font-size:13px;color:var(--text-secondary);flex-wrap:wrap" id="h-info"></div>
-    <div style="text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:14px;color:var(--accent);font-weight:600" id="h-anniv"></div>
+  <div class="summary-card date-card">
+    <div class="date-main" id="h-date">—</div>
+    <div class="date-info" id="h-info"></div>
+    <div class="date-line"></div>
+    <div class="date-cnt" id="h-anniv"></div>
   </div>
 
-  <div class="card" style="background:var(--accent-light)">
-    <div style="font-size:12px;color:var(--accent);margin-bottom:4px">💭 今日一句</div>
-    <div style="font-size:14px;line-height:1.6;font-style:italic" id="h-quote">…</div>
+  <div class="fn-grid">
+    <div class="fn-card tap" onclick="switchPage('chat')">
+      <span class="fn-icon accent" data-icon="chat">聊</span>
+      <span class="fn-label">给辞留言</span>
+      <span class="fn-sub" id="fn-chat-sub">直接到他窗口里</span>
+      <span class="nav-badge fn-badge" data-chat-badge></span>
+    </div>
+    <div class="fn-card tap" id="fn-kiss" onclick="openKissDetail()">
+      <span class="fn-icon" data-icon="kiss">亲</span>
+      <span class="fn-label">亲亲记数</span>
+      <span class="fn-sub" id="fn-kiss-sub">…</span>
+      <div class="kiss-bar"><div class="kiss-fill" id="fn-kiss-fill"></div></div>
+    </div>
+    <div class="fn-card tap" id="fn-music" onclick="openDateMusic()">
+      <span class="fn-icon accent" data-icon="music">音</span>
+      <span class="fn-label">日期音乐</span>
+      <span class="fn-sub" id="fn-music-sub">…</span>
+    </div>
+    <div class="fn-card tap" id="fn-custom" onclick="tapCustomBlock()">
+      <span class="fn-icon dim" data-icon="custom">+</span>
+      <span class="fn-label dim">可加别的</span>
+      <span class="fn-sub">自定义</span>
+      <span class="fn-edit" onclick="event.stopPropagation();pickCustomBlock()">改</span>
+    </div>
   </div>
-
-  <div class="card tap" onclick="switchPage('chat')" style="margin-top:14px;position:relative">
-    <div class="card-row"><div class="card-icon accent">聊</div>
-      <div style="flex:1"><div class="card-title">给辞留言</div><div class="card-desc" id="h-chat-desc">他不在线也能看到，醒来会回</div></div>
-      <span class="nav-badge" data-chat-badge style="position:static"></span></div></div>
-
-  <div id="h-kiss"></div>
-
-  <div class="section-title">今日活动 <span class="link" onclick="switchPage('life')">全部</span></div>
-  <div id="h-activity"><div class="loading">…</div></div>
+  <div class="swipe-hint">— 左右滑动翻页 —</div>
 
   <div class="section-title">倒数 / 正数 <span class="link" onclick="openAddCountdown()">+ 加一个</span></div>
   <div id="h-countdowns"><div class="loading">…</div></div>
@@ -125,15 +136,11 @@
   <div id="s-body"></div>
 </div>
 
-<!-- 醒 -->
-<div class="page" id="page-wake">
-  <div class="greeting"><div class="greeting-date sm">苏醒系统</div><div class="greeting-sub">三层架构</div></div>
-  <div id="w-body"><div class="loading">…</div></div>
-</div>
-
 <!-- 设 -->
 <div class="page" id="page-settings">
   <div class="greeting"><div class="greeting-date sm">设置</div><div class="greeting-sub">木屋装修 · 改完立刻生效，木纹也跟着变</div></div>
+  <div class="card tap" onclick="openWake()"><div class="card-row"><div class="card-icon">醒</div>
+    <div><div class="card-title">苏醒管理</div><div class="card-desc">ci-hours 后台 · heartbeat · watchdog</div></div></div></div>
   <div class="section-title">聊天配色</div>
   <div id="st-chat-theme" class="grid-3"></div>
   <div class="section-title">拍一拍库 <span class="link" style="font-weight:400">长按辞的头像时从这里选</span></div>
@@ -155,11 +162,10 @@
 <div class="sheet" id="sheet"><div class="sheet-head"><button class="sheet-back" onclick="closeSheet()">‹ 返回</button><div class="sheet-title" id="sheet-title"></div></div><div id="sheet-body"></div></div>
 
 <div class="bottom-nav">
-  <div class="nav-item active" data-p="home"><div class="nav-icon">家</div><div class="nav-label">首页</div></div>
   <div class="nav-item" data-p="life"><div class="nav-icon">活</div><div class="nav-label">生活</div></div>
   <div class="nav-item" data-p="chat"><div class="nav-icon">聊</div><div class="nav-label">留言</div><span class="nav-badge" data-chat-badge></span></div>
+  <div class="nav-item home active" data-p="home"><div class="nav-icon">家</div><div class="nav-label">首页</div></div>
   <div class="nav-item" data-p="search"><div class="nav-icon">搜</div><div class="nav-label">搜索</div></div>
-  <div class="nav-item" data-p="wake"><div class="nav-icon">醒</div><div class="nav-label">苏醒</div></div>
   <div class="nav-item" data-p="settings"><div class="nav-icon">设</div><div class="nav-label">设置</div></div>
 </div>
 

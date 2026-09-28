@@ -399,3 +399,34 @@ body.chat-open > .header { display: none; }
 .cx-zone.on { background: #fff; color: #333; transform: scale(1.12); }
 .cx-rec-base { position: absolute; left: -20%; right: -20%; bottom: -90px; height: 180px; border-radius: 50% 50% 0 0; background: rgba(255,255,255,.18); }
 .cx-recov::after { content: ''; position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); width: 20px; height: 20px; border: 2px solid rgba(255,255,255,.5); border-radius: 50%; }
+
+/* ---- 首页（照 mockup 格局）：两个头像 + 状态、日期卡、2×2 功能块；底部导航「家」在中间突出 ---- */
+.couple { display: flex; align-items: flex-start; justify-content: center; gap: 22px; padding: 22px 0 6px; }
+.couple-one { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 96px; }
+.couple-heart { color: var(--accent); font-size: 20px; margin-top: 22px; }
+.avatar.big { width: 68px; height: 68px; font-size: 20px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+.couple-status { font-size: 12px; color: var(--text-secondary); max-width: 120px; text-align: center; line-height: 1.4; }
+.couple-status.me { cursor: pointer; border-bottom: 1px dashed var(--border); padding-bottom: 1px; }
+.date-card { text-align: center; padding: 18px 20px 16px; margin-top: 8px; }
+.date-main { font-size: 21px; font-weight: 700; letter-spacing: 1px; }
+.date-info { display: flex; justify-content: center; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); flex-wrap: wrap; }
+.date-line { width: 60%; height: 1px; background: var(--border); margin: 12px auto; }
+.date-cnt { font-size: 14px; color: var(--accent); font-weight: 600; letter-spacing: .5px; }
+.fn-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-top: 14px; }
+.fn-card { position: relative; min-width: 0; background: var(--card); border-radius: var(--radius-sm); box-shadow: var(--shadow); opacity: var(--card-alpha); padding: 18px 12px 14px; display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+.fn-card.dashed { border: 1.5px dashed var(--border); background: transparent; box-shadow: none; }
+.fn-icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; background: var(--primary-light); color: var(--primary); margin-bottom: 3px; }
+.fn-icon.accent { background: var(--accent-light); color: var(--accent); }
+.fn-icon.dim { opacity: .45; }
+.fn-label { font-size: 14px; font-weight: 600; }
+.fn-label.dim { opacity: .55; }
+.fn-sub { font-size: 11px; color: var(--text-light); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fn-badge { position: absolute; top: 10px; right: 10px; }
+.fn-edit { position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--text-light); padding: 2px 6px; }
+.kiss-bar { width: 100%; height: 4px; background: var(--primary-light); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.kiss-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 2px; transition: width .6s ease; }
+.swipe-hint { text-align: center; font-size: 10px; color: var(--text-light); letter-spacing: 1px; padding: 10px 0 2px; }
+.nav-item.home { margin-top: -18px; }
+.nav-item.home .nav-icon { width: 46px; height: 46px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.14); }
+.nav-item.home.active { background: none; }
+.nav-item.home.active .nav-icon { color: #fff; }

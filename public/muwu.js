@@ -13,11 +13,27 @@ function switchPage(name, node) {
   (node || document.querySelector(`.nav-item[data-p="${name}"]`)).classList.add('active');
   window.scrollTo(0, 0);
   if (name === 'life' && !lifeLoaded) loadLife();
-  if (name === 'wake' && !wakeLoaded) loadWake();
   if (name === 'settings' && !setLoaded) loadSettings();
   if (name === 'chat') CX.onShow(); else CX.onHide();
 }
 document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage(n.dataset.p, n));
+// 左右滑动翻页（聊天页有自己的手势，不算）。横向滑够 60px、竖向没怎么动才算翻页，不然跟上下滚打架。
+(function () {
+  const ORDER = ['life', 'chat', 'home', 'search', 'settings'];
+  let sx = 0, sy = 0, on = false;
+  document.addEventListener('touchstart', e => {
+    const p = document.querySelector('.page.active'); on = !!p && p.id !== 'page-chat' && !$('#sheet').classList.contains('open');
+    if (!on) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!on) return; on = false;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) < 60 || Math.abs(dy) > 50) return;
+    const cur = document.querySelector('.page.active').id.replace('page-', '');
+    const next = ORDER[ORDER.indexOf(cur) + (dx < 0 ? 1 : -1)];
+    if (next) switchPage(next);
+  }, { passive: true });
+})();
 
 let sheetStack = [];
 // 每一层是真的 DOM 节点，往里走只是把下面那层藏起来；返回的时候原样露出来。
@@ -54,9 +70,36 @@ async function applyAvatars() {
     [$('#av-' + w), $('#big-' + w)].forEach(n => { if (n) n.innerHTML = id ? `<img src="${imageUrl(id)}" alt="">` : label; });
   });
 }
+// 顶栏小头像 → 今日动态；首页大头像 → 换头像（棋子定的）
 ['cy', 'nor'].forEach(w => {
-  ['#av-' + w, '#big-' + w].forEach(sel => { const n = $(sel); if (n) n.onclick = () => openMoment(w); });
+  const a = $('#av-' + w); if (a) a.onclick = () => openMoment(w);
+  const b = $('#big-' + w); if (b) b.onclick = () => openAvatarPicker(w);
 });
+
+// ---------- 状态文字：跟聊天页同一份（/api/chat/status）。首页只能改棋子的，辞的由他自己用 set_status 改 ----------
+function paintStatus(st) {
+  const c = $('#cy-state'), n = $('#nor-state');
+  if (c) c.textContent = (st.cy && st.cy.text) || '（他还没写）';
+  if (n) n.textContent = (st.nor && st.nor.text) || '写个状态…';
+}
+async function loadStatus() { try { paintStatus(await rest('/api/chat/status')); } catch {} }
+document.addEventListener('muwu-status', e => paintStatus(e.detail));
+function editMyStatus() {
+  const cur = ($('#nor-state').textContent || '').replace(/^写个状态…$/, '');
+  openSheet('我的状态', `<div class="card"><div class="card-desc">首页和聊天页都显示。辞的状态只有他自己能改。</div>
+    <input id="st-me" maxlength="30" placeholder="在studio / 困了 / 想你…" style="margin-top:10px" value="${esc(cur)}">
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" onclick="saveMyStatus()">保存</button><button class="btn ghost" onclick="saveMyStatus(true)">清掉</button></div>
+    <div id="st-me-msg" class="card-desc" style="margin-top:8px"></div></div>`);
+  setTimeout(() => { const i = byId('st-me'); if (i) i.focus(); }, 50);
+}
+async function saveMyStatus(clear) {
+  const text = clear ? '' : byId('st-me').value.trim();
+  try {
+    const r = await fetch(MW.apiUrl('/api/chat/status'), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN }, body: JSON.stringify({ text }) });
+    const st = await r.json(); if (!r.ok) throw new Error(st.error || '没存上');
+    paintStatus(st); closeSheet();
+  } catch (e) { byId('st-me-msg').textContent = '没存上：' + e.message; }
+}
 
 // ---------- 个人今日动态 ----------
 const OWNER_CN = { cy: '辞', nor: '棋子' };
@@ -191,38 +234,79 @@ async function loadHome() {
   refreshWeather();
   if (!weatherTimer) weatherTimer = setInterval(refreshWeather, 20 * 60 * 1000);   // 每 20 分钟自己刷
   // 唤醒包一次读回来，首页和亲亲进度共用——以前两处各调一次，一次 1.8 秒
-  const wakePacket = mcp('get_wake_packet');
-  loadKiss(wakePacket);
-
-  loadQuote(d);
-
-  loadTodayActivity($('#h-activity'), 4);
+  loadKiss(mcp('get_wake_packet'));
+  loadStatus();
+  loadChatCard();
+  loadDateMusic(d);
+  paintCustomBlock();
   loadCountdowns();
-  wakePacket.then(w => {
-    if (w.nor_health) $('#nor-state').textContent = oneLine(w.nor_health.text).slice(0, 10);
-    const p = w.today_plan || {};
-    $('#cy-state').textContent = (p.pendingWakes || []).length ? '待醒 ' + p.pendingWakes[0] : (p.doneWakes || []).length ? '今天醒过' : '在线';
-  }).catch(() => {});
+  applyHomeIcons();
 }
-
-// 今日一句：优先读辞最新写的那条（服务器每天 9:00 自动写一条 note(kind=write)）；
-// 当天没写就从纹理里随机挑一条热度高的顶上。
-async function loadQuote(d) {
-  const node = $('#h-quote');
+// 首页「聊」块：最后一条说了什么
+async function loadChatCard() {
+  const n = $('#fn-chat-sub'); if (!n) return;
   try {
-    const q = await mcp('get_daily_quote').catch(() => null);
-    if (q && q.text && String(q.at || '').slice(0, 10) === d) {
-      node.textContent = oneLine(q.text);
-      node.title = '辞今天写的';
-      return;
-    }
-    const gs = await mcp('search_grains', { limit: 60 });
-    const hot = gs.filter(g => g.heat >= 55 && g.text.length < 220);
-    const pool = hot.length ? hot : gs.filter(g => g.text.length < 300);
-    if (!pool.length) { node.textContent = q && q.text ? oneLine(q.text) : '今天还没有话。'; return; }
-    node.textContent = oneLine(pool[Math.floor(Math.random() * pool.length)].text).slice(0, 140);
-    node.title = '从纹理里挑的（辞今天还没写）';
-  } catch { node.textContent = ''; }
+    const last = (await rest('/api/chat?limit=1'))[0];
+    if (!last) return;
+    const who = last.sender === 'cy' ? '辞' : '我';
+    const txt = last.type === 'voice' ? '[语音]' : last.type === 'image' ? '[图片]' : last.type === 'pat' ? '[拍一拍]' : oneLine(last.content);
+    n.textContent = `${who}：${txt.slice(0, 16)}`;
+  } catch {}
+}
+// 日期音乐：每天从歌单里按日期定一首（同一天两个人打开看到的是同一首），点进去看歌词
+let dateSong = null;
+async function loadDateMusic(d) {
+  const n = $('#fn-music-sub'); if (!n) return;
+  try {
+    const list = await rest('/api/songs');
+    if (!list.length) { n.textContent = '歌单还是空的'; return; }
+    const seed = [...d].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+    dateSong = list[seed % list.length];
+    n.textContent = `${dateSong.title}${dateSong.artist ? ' · ' + dateSong.artist : ''}`.slice(0, 22);
+  } catch { n.textContent = '读不到歌单'; }
+}
+function openDateMusic() { if (dateSong) openSong(dateSong.id); else openSongs(); }
+function openKissDetail() {
+  const w = kissLast; if (!w) return;
+  openSheet('亲亲', `<div class="card"><div style="font-size:32px;font-weight:700;color:var(--accent);text-align:center">${w.total} <span style="font-size:14px;color:var(--text-light)">/ ${w.goal}</span></div>
+    <div class="card-desc" style="text-align:center;margin-top:6px">还差 ${w.remaining}${w.last ? ` · 上次记于 ${esc(w.last.date)}（${w.last.kiss_count} 次）` : ''}</div>
+    <div class="card-desc" style="margin-top:12px">来源：每日总结里的 kiss_count 累计${w.baseline ? ` + 起始 ${w.baseline}` : ''}，一共记了 ${w.counted_days || 0} 天。</div></div>`);
+}
+// 自定义块：从生活页那些入口里挑一个放首页
+const CUSTOM_TARGETS = [
+  ['album', '相册', '册', 'openAlbum()'], ['fishing', '钓鱼', '鱼', 'openFishing()'], ['schedule', '日程', '程', 'openSchedule()'],
+  ['songs', '歌单', '歌', 'openSongs()'], ['voice', '语音', '语', 'openVoice()'], ['shelf', '书架', '书', 'openShelf()'],
+  ['push', '推送历史', '推', 'openPushHistory()'], ['sleep', '睡眠', '眠', 'openSleep()'], ['cycle', '生理期', '期', 'openCycle()'],
+  ['health', '身体状况', '健', 'openHealth()'], ['phone', '手机活动', '机', 'openPhone()'], ['calendar', '日历', '历', "switchPage('life')"]
+];
+function customBlock() { try { return localStorage.getItem('muwu-home-custom') || ''; } catch { return ''; } }
+function paintCustomBlock() {
+  const card = $('#fn-custom'); if (!card) return;
+  const t = CUSTOM_TARGETS.find(x => x[0] === customBlock());
+  const icons = homeIcons();
+  card.querySelector('.fn-icon').textContent = t ? (icons.custom || t[2]) : (icons.custom || '+');
+  card.querySelector('.fn-icon').classList.toggle('dim', !t);
+  card.querySelector('.fn-label').textContent = t ? t[1] : '可加别的';
+  card.querySelector('.fn-label').classList.toggle('dim', !t);
+  card.querySelector('.fn-sub').textContent = t ? '自定义入口' : '自定义';
+  card.classList.toggle('dashed', !t);
+}
+function tapCustomBlock() {
+  const t = CUSTOM_TARGETS.find(x => x[0] === customBlock());
+  if (!t) return pickCustomBlock();
+  new Function(t[3])();
+}
+function pickCustomBlock() {
+  openSheet('这一格放什么', `<div class="card-desc" style="margin:6px 4px 10px">挑一个放在首页当快捷入口</div>` +
+    CUSTOM_TARGETS.map(x => `<div class="card tap" onclick="setCustomBlock('${x[0]}')"><div class="card-row"><div class="card-icon${customBlock() === x[0] ? ' accent' : ''}">${x[2]}</div><div class="card-title">${x[1]}</div></div></div>`).join('') +
+    `<div class="card tap" onclick="setCustomBlock('')"><div class="card-row"><div class="card-icon">×</div><div class="card-title">留空</div></div></div>`);
+}
+function setCustomBlock(k) { try { localStorage.setItem('muwu-home-custom', k); } catch {} closeSheet(); paintCustomBlock(); }
+// 四个块的图标字：可以换（设置页改，存本机）
+function homeIcons() { try { return JSON.parse(localStorage.getItem('muwu-home-icons') || '{}'); } catch { return {}; } }
+function applyHomeIcons() {
+  const ic = homeIcons();
+  document.querySelectorAll('#page-home .fn-icon[data-icon]').forEach(n => { const v = ic[n.dataset.icon]; if (v) n.textContent = v; });
 }
 
 let weatherTimer = null;
@@ -234,19 +318,17 @@ function refreshWeather() {
     }).catch(() => { const w = $('#h-weather'); if (w) w.textContent = ''; });
 }
 // 亲亲进度条：进度来自每日总结里 kiss_count 的累计（+ 服务器的 KISS_BASELINE）
+let kissLast = null;
 async function loadKiss(packet) {
-  const node = $('#h-kiss'); if (!node) return;
+  const sub = $('#fn-kiss-sub'), fill = $('#fn-kiss-fill'); if (!sub) return;
   try {
     const w = await (packet || mcp('get_wake_packet'));
-    const k = w.kiss_progress; if (!k) { node.innerHTML = ''; return; }
+    const k = w.kiss_progress; if (!k) { sub.textContent = '还没记'; return; }
+    kissLast = k;
     const pct = Math.min(100, k.total / k.goal * 100);
-    node.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline">
-        <div class="card-title" style="font-size:14px">亲亲</div>
-        <div style="font-size:13px;color:var(--accent);font-weight:600">${k.total} / ${k.goal}</div></div>
-      <div style="height:8px;border-radius:4px;background:var(--primary-light);margin-top:8px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--primary),var(--accent));border-radius:4px"></div></div>
-      <div class="card-desc" style="margin-top:6px">还差 ${k.remaining}${k.last ? ` · 上次记于 ${esc(k.last.date)}` : ''}${pct < 1 ? '' : ` · ${pct.toFixed(2)}%`}</div></div>`;
-  } catch { node.innerHTML = ''; }
+    sub.textContent = `${k.total} / ${k.goal}`;
+    if (fill) fill.style.width = Math.max(pct, 0.5) + '%';
+  } catch { sub.textContent = '读不到'; }
 }
 
 async function loadTodayActivity(node, limit) {
@@ -830,10 +912,9 @@ async function searchLife(q) {
 }
 
 // ================= 醒 =================
-let wakeLoaded = false;
-async function loadWake() {
-  wakeLoaded = true;
-  const node = $('#w-body');
+async function openWake() {
+  sheetLoading('苏醒管理');
+  const node = sheetStack[sheetStack.length - 1].node;
   try {
     const w = await mcp('get_wake_status');
     let h = w.layers.map((l, i) => `<div class="section-title">第${['一', '二', '三'][i]}层 · ${esc(l.role)}</div>

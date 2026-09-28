@@ -981,7 +981,7 @@ try {
     // 辞的动态页不给输入框——他做了什么是自动来的
     assert.ok(/辞这边不手填/.test(muwu), '辞的动态页该是只读的');
     for (const [name, js, keys] of [
-      ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia']],
+      ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia', 'editMyStatus', 'loadDateMusic', 'pickCustomBlock', 'openWake']],
       ['muwen', muwen, ['setCalMode', 'renderIntimateList', 'renderTimeline', 'openEmotions', 'openFirsts']]
     ]) for (const k of keys) assert.ok(js.includes(k), `${name}.js 里该有 ${k}`);
     // 天气要能自己刷，不是只在打开时取一次
@@ -997,7 +997,7 @@ try {
     const home = await (await fetch(`${base}/?token=${TOKEN}`)).text();
     assert.ok(home.includes('木纹') && home.includes('page-search'));
     const muwu = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
-    assert.ok(muwu.includes('木屋') && muwu.includes('page-wake'));
+    assert.ok(muwu.includes('木屋') && muwu.includes('page-home') && !muwu.includes('data-p="wake"'), '苏醒不再是 tab');
     // notebook 不该出现在任何一个前端里
     const js = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();
     const js2 = await (await fetch(`${base}/muwen.js?token=${TOKEN}`)).text();
