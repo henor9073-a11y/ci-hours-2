@@ -239,7 +239,6 @@ async function loadHome() {
   loadChatCard();
   loadDateMusic(d);
   paintCustomBlock();
-  loadCountdowns();
   applyHomeIcons();
 }
 // 首页「聊」块：最后一条说了什么
@@ -448,7 +447,8 @@ async function removeCountdown(id) {
 let lifeLoaded = false;
 async function loadLife() {
   lifeLoaded = true;
-  loadTodayActivity($('#l-today'), 0);
+  loadCountdowns();
+  loadToolsCard();
   rest('/api/fishing/status').then(r => {
     const m = (r.text || '').match(/图鉴\s*(\d+)\s*\/\s*(\d+)/);
     $('#l-fish').textContent = m ? `图鉴 ${m[1]}/${m[2]}` : '看看钓到什么了';
@@ -463,7 +463,30 @@ async function loadLife() {
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
   rest('/api/songs').then(x => $('#l-songs').textContent = `${x.length} 首`).catch(() => {});
   rest('/api/voice/history?limit=1').then(v => $('#l-voice').textContent = v.length ? `最近：${oneLine(v[0].text).slice(0, 18)}` : '还没说过话').catch(() => $('#l-voice').textContent = '—');
-  rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张 · 点开可以传新的`).catch(() => {});
+  rest('/api/album?limit=500').then(a => $('#l-album').textContent = `${a.length} 张`).catch(() => {});
+}
+// ---------- 工具：辞的 MCP / 服务都在不在（服务器那边探一圈，60 秒缓存）----------
+let toolsCache = null;
+async function loadToolsCard() {
+  const n = $('#l-tools'); if (!n) return;
+  try {
+    toolsCache = await rest('/api/tools/status');
+    const on = toolsCache.items.filter(x => x.state === 'on').length, off = toolsCache.items.filter(x => x.state === 'off').length;
+    n.textContent = `${on} 在线${off ? ` · ${off} 断了` : ''}`;
+  } catch { n.textContent = '读不到'; }
+}
+async function openTools() {
+  sheetLoading('工具');
+  try {
+    const t = await rest('/api/tools/status?fresh=1'); toolsCache = t;
+    const groups = {};
+    t.items.forEach(x => (groups[x.group] = groups[x.group] || []).push(x));
+    sheetSet(Object.entries(groups).map(([g, items]) => `<div class="section-title">${esc(g)}</div>` + items.map(x => `<div class="card tool-row">
+        <span class="tool-dot ${x.state}"></span>
+        <div style="flex:1;min-width:0"><div class="card-title" style="font-size:14px">${esc(x.name)}</div><div class="card-desc">${esc(x.detail || '')}</div></div>
+        <span class="tag plain">${x.state === 'on' ? '在线' : x.state === 'off' ? '断了' : x.state === 'unset' ? '没配' : '看不到'}</span></div>`).join('')).join('') +
+      `<div class="card-desc" style="margin:14px 4px 0">探测时间 ${esc(fmtTime(t.checked_at))}。"看不到"是指跑在 GPD 上、只有它主动报到服务器才知道的那些（苏醒三层在设置页看）。</div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function openFishing() {
   sheetLoading('钓鱼');

@@ -372,6 +372,58 @@ app.post('/api/ring-index', (req, res) => {
   try { res.json(mw.ringIndex.merge((req.body || {}).entries)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+// ---- 工具状态（木屋生活页「工具」）：辞用得到的服务都在不在。服务器能探到的探一圈，探不到的如实说。60 秒缓存，?fresh=1 强制重探 ----
+let toolsStatusCache = null;
+async function probe(url, opts = {}) {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(opts.timeout || 6000) });
+    return { ok: r.ok, code: r.status, ms: Date.now() - t0 };
+  } catch (e) { return { ok: false, err: String(e.message || e).slice(0, 80), ms: Date.now() - t0 }; }
+}
+async function toolsStatus() {
+  const items = [];
+  const push = (group, name, state, detail = '') => items.push({ group, name, state, detail });
+  // 服务器自己 + 它靠的几把钥匙
+  push('木纹 / 木屋', '木纹（这台服务器）', 'on', `运行 ${Math.round(process.uptime() / 60)} 分钟`);
+  push('木纹 / 木屋', 'Anthropic（召回/语义）', process.env.ANTHROPIC_API_KEY ? 'on' : 'unset', process.env.ANTHROPIC_API_KEY ? `模型 ${process.env.MUWEN_RECALL_MODEL || 'claude-opus-5'}` : '没配 key，召回走关键词');
+  push('木纹 / 木屋', 'ElevenLabs（语音）', process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID ? 'on' : 'unset', process.env.ELEVENLABS_VOICE_ID ? `声音 ${process.env.ELEVENLABS_VOICE_ID.slice(0, 8)}… · ${process.env.ELEVENLABS_MODEL_ID || 'eleven_v3'}` : '');
+  push('木纹 / 木屋', 'Bark（推手机）', process.env.BARK_KEY ? 'on' : 'unset');
+  const sb = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
+  if (sb) {
+    const r = await probe(`${process.env.SUPABASE_URL}/rest/v1/`, { headers: { apikey: process.env.SUPABASE_SERVICE_KEY } });
+    push('木纹 / 木屋', 'Supabase（手机活动）', r.ok ? 'on' : 'off', r.ok ? `${r.ms}ms` : (r.err || `HTTP ${r.code}`));
+  } else push('木纹 / 木屋', 'Supabase（手机活动）', 'unset');
+  // 别的服务
+  if (process.env.MUWEN_NOTEBOOK_URL) {
+    const base = process.env.MUWEN_NOTEBOOK_URL.replace(/\/mcp.*$/, '');
+    const r = await probe(`${base}/health`);
+    push('辞的其他服务', 'Notebook（笔记本）', r.ok ? 'on' : 'off', r.ok ? `${r.ms}ms` : (r.err || `HTTP ${r.code}`));
+  } else push('辞的其他服务', 'Notebook（笔记本）', 'unset', '没配 MUWEN_NOTEBOOK_URL');
+  const gpd = process.env.MUWU_GPD_URL || 'https://stabilize-tycoon-oil.ngrok-free.dev';
+  const g = await probe(`${gpd}/health`, { headers: { 'ngrok-skip-browser-warning': '1' } });
+  push('GPD（辞住的掌机）', 'GPD 屏幕控制 / ngrok 隧道', g.ok ? 'on' : 'off', g.ok ? `${g.ms}ms` : '隧道不通（GPD 没开机、或 ngrok 没起来）');
+  // 中继走 gpd_server 的 /stackchan/* 反向代理，那层要 GPD 自己的 token；没配就只能知道隧道通不通
+  const gtok = process.env.MUWU_GPD_TOKEN || '';
+  const sc = g.ok ? await probe(`${gpd}/stackchan/health${gtok ? '?token=' + encodeURIComponent(gtok) : ''}`, { headers: { 'ngrok-skip-browser-warning': '1' } }) : null;
+  push('GPD（辞住的掌机）', 'StackChan 中继',
+    !sc ? 'unknown' : sc.ok ? 'on' : sc.code === 401 ? 'unknown' : 'off',
+    !sc ? '隧道不通，看不到' : sc.ok ? `${sc.ms}ms` : sc.code === 401 ? '隧道通，但要在 Render 配 MUWU_GPD_TOKEN 才看得到中继' : `HTTP ${sc.code || ''} ${sc.err || ''}`);
+  // 跑在 GPD 上、只有它们主动报到才知道的：语音频道（木屋消息）、Telegram、耳朵
+  try {
+    const w = mw.wake.getWakeStatus({ logLimit: 1 });
+    for (const l of w.layers || []) push('苏醒三层', l.name, l.connected ? 'on' : 'unknown', l.status);
+  } catch {}
+  const pend = mw.chat.pendingForCy();
+  push('GPD（辞住的掌机）', '木屋消息通道（语音频道）', pend.count ? 'unknown' : 'unknown', pend.count ? `有 ${pend.count} 条还没送到辞窗口` : '没有积压');
+  return { checked_at: new Date().toISOString(), items };
+}
+app.get('/api/tools/status', async (req, res) => {
+  try {
+    if (!toolsStatusCache || req.query.fresh === '1' || Date.now() - toolsStatusCache.at > 60000) toolsStatusCache = { at: Date.now(), data: await toolsStatus() };
+    res.json(toolsStatusCache.data);
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
 // ---- 聊天记录浏览（像微信"查找聊天记录"）：月历 → 那天的气泡；关键词 → 定位到那一句 ----
 app.get('/api/rings/chat-dates', (_, res) => res.json(mw.rings.chatDates()));
 app.get('/api/rings/day', (req, res) => {

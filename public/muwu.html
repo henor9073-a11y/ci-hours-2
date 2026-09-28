@@ -67,56 +67,48 @@
   </div>
   <div class="swipe-hint">— 左右滑动翻页 —</div>
 
-  <div class="section-title">倒数 / 正数 <span class="link" onclick="openAddCountdown()">+ 加一个</span></div>
-  <div id="h-countdowns"><div class="loading">…</div></div>
 </div>
 
 <!-- 活 -->
 <div class="page" id="page-life">
-  <div class="greeting"><div class="greeting-date sm">生活</div><div class="greeting-sub">日常管理</div></div>
-  <div class="section-title">今天</div>
-  <div id="l-today"><div class="loading">…</div></div>
-  <div class="section-title">日历 <span class="link" onclick="calMuwuMove(0)">回到今天</span></div>
-  <div class="cal-nav">
-    <button onclick="calMuwuMove(-1)">‹ 上月</button>
-    <button onclick="calMuwuMove(0)">今天</button>
-    <button onclick="calMuwuMove(1)">下月 ›</button>
+  <div class="greeting"><div class="greeting-date sm">生活</div><div class="greeting-sub">日常 · 身体 · 日历</div></div>
+
+  <div class="summary-card" style="padding:14px 16px 12px">
+    <div class="cal-nav" style="margin-top:0">
+      <button onclick="calMuwuMove(-1)">‹ 上月</button>
+      <div id="lc-month" style="font-size:15px;font-weight:600"></div>
+      <button onclick="calMuwuMove(1)">下月 ›</button>
+    </div>
+    <div class="cal-grid" id="lc-grid"></div>
+    <div style="text-align:center;margin-top:8px"><span class="link" onclick="calMuwuMove(0)">回到今天</span></div>
   </div>
-  <div id="lc-month" style="text-align:center;font-size:14px;font-weight:600;margin-top:6px"></div>
-  <div class="cal-grid" id="lc-grid"></div>
   <div id="lc-detail"></div>
 
   <div class="section-title">日常</div>
-  <div class="grid-2">
-    <div class="card tap" onclick="openFishing()"><div class="card-row"><div class="card-icon">鱼</div><div><div class="card-title">钓鱼</div><div class="card-desc" id="l-fish">…</div></div></div></div>
-    <div class="card tap" onclick="openSchedule()"><div class="card-row"><div class="card-icon accent">程</div><div><div class="card-title">日程</div><div class="card-desc" id="l-sched">…</div></div></div></div>
+  <div class="grid-3">
+    <div class="lc tap" onclick="openFishing()"><div class="lc-i">鱼</div><div class="lc-l">钓鱼</div><div class="lc-s" id="l-fish">…</div></div>
+    <div class="lc tap" onclick="openSchedule()"><div class="lc-i">程</div><div class="lc-l">日程</div><div class="lc-s" id="l-sched">…</div></div>
+    <div class="lc tap" onclick="openSongs()"><div class="lc-i">歌</div><div class="lc-l">歌单</div><div class="lc-s" id="l-songs">…</div></div>
   </div>
-  <div class="section-title">歌单</div>
-  <div class="card tap" onclick="openSongs()"><div class="card-row"><div class="card-icon">歌</div>
-    <div style="flex:1"><div class="card-title">我们的歌</div><div class="card-desc" id="l-songs">…</div></div>
-    <div class="link">加一首 +</div></div></div>
-
-  <div class="section-title">语音</div>
-  <div class="card tap" onclick="openVoice()"><div class="card-row"><div class="card-icon accent">声</div>
-    <div style="flex:1"><div class="card-title">辞说的话</div><div class="card-desc" id="l-voice">…</div></div>
-    <div class="link" id="voice-state">未开启</div></div></div>
+  <div class="grid-3" style="margin-top:8px">
+    <div class="lc tap" onclick="openTools()"><div class="lc-i">具</div><div class="lc-l">工具</div><div class="lc-s" id="l-tools">…</div></div>
+    <div class="lc tap" onclick="openVoice()"><div class="lc-i">语</div><div class="lc-l">语音</div><div class="lc-s" id="l-voice">…</div></div>
+    <div class="lc tap" onclick="openAlbum()"><div class="lc-i">册</div><div class="lc-l">相册</div><div class="lc-s" id="l-album">…</div></div>
+  </div>
+  <div class="grid-2" style="margin-top:8px">
+    <div class="lc tap" onclick="openShelf()"><div class="lc-i">书</div><div class="lc-l">书架</div><div class="lc-s" id="l-shelf">…</div></div>
+    <div class="lc tap" onclick="openPushHistory()"><div class="lc-i">推</div><div class="lc-l">推送历史</div><div class="lc-s" id="l-push">…</div></div>
+  </div>
 
   <div class="section-title">身体</div>
   <div class="grid-2">
-    <div class="card tap" onclick="openSleep()"><div class="card-row"><div class="card-icon">眠</div><div><div class="card-title">睡眠</div><div class="card-desc" id="l-sleep">…</div></div></div></div>
-    <div class="card tap" onclick="openCycle()"><div class="card-row"><div class="card-icon accent">期</div><div><div class="card-title">生理期</div><div class="card-desc" id="l-cycle">…</div></div></div></div>
+    <div class="lc left tap" onclick="openSleep()"><div class="lc-i">眠</div><div class="lc-l">睡眠</div><div class="lc-s" id="l-sleep">…</div></div>
+    <div class="lc left tap" onclick="openCycle()"><div class="lc-i">期</div><div class="lc-l">生理期</div><div class="lc-s" id="l-cycle">…</div></div>
   </div>
-  <div class="card tap" onclick="openHealth()"><div class="card-row"><div class="card-icon accent">健</div><div style="flex:1"><div class="card-title">身体状况</div><div class="card-desc" id="l-health">…</div></div></div></div>
-  <div class="section-title">相册</div>
-  <div class="card tap" onclick="openAlbum()"><div class="card-row"><div class="card-icon accent">册</div>
-    <div style="flex:1"><div class="card-title">照片</div><div class="card-desc" id="l-album">…</div></div>
-    <div class="link">传照片 +</div></div></div>
-  <div class="section-title">工具</div>
-  <div class="grid-2">
-    <div class="card tap" onclick="openShelf()"><div class="card-row"><div class="card-icon">书</div><div><div class="card-title">书架</div><div class="card-desc" id="l-shelf">…</div></div></div></div>
-    <div class="card tap" onclick="openPushHistory()"><div class="card-row"><div class="card-icon">推</div><div><div class="card-title">推送历史</div><div class="card-desc" id="l-push">…</div></div></div></div>
-    <div class="card tap" onclick="openPhone()"><div class="card-row"><div class="card-icon accent">机</div><div><div class="card-title">手机活动</div><div class="card-desc">棋子最近开了什么</div></div></div></div>
-  </div>
+  <div class="lc left tap" style="margin-top:8px" onclick="openHealth()"><div class="lc-i">健</div><div class="lc-l">身体状况</div><div class="lc-s" id="l-health">…</div></div>
+
+  <div class="section-title">倒数 / 正数 <span class="link" onclick="openAddCountdown()">+ 加一个</span></div>
+  <div id="h-countdowns"><div class="loading">…</div></div>
 </div>
 
 <!-- 聊 -->
