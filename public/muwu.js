@@ -29,7 +29,10 @@ document.querySelectorAll('.nav-item').forEach(n => n.onclick = () => switchPage
   const ORDER = ['life', 'chat', 'home', 'search', 'settings'];
   let sx = 0, sy = 0, on = false;
   document.addEventListener('touchstart', e => {
-    const p = document.querySelector('.page.active'); on = !!p && p.id !== 'page-chat' && !$('#sheet').classList.contains('open');
+    const p = document.querySelector('.page.active');
+    const interactive = e.target.closest('input,textarea,select,button,label,a,[contenteditable],.chip,.tap');
+    // 设置页有大量横向滑块；在那里完全关闭翻页手势，避免调数值时跳去搜索页。
+    on = !!p && p.id !== 'page-chat' && p.id !== 'page-settings' && !interactive && !$('#sheet').classList.contains('open');
     if (!on) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY;
   }, { passive: true });
   document.addEventListener('touchend', e => {
@@ -759,12 +762,10 @@ async function showMuwuDay(ds) {
     let h = `<div class="section-title">${ds} · ${mo.icon} ${mo.name}</div>`;
     if (anchors.length) h += anchors.map(a => `<div class="card" style="background:var(--accent-light)"><div class="card-title" style="font-size:14px">${esc(a.name)}</div></div>`).join('');
     const st = (r.structured || []).filter(x => x.headline);
-    // 亲密只给一句提醒，细节在木纹日历里看——木屋是生活面板不是记忆库
+    // 亲密记录默认只露出一句提示，用户点开后才显示具体内容。
     const intimate = st.filter(x => x.intimate || (x.intimate_log || []).length);
     if (intimate.length) {
-      h += intimate.map(x => `<div class="card"><div class="card-row"><div class="card-icon accent">♥</div>
-        <div><div class="card-title" style="font-size:14px">这天有亲密记录</div>
-        <div class="card-desc">${esc(oneLine(x.intimate || '') || `${x.intimate_log.length} 条`)}${x.kiss_count != null ? ` · 亲亲 ${x.kiss_count}` : ''}</div></div></div></div>`).join('');
+      h += intimate.map(x => `<div class="card">${muwuIntimateFold(x)}</div>`).join('');
     }
     if (st.length) h += st.map(x => `<div class="card"><div class="card-title" style="font-size:14px">${esc(x.headline)}</div>
       ${(x.mood_tags || []).length ? `<div style="margin-top:6px">${x.mood_tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
@@ -777,6 +778,16 @@ async function showMuwuDay(ds) {
     if (!anchors.length && !st.length && !sc.length) h += '<div class="empty">这天没有记录</div>';
     box.innerHTML = h;
   } catch (e) { fail(box, e); }
+}
+function muwuIntimateFold(x) {
+  const logs = x.intimate_log || [];
+  return `<details class="intimate-fold" style="margin-top:0"><summary>这天有亲密记录</summary><div class="intimate-body">
+    ${x.intimate ? `<div class="entry-body">${esc(x.intimate)}</div>` : ''}
+    ${logs.map(i => `<div style="border-left:2px solid var(--accent);padding:3px 0 3px 10px;margin-top:7px">
+      <div class="entry-head" style="margin:0">♥ ${[i.time, i.method, i.initiator ? i.initiator + ' 主导' : ''].filter(Boolean).map(v => esc(v)).join(' · ')}</div>
+      ${i.detail ? `<div class="entry-body" style="font-size:13px">${esc(i.detail)}</div>` : ''}</div>`).join('')}
+    ${x.kiss_count != null ? `<div class="entry-body" style="margin-top:7px"><b>亲亲：</b>${Number(x.kiss_count) || 0}</div>` : ''}
+  </div></details>`;
 }
 
 // ---- Bark 推送历史 ----
@@ -1056,7 +1067,7 @@ function loadSettings() {
   </div>`).join('');
   $('#st-wall').innerHTML = WALLPAPERS.map(([v, n]) => `<div onclick="setWall('${v}')" style="aspect-ratio:1;border-radius:12px;background:${v || 'var(--bg)'};border:2px solid ${t.ui.wallpaper === v ? 'var(--accent)' : 'var(--border)'};display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-light);cursor:pointer">${n}</div>`).join('');
   $('#st-wall-url').value = /^https?:|^data:/.test(t.ui.wallpaper || '') ? t.ui.wallpaper : '';
-  const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片不透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['iconSize', '图标大小', 28, 64, 2, 'px'], ['iconRadius', '图标圆角', 0, 32, 1, 'px'], ['blur', '导航模糊', 0, 30, 1, 'px']];
+  const sliders = [['fontSize', '字体大小', 13, 22, 1, 'px'], ['lineHeight', '行间距', 1.3, 2.2, 0.1, ''], ['radius', '卡片圆角', 0, 28, 1, 'px'], ['opacity', '卡片不透明度', 20, 100, 5, '%'], ['cardBlur', '卡片磨砂', 0, 30, 1, 'px'], ['iconSize', '图标大小', 36, 72, 2, 'px'], ['iconRadius', '图标圆角', 0, 36, 1, 'px'], ['chromeAlpha', '顶栏 / 导航透明度', 20, 100, 5, '%'], ['blur', '顶栏 / 导航模糊', 0, 30, 1, 'px']];
   $('#st-sliders').innerHTML = sliders.map(([k, n, min, max, step, unit]) => `<div class="card">
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" style="width:100%;margin-top:8px"></div>`).join('');
@@ -1123,17 +1134,27 @@ function resetIcon(k) { const c = iconsCfg(); delete c[k]; saveIcons(c); renderI
 // ---------- 首页四个块的顺序 ----------
 const HOME_KEYS = { chat: '给辞留言', kiss: '亲亲记数', music: '日期音乐', custom: '自定义' };
 function homeOrder() { try { const o = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return Object.keys(HOME_KEYS).every(k => o.includes(k)) ? o : Object.keys(HOME_KEYS); } catch { return Object.keys(HOME_KEYS); } }
+function homeHidden() { try { return new Set(JSON.parse(localStorage.getItem('muwu-home-hidden') || '[]')); } catch { return new Set(); } }
 function applyHomeOrder() {
   const grid = document.querySelector('#page-home .fn-grid'); if (!grid) return;
-  homeOrder().forEach(k => { const n = grid.querySelector(`[data-key="${k}"]`); if (n) grid.appendChild(n); });
+  const hidden = homeHidden();
+  homeOrder().forEach(k => { const n = grid.querySelector(`[data-key="${k}"]`); if (n) { n.hidden = hidden.has(k); grid.appendChild(n); } });
 }
 function renderHomeOrder() {
   const box = $('#st-order'); if (!box) return;
-  const o = homeOrder();
+  const o = homeOrder(), hidden = homeHidden();
   box.innerHTML = o.map((k, i) => `<div class="st-order"><span style="font-size:14px">${i + 1}. ${HOME_KEYS[k]}</span><span>
+    <button onclick="toggleHomeIcon('${k}')">${hidden.has(k) ? '显示' : '隐藏'}</button>
     <button onclick="moveHome(${i},-1)"${i === 0 ? ' disabled' : ''}>▲</button><button onclick="moveHome(${i},1)"${i === o.length - 1 ? ' disabled' : ''}>▼</button></span></div>`).join('');
 }
 function moveHome(i, d) { const o = homeOrder(); const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; try { localStorage.setItem('muwu-home-order', JSON.stringify(o)); } catch {} applyHomeOrder(); renderHomeOrder(); }
+function toggleHomeIcon(k) {
+  const hidden = homeHidden();
+  if (hidden.has(k)) hidden.delete(k);
+  else if (hidden.size < Object.keys(HOME_KEYS).length - 1) hidden.add(k);
+  try { localStorage.setItem('muwu-home-hidden', JSON.stringify([...hidden])); } catch {}
+  applyHomeOrder(); renderHomeOrder();
+}
 function setColor(k, v) { const t = MW.loadTheme(); t.custom[k] = v; MW.saveTheme(t); }
 function resetCustom() { const t = MW.loadTheme(); t.custom = {}; MW.saveTheme(t); loadSettings(); }
 function setWall(v) { const t = MW.loadTheme(); t.ui.wallpaper = v; MW.saveTheme(t); loadSettings(); }

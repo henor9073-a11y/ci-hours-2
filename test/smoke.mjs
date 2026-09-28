@@ -1016,6 +1016,21 @@ try {
     assert.ok(chat.includes('m.thinking, m.tools') && chat.includes('function setPollInterval'), '聊天更新和轮询守卫要保留');
     assert.ok(muwu.includes('showMoreMuwuAlbum') && muwen.includes('showMoreAlbum'), '两个相册都要分批渲染');
   });
+  await step('木屋界面：隐私折叠、四列图标、可拉高思考层、设置页不误翻页', async () => {
+    const [html, css, chat, muwu, muwen, theme] = await Promise.all([
+      fetch(`${base}/muwu?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/style.css?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/chat.js?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/muwu.js?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/muwen.js?token=${TOKEN}`).then(r => r.text()),
+      fetch(`${base}/theme.js?token=${TOKEN}`).then(r => r.text())
+    ]);
+    assert.ok(html.includes('life-icon-grid') && /repeat\(4/.test(css), '首页和生活页要使用四列图标');
+    assert.ok(muwen.includes('intimateFold') && muwu.includes('muwuIntimateFold'), '亲密记录要默认折叠');
+    assert.ok(chat.includes('cx-sheet-drag') && css.includes('.cx-sheet.expanded'), '思考层要能上拉展开');
+    assert.ok(muwu.includes("p.id !== 'page-settings'"), '设置页要关闭横滑翻页');
+    assert.ok(theme.includes('chromeAlpha') && muwu.includes('顶栏 / 导航透明度'), '顶栏和导航透明度要能调');
+  });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {
       const r = await fetch(`${base}${p}?token=${TOKEN}`);

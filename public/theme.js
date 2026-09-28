@@ -22,7 +22,7 @@
 
   function loadTheme() {
     let t = {}; try { t = JSON.parse(localStorage.getItem('muwen-theme') || '{}'); } catch {}
-    return { preset: t.preset || 'current', custom: t.custom || {}, ui: Object.assign({ radius: 16, fontSize: 16, lineHeight: 1.6, opacity: 100, blur: 20, wallpaper: '', iconSize: 40, iconRadius: 12, cardBlur: 0 }, t.ui || {}) };
+    return { preset: t.preset || 'current', custom: t.custom || {}, ui: Object.assign({ radius: 16, fontSize: 16, lineHeight: 1.6, opacity: 100, blur: 20, chromeAlpha: 82, wallpaper: '', iconSize: 52, iconRadius: 16, cardBlur: 0 }, t.ui || {}) };
   }
   function applyTheme(t) {
     t = t || loadTheme();
@@ -35,6 +35,7 @@
     if (ui.fontSize) root.style.setProperty('--font-size', ui.fontSize + 'px');
     if (ui.lineHeight) root.style.setProperty('--line-height', ui.lineHeight);
     if (ui.blur != null) root.style.setProperty('--blur', ui.blur + 'px');
+    if (ui.chromeAlpha != null) root.style.setProperty('--chrome-alpha', ui.chromeAlpha + '%');
     if (ui.opacity != null) root.style.setProperty('--card-alpha', (ui.opacity / 100));
     if (ui.iconSize) root.style.setProperty('--icon-size', ui.iconSize + 'px');
     if (ui.iconRadius != null) root.style.setProperty('--icon-radius', ui.iconRadius + 'px');

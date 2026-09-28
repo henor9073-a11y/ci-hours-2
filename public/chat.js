@@ -29,9 +29,18 @@
   // 底部弹层（思考过程 / 工具列表），照 Claude 官方 App
   function openSheet(title, html) {
     const s = document.createElement('div'); s.className = 'cx-sheet-wrap';
-    s.innerHTML = `<div class="cx-sheet"><div class="cx-sheet-h"><button class="cx-sheet-x">✕</button><span>${esc(title)}</span></div><div class="cx-sheet-b">${html}</div></div>`;
+    s.innerHTML = `<div class="cx-sheet"><button class="cx-sheet-drag" aria-label="上拉展开"></button><div class="cx-sheet-h"><button class="cx-sheet-x">✕</button><span>${esc(title)}</span></div><div class="cx-sheet-b">${html}</div></div>`;
     const close = () => { s.classList.remove('in'); setTimeout(() => s.remove(), 220); };
     s.addEventListener('click', e => { if (e.target === s || e.target.closest('.cx-sheet-x')) close(); });
+    const panel = s.querySelector('.cx-sheet'), drag = s.querySelector('.cx-sheet-drag');
+    let dragY = null;
+    drag.addEventListener('pointerdown', e => { dragY = e.clientY; try { drag.setPointerCapture(e.pointerId); } catch {} });
+    drag.addEventListener('pointerup', e => {
+      const dy = dragY == null ? 0 : dragY - e.clientY; dragY = null;
+      if (dy > 24) panel.classList.add('expanded');
+      else if (dy < -24) panel.classList.remove('expanded');
+      else panel.classList.toggle('expanded');
+    });
     document.body.appendChild(s); requestAnimationFrame(() => s.classList.add('in'));
   }
   const MODELS = ['Opus 4.6 [1m]', 'Opus 5.5', 'Opus 5', 'Sonnet 5', 'Fable 5.1', 'Haiku 4.5'];

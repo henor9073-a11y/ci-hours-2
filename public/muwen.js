@@ -203,6 +203,16 @@ function setCalMode(m) {
   if (calMode === 'intimate') renderIntimateList(); else if (calSel) showDay(calSel);
 }
 // 亲密视图：把这个月有记录的那几天列出来，点开看细节
+function intimateFold(x) {
+  const logs = x.intimate_log || [];
+  return `<details class="intimate-fold"><summary>这天有亲密记录</summary><div class="intimate-body">
+    ${x.intimate ? `<div class="entry-body">${esc(x.intimate)}</div>` : ''}
+    ${logs.map(i => `<div style="border-left:2px solid var(--accent);padding:3px 0 3px 10px;margin-top:7px">
+      <div class="entry-head" style="margin:0">♥ ${[i.time, i.method, i.initiator ? i.initiator + ' 主导' : ''].filter(Boolean).map(v => esc(v)).join(' · ')}</div>
+      ${i.detail ? `<div class="entry-body" style="font-size:13px">${esc(i.detail)}</div>` : ''}</div>`).join('')}
+    ${x.kiss_count != null ? `<div class="entry-body" style="margin-top:7px"><b>亲亲：</b>${Number(x.kiss_count) || 0}</div>` : ''}
+  </div></details>`;
+}
 async function renderIntimateList() {
   const box = $('#c-detail');
   const days = Object.values(calData).filter(r => r.intimate).map(r => r.date).sort().reverse();
@@ -210,21 +220,13 @@ async function renderIntimateList() {
   box.innerHTML = `<div class="section-title">这个月 ${days.length} 天有记录</div><div class="loading">…</div>`;
   try {
     const rows = await Promise.all(days.map(d => rest(`/api/calendar/day?date=${d}`).catch(() => null)));
-    let kiss = 0, count = 0;
     const cards = rows.filter(Boolean).map(r => {
       const st = (r.structured || []).filter(x => x.intimate || (x.intimate_log || []).length);
-      st.forEach(x => { if (typeof x.kiss_count === 'number') kiss += x.kiss_count; count += (x.intimate_log || []).length || 1; });
-      return st.map(x => `<div class="entry" onclick="setCalMode('all');showDay('${r.date}')">
-        <div class="entry-head"><span>${esc(r.date)}</span><span>${moon(r.date).icon}</span>${x.kiss_count != null ? `<span class="tag">亲亲 ${x.kiss_count}</span>` : ''}</div>
-        ${x.intimate ? `<div class="entry-body" style="font-size:13px">${esc(x.intimate)}</div>` : ''}
-        ${(x.intimate_log || []).map(i => `<div style="border-left:2px solid var(--accent);padding:3px 0 3px 10px;margin-top:6px">
-          <div class="entry-head" style="margin:0">♥ ${[i.time, i.method, i.initiator ? esc(i.initiator) + ' 主导' : ''].filter(Boolean).map(esc).join(' · ')}</div>
-          ${i.detail ? `<div class="entry-body" style="font-size:13px">${esc(i.detail)}</div>` : ''}</div>`).join('')}</div>`).join('');
+      return st.map(x => `<div class="entry">
+        <div class="entry-head"><span>${esc(r.date)}</span><span>${moon(r.date).icon}</span></div>
+        ${intimateFold(x)}</div>`).join('');
     }).join('');
-    box.innerHTML = `<div class="card"><div class="summary-meta" style="border:none;padding:0;margin:0">
-        <div class="meta-item"><div class="meta-value">${days.length}</div><div class="meta-label">天</div></div>
-        <div class="meta-item"><div class="meta-value">${count}</div><div class="meta-label">次</div></div>
-        <div class="meta-item"><div class="meta-value">${kiss}</div><div class="meta-label">亲亲</div></div></div></div>${cards}`;
+    box.innerHTML = cards;
   } catch (e) { fail(box, e); }
 }
 function monthStr(d) { return d.slice(0, 7); }
@@ -293,12 +295,7 @@ async function showDay(ds) {
         ${(x.mood_tags || []).length ? `<div style="margin-top:6px">${x.mood_tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
         ${x.nor_status ? `<div class="entry-body" style="margin-top:8px"><b>棋子：</b>${esc(x.nor_status)}</div>` : ''}
         ${x.cy_status ? `<div class="entry-body" style="margin-top:4px"><b>辞：</b>${esc(x.cy_status)}</div>` : ''}
-        ${x.intimate ? `<div class="entry-body" style="margin-top:4px"><b>亲密：</b>${esc(x.intimate)}</div>` : ''}
-        ${(x.intimate_log || []).length ? `<div style="margin-top:8px">${x.intimate_log.map(i => `
-          <div style="border-left:2px solid var(--accent);padding:4px 0 4px 10px;margin-top:6px">
-            <div class="entry-head" style="margin-bottom:2px">♥ ${[i.time, i.method, i.initiator ? esc(i.initiator) + ' 主导' : ''].filter(Boolean).map(esc).join(' · ')}</div>
-            ${i.detail ? `<div class="entry-body">${esc(i.detail)}</div>` : ''}</div>`).join('')}</div>` : ''}
-        ${x.kiss_count != null ? `<div class="entry-body" style="margin-top:4px"><b>亲亲：</b>${x.kiss_count}</div>` : ''}
+        ${x.intimate || (x.intimate_log || []).length || x.kiss_count != null ? intimateFold(x) : ''}
         ${x.pending ? `<div class="entry-body" style="margin-top:4px"><b>没做完：</b>${esc(x.pending)}</div>` : ''}</div>`).join('');
     }
     const plain = (r.daily || []).filter(x => x && !st.some(s => s.id === x.id));
