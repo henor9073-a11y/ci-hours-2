@@ -170,6 +170,10 @@
 ### 纹理按时间排
 纹理列表（全部 / 分类 / 档案里的经历等 / 家族）顶上三个选项：**按热度**（默认）/ **新的在前** / **旧的在前**，选了会记住。按时间排时按月分段。时间用 `date`（事情发生那天）；老数据约一半没有 `date`，退回记下来那天（卡片上写"记下"）。MCP `search_grains` 和 `GET /api/grains` 都接受 `sort=heat|time_desc|time_asc`。
 
+### 木屋搜索页 + 年轮搬家（2026-09-28）
+- 木纹里那套微信式聊天记录浏览器（按日期查找 / 关键词逐句定位 / 那一天的气泡）整个搬到木屋：代码在 `public/rings.js`（依赖 muwu.js 的弹层），入口在木屋搜索页。木纹只剩 `openRing`（纹理溯源看原文），首页/记忆页的「年轮」「文字记录」都跳到 `muwu#search`；原文页的「用聊天气泡看这天」跳 `muwu#chatlog=日期`。
+- 木屋搜索一次搜四处，各自可关：木屋聊天（`GET /api/chat/search?q=`，点进去 `GET /api/chat/context?id=` 看前后 8 条）/ 年轮（`/api/rings/search`，点进去到那一天的气泡）/ 记忆（`search_all`）/ 生活（日程睡眠等）。收藏的消息也在这页。
+
 ### 木屋生活页（2026-09-28 按 mockup 改）
 - 顶部月历（每日总结 / 日程 / 亲密小爱心，点日期看详情）→ 日常三卡（钓鱼 · 日程 · 歌单）→ 工具 · 语音 · 相册 → 书架 · 推送历史 → 身体（睡眠 · 生理期 · 身体状况）→ 倒数日（从首页搬过来的）。今日活动那块删了。
 - **工具**：`GET /api/tools/status`（60 秒缓存，`?fresh=1` 重探）把辞用得到的服务探一圈：木纹自己、Anthropic/ElevenLabs/Bark/Supabase 配没配、Notebook `/health`、GPD 的 ngrok 隧道（`MUWU_GPD_URL`，默认 stabilize-tycoon-oil）、StackChan 中继（走 gpd_server 代理，要 `MUWU_GPD_TOKEN`）、苏醒三层的报到状态。跑在 GPD 上没报到的如实标「看不到」。

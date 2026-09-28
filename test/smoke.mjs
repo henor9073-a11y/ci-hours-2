@@ -835,6 +835,20 @@ try {
     const bad = await fetch(`${base}/api/chat/annotate?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'nope', thinking: 'x' }) });
     assert.equal(bad.status, 404);
   });
+  await step('木屋搜索：聊天记录关键词 + 上下文；年轮浏览器搬到木屋', async () => {
+    const r = await rest('/api/chat/search?q=' + encodeURIComponent('卫衣'));
+    assert.ok(r.total >= 1 && r.hits[0].match === '卫衣', JSON.stringify(r).slice(0, 200));
+    const c = await rest('/api/chat/context?id=' + r.hits[0].id);
+    assert.ok(c.messages.some(m => m.id === r.hits[0].id) && c.messages.length >= 2);
+    assert.ok((await rest('/api/chat/context?id=nope')).error);
+    const muwuHtml = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
+    assert.ok(muwuHtml.includes('rings.js') && muwuHtml.includes('openRingCalendar'), '木屋要带年轮浏览器');
+    const ringsJs = await (await fetch(`${base}/rings.js?token=${TOKEN}`)).text();
+    assert.ok(ringsJs.includes('openRingDay') && ringsJs.includes('ringSearch'));
+    const muwenJs = await (await fetch(`${base}/muwen.js?token=${TOKEN}`)).text();
+    assert.ok(!muwenJs.includes('function openRingCalendar'), '木纹不再有聊天记录浏览器');
+    assert.ok(muwenJs.includes('function openRing('), '木纹留着纹理溯源用的 openRing');
+  });
   await step('木屋聊天：拍一拍、标星、状态、往上翻页', async () => {
     const post = (p, b) => fetch(`${base}${p}?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
     const pat = await post('/api/chat', { type: 'pat', content: '的脑袋' });

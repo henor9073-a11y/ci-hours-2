@@ -255,6 +255,12 @@ app.post('/api/chat/transcribe', async (req, res) => {
     res.json({ text: await transcribeAudio(buf, mime || 'audio/webm') });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
+app.get('/api/chat/search', (req, res) => res.json(mw.chat.searchChat({ q: req.query.q, limit: Math.min(Number(req.query.limit) || 60, 200), skip: Number(req.query.skip) || 0 })));
+app.get('/api/chat/context', (req, res) => {
+  const c = mw.chat.contextOf(String(req.query.id || ''), Math.min(Number(req.query.n) || 8, 40));
+  if (!c) return res.status(404).json({ error: '找不到这条消息' });
+  res.json(c);
+});
 app.get('/api/chat/pats', (_, res) => res.json(mw.chat.getPats()));
 app.post('/api/chat/pats', (req, res) => {
   try { res.json(mw.chat.setPats((req.body || {}).list)); }

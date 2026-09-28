@@ -892,23 +892,60 @@ async function openVoice() {
 }
 
 // ================= 搜 =================
-let searchMem = true;
-function toggleMemSearch() { searchMem = !searchMem; const t = $('#s-toggle'); t.textContent = searchMem ? '开' : '关'; t.classList.toggle('on', searchMem); }
-$('#s-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(e.target.value.trim()); });
+// ================= 搜 =================
+// 四个范围各自可关：木屋聊天（/api/chat/search，点进去看前后文）/ 年轮（/api/rings/search，点进去到那一天的气泡）/ 记忆（search_all）/ 生活（日程睡眠等）
+const scopes = { chat: true, rings: true, mem: true, life: true };
+function toggleScope(el) { const k = el.dataset.scope; scopes[k] = !scopes[k]; el.classList.toggle('on', scopes[k]); const q = $('#s-input').value.trim(); if (q) doSearch(q); }
+$('#s-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.target.blur(); doSearch(e.target.value.trim()); } });
+let lastQ = '';
 async function doSearch(q) {
   if (!q) return;
+  lastQ = q;
   $('#s-body').innerHTML = '<div class="loading">搜索中…</div>';
   try {
-    const [life, mem] = await Promise.all([searchLife(q), searchMem ? mcp('search_all', { query: q, limit: 10 }).catch(() => ({ results: [] })) : { results: [] }]);
+    const [chat, rings, mem, life] = await Promise.all([
+      scopes.chat ? rest(`/api/chat/search?q=${encodeURIComponent(q)}&limit=30`).catch(() => null) : null,
+      scopes.rings ? rest(`/api/rings/search?q=${encodeURIComponent(q)}&limit=30`).catch(() => null) : null,
+      scopes.mem ? mcp('search_all', { query: q, limit: 10 }).catch(() => ({ results: [] })) : null,
+      scopes.life ? searchLife(q) : []
+    ]);
+    if (lastQ !== q) return;
     let h = '';
-    if (life.length) h += '<div class="section-title">木屋结果</div>' + life.map(g => group(g.name, g.items.map(i => i.text)));
-    if (mem.results && mem.results.length) {
-      const gs = {};
-      mem.results.forEach(x => { const k = x.label || CATNAME[x.category] || x.layer; (gs[k] = gs[k] || []).push(oneLine(x.text || x.excerpt || x.caption || '').slice(0, 70)); });
-      h += '<div class="section-title">木纹记忆</div>' + Object.entries(gs).map(([k, v]) => group(k, v)).join('');
+    if (chat && chat.hits.length) {
+      h += `<div class="section-title">木屋聊天 <span style="font-weight:400;color:var(--text-light)">${chat.total} 条</span></div>` +
+        chat.hits.map(x => `<div class="rs-row" onclick="openChatContext('${x.id}')">
+          <div class="rs-main"><div class="rs-top"><span>${x.sender === 'cy' ? '辞' : '棋子'}${x.starred ? ' ★' : ''}</span><span>${esc(fmtTime(x.at))}</span></div>
+          <div class="rs-snip">${esc(oneLine(x.before))}<mark>${esc(x.match)}</mark>${esc(oneLine(x.after))}</div></div></div>`).join('');
     }
+    if (rings && rings.hits.length) {
+      rsQuery = q; rsHits = rings.hits; rsTotal = rings.total;
+      h += `<div class="section-title">年轮 · 历史记录 <span style="font-weight:400;color:var(--text-light)">${rings.total} 处</span></div>` +
+        rings.hits.map((x, i) => hitRow(x, i)).join('') +
+        (rings.total > rings.hits.length ? `<div class="card tap" onclick="openRings(); ringSearch(lastQ)"><div class="card-title" style="font-size:14px;text-align:center">在历史记录里看全部 ${rings.total} 处 ›</div></div>` : '');
+    }
+    if (mem && mem.results && mem.results.length) {
+      const gs = {};
+      mem.results.filter(x => x.layer !== 'rings').forEach(x => { const k = x.label || CATNAME[x.category] || x.layer; (gs[k] = gs[k] || []).push(oneLine(x.text || x.excerpt || x.caption || '').slice(0, 70)); });
+      if (Object.keys(gs).length) h += '<div class="section-title">记忆（木纹）</div>' + Object.entries(gs).map(([k, v]) => group(k, v)).join('');
+    }
+    if (life && life.length) h += '<div class="section-title">生活</div>' + life.map(g => group(g.name, g.items.map(i => i.text))).join('');
     $('#s-body').innerHTML = h || '<div class="empty">没搜到</div>';
   } catch (e) { fail($('#s-body'), e); }
+}
+// 搜到的一条聊天：看它前后几条
+async function openChatContext(id) {
+  sheetLoading('上下文');
+  try {
+    const c = await rest(`/api/chat/context?id=${encodeURIComponent(id)}&n=8`);
+    const ringPrefs0 = await MW.loadPrefs().catch(() => ({}));
+    const av = who => { const p = ringPrefs0['avatar_' + who]; return `<div class="rv-av ${who === 'nor' ? 'nor' : ''}">${p ? `<img src="${imageUrl(p)}" alt="">` : who === 'cy' ? '辞' : '棋'}</div>`; };
+    const body = m => m.type === 'image' ? `<img src="${MW.apiUrl('/api/chat/image/' + m.id)}" style="max-width:180px;border-radius:10px">` : m.type === 'voice' ? '🎤 ' + esc(m.transcript || '语音') : m.type === 'pat' ? '👋 拍了拍' + esc(m.content || '') : esc(m.content);
+    sheetSet(`<div class="rv-list" style="padding-top:8px">${c.messages.map(m => m.type === 'pat'
+      ? `<div class="rv-time">${esc(fmtTime(m.at).slice(11))} · ${m.sender === 'cy' ? '辞' : '棋子'} 拍了拍${esc(m.content || '')}</div>`
+      : `<div class="rv-row${m.sender === 'nor' ? ' me' : ''}"${m.id === id ? ' id="rv-target"' : ''}>${av(m.sender)}<div class="rv-col${m.id === id ? ' target' : ''}"><div class="rv-bubble">${body(m)}</div><div class="rv-time" style="margin:2px 0 0">${esc(fmtTime(m.at).slice(11))}</div></div></div>`).join('')}</div>
+      <div class="card tap" onclick="switchPage('chat')" style="margin-top:14px"><div class="card-title" style="font-size:14px;text-align:center">去聊天页 ›</div></div>`);
+    const t = byId('rv-target'); if (t) setTimeout(() => t.scrollIntoView({ block: 'center' }), 60);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 const CATNAME = { experience: '经历', agreement: '约定', feeling: '感受', learning: '学习', to_self: '给自己', unexplained: '说不清的', transcript: '原始记录', daily_summary: '每日总结' };
 // 分类名以后端标签总表为准（/api/labels），跟木纹、跟辞写记忆用的 remember 是同一份
@@ -1021,6 +1058,13 @@ function setUI(k, v, unit) {
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
 applyAvatars(); loadHome(); CX.init();
+// 从木纹跳过来：#search 直接到搜索页；#chatlog=2026-09-12 直接打开那天的聊天记录
+(function () {
+  const h = location.hash.slice(1); if (!h) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (h === 'search') switchPage('search');
+  else if (h.startsWith('chatlog=')) { switchPage('search'); setTimeout(() => openRingDay(h.slice(8)), 50); }
+})();
 // 上次解锁过就直接开始轮询（解锁状态记在本地，不用每次都点）
 if (localStorage.getItem('muwen-voice-unlocked') === '1') { voiceUnlocked = true; startVoicePolling(); }
 window.switchPage = switchPage; window.closeSheet = closeSheet;

@@ -116,15 +116,20 @@
 
 <!-- 搜 -->
 <div class="page" id="page-search">
-  <div class="greeting"><div class="greeting-date sm">搜索</div><div class="greeting-sub">在木屋和木纹中找</div></div>
+  <div class="greeting"><div class="greeting-date sm">搜索</div><div class="greeting-sub">聊天记录 · 记忆 · 年轮</div></div>
   <div class="search-box"><span style="color:var(--text-light)">🔍</span>
-    <input id="s-input" type="search" placeholder="搜日程、睡眠、健康、记忆…" enterkeyhint="search"></div>
-  <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
-    <span style="font-size:13px;color:var(--text-secondary)">也搜记忆</span>
-    <span class="chip on" id="s-toggle" onclick="toggleMemSearch()">开</span>
+    <input id="s-input" type="search" placeholder="搜一个词…" enterkeyhint="search"></div>
+  <div class="chip-row" style="margin-top:10px">
+    <div class="chip on" data-scope="chat" onclick="toggleScope(this)">木屋聊天</div>
+    <div class="chip on" data-scope="rings" onclick="toggleScope(this)">年轮（历史记录）</div>
+    <div class="chip on" data-scope="mem" onclick="toggleScope(this)">记忆</div>
+    <div class="chip on" data-scope="life" onclick="toggleScope(this)">生活</div>
   </div>
-  <div class="card tap" onclick="openStarred()" style="margin-top:14px"><div class="card-row"><div class="card-icon accent">★</div>
-    <div><div class="card-title">收藏的消息</div><div class="card-desc">聊天里长按标星的，两个人共用</div></div></div></div>
+  <div class="grid-2" style="margin-top:14px">
+    <div class="card tap" onclick="openRingCalendar()"><div class="card-row"><div class="card-icon">历</div><div><div class="card-title">按日期查找</div><div class="card-desc">历史记录</div></div></div></div>
+    <div class="card tap" onclick="openStarred()"><div class="card-row"><div class="card-icon accent">★</div><div><div class="card-title">收藏的消息</div><div class="card-desc">两个人共用</div></div></div></div>
+  </div>
+  <div class="card tap" onclick="openRings()" style="margin-top:10px"><div class="card-row"><div class="card-icon">录</div><div><div class="card-title">历史记录（年轮）</div><div class="card-desc">辞和棋子所有的对话原文，从木纹搬过来的</div></div></div></div>
   <div id="s-body"></div>
 </div>
 
@@ -164,5 +169,6 @@
 <script src="app.js"></script>
 <script src="chat.js"></script>
 <script src="muwu.js"></script>
+<script src="rings.js"></script>
 </body>
 </html>
