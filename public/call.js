@@ -11,6 +11,15 @@
   let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null;
   let stream = null, ctx = null, analyser = null, detector = null, recorder = null, chunks = [], speechAt = 0, startedAt = 0;
   let audio = new Audio(), subtitle = [];
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  let audioUnlocked = false;
+
+  function unlockAudio() {
+    // iOS 必须在点击事件本身里真正播放过同一个 audio 元素；空 src 的 play() 不算解锁。
+    audio.src = SILENT;
+    const p = audio.play();
+    if (p && p.then) p.then(() => { audioUnlocked = true; }).catch(() => {});
+  }
 
   function ensure() {
     if (document.getElementById('call-layer')) return;
@@ -59,8 +68,13 @@
     } catch { /* 下一轮重连 */ }
   }
   async function play(id) {
-    audio.pause(); audio = new Audio(apiUrl('/api/call/audio/' + id));
-    try { await audio.play(); } catch { /* iOS 没解锁声音时字幕仍在 */ }
+    audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
+    try { await audio.play(); }
+    catch {
+      subtitle.push('声音被手机拦住了，点一下“开启声音”'); paint();
+      const box = document.querySelector('.call-subtitles');
+      if (box && !box.querySelector('.call-unlock')) box.insertAdjacentHTML('beforeend', '<button class="call-unlock" onclick="CALL.unlockAndReplay()">开启声音</button>');
+    }
   }
   async function startMic() {
     try {
@@ -110,8 +124,9 @@
       wrap.innerHTML=`<div class="call-dial-card"><div class="call-dial-title">给小辞打电话？</div><div class="call-dial-sub">选择拨通后才会开始呼叫</div><div><button class="dial" onclick="CALL.dial();this.closest('.call-dial-confirm').remove()">拨通</button><button onclick="this.closest('.call-dial-confirm').remove()">退出</button></div></div>`;
       document.body.appendChild(wrap);
     },
-    async dial() { audio.play().catch(()=>{}); try { await post('/api/call/start'); minimized = false; poll(); } catch(e) { alert(e.message); } },
-    async act(action) { try { await post('/api/call/action', { action }); if (action === 'accept') { minimized = false; audio.play().catch(()=>{}); } poll(); } catch(e) { alert(e.message); } },
+    async dial() { unlockAudio(); try { await post('/api/call/start'); minimized = false; poll(); } catch(e) { alert(e.message); } },
+    async act(action) { try { if (action === 'accept') unlockAudio(); await post('/api/call/action', { action }); if (action === 'accept') minimized = false; poll(); } catch(e) { alert(e.message); } },
+    unlockAndReplay() { unlockAudio(); setTimeout(() => { const cy=[...(state&&state.events||[])].reverse().find(e=>e.type==='utterance'&&e.by==='cy'); if(cy) play(cy.id); },80); },
     minimize() { minimized = true; paint(); }, expand() { minimized = false; paint(); },
     mute() { muted = !muted; if (stream) stream.getAudioTracks().forEach(t => t.enabled = !muted); paint(); },
     setting: setSetting, renderSettings, lookPanel,

@@ -1060,6 +1060,8 @@ try {
     const call = await fetch(`${base}/call.js?token=${TOKEN}`).then(r => r.text());
     assert.ok(call.includes('快 · 0.5 秒') && call.includes('标准 · 0.8 秒') && call.includes('慢 · 1.3 秒'), '说完速度三档要在设置里');
     assert.ok(chat.includes('CALL.confirmDial()') && call.includes("act('accept')") && call.includes("act('reject')"), '聊天页要能拨号，来电要能接听或拒绝');
+    assert.ok(chat.includes('const PHONE = \'<svg') && !chat.includes('>☎</button>'), '通话按钮要和麦克风一样使用线框图标');
+    assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {

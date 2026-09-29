@@ -22,6 +22,7 @@
   };
   // 模型选择器：先记下来随消息存着。辞现在的模型由他的启动命令定，这里换不动他——留给以后接 API 用。
   const MIC = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>';
+  const PHONE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.3 3.8 10 7.5 8.2 9.3c1.2 2.7 3.4 4.9 6.1 6.1l1.8-1.8 3.7 2.7c.5.4.7 1 .5 1.6l-.5 1.8c-.2.7-.8 1.2-1.6 1.2C10 20.9 3.1 14 3.1 5.8c0-.8.5-1.4 1.2-1.6l1.8-.5c.5-.2.9-.1 1.2.1Z"/></svg>';
   const CLOCK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 7v5l3 2"/><path d="M12 3a9 9 0 1 1-6.4 2.6"/><path d="M4 4v4h4" stroke-dasharray="1 2.4"/></svg>';
   const TOOLICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a3 3 0 0 1 6 0v2M3 13h18"/></svg>';
   // mcp__muwen__get_calendar → Get Calendar
@@ -327,7 +328,7 @@
           <span class="cx-sp"></span>
           <button class="cx-tb" onclick="CX.newline()" title="换行">↵</button>
           <button class="cx-mic" id="cx-rec" title="按住说话" aria-label="按住说话">${MIC}</button>
-          <button class="cx-phone" onclick="CALL.confirmDial()" title="给辞打电话" aria-label="给辞打电话">☎</button>
+          <button class="cx-phone" onclick="CALL.confirmDial()" title="给辞打电话" aria-label="给辞打电话">${PHONE}</button>
           <button class="cx-send" onclick="CX.send()" title="发送">↑</button>
         </div>
         <div id="cx-msg" class="cx-hint"></div>

@@ -318,7 +318,7 @@ body.chat-open > .header { display: none; }
 .cx-sp { flex: 1; }
 .cx-model { border: 1px solid var(--cx-think-bd); background: var(--cx-think-bg); color: var(--cx-name); border-radius: 8px; padding: 3px 6px; font-size: 11px; font-family: inherit; max-width: 118px; }
 .cx-send { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--cx-accent); color: #fff; font-size: 14px; cursor: pointer; margin-left: 4px; flex-shrink: 0; }
-.cx-phone { width: 30px; height: 30px; border: none; background: none; color: var(--cx-name); font-size: 23px; cursor: pointer; padding: 0; }
+.cx-phone { width: 30px; height: 30px; border: none; background: none; color: var(--cx-name); cursor: pointer; padding: 5px; display:flex;align-items:center;justify-content:center; }
 .cx-hint { font-size: 11px; text-align: center; color: var(--cx-time); min-height: 0; }
 .cx-hint:not(:empty) { margin-top: 5px; }
 
@@ -491,6 +491,7 @@ body.chat-open > .header { display: none; }
 .call-subtitles { width:min(360px,92vw); min-height:110px; margin-top:28px; text-align:center; display:flex; flex-direction:column; justify-content:flex-end; gap:8px; font-size:var(--call-font); line-height:1.55; text-shadow:0 1px 4px rgba(0,0,0,.5); }
 .call-subtitles > div:not(:last-child) { color:var(--call-sub); opacity:.6; font-size:.86em; }
 .call-subtitles .quiet { color:var(--call-sub); opacity:.75; }
+.call-unlock { align-self:center;border:1px solid rgba(255,255,255,.45);border-radius:12px;background:rgba(255,255,255,.14);color:#fff;padding:8px 16px;font-family:inherit; }
 .call-actions { margin-top:auto; width:100%; display:flex; justify-content:center; gap:24px; }
 .call-actions.incoming { gap:18px; }
 .call-btn { width:var(--call-btn); height:var(--call-btn); border-radius:50%; border:none; color:#fff; font-size:12px; box-shadow:0 5px 22px rgba(0,0,0,.24); }
