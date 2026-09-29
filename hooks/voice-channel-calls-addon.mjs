@@ -25,7 +25,8 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
         }});
         pushed.add(e.id);
       }
-      const wait = settings.tokenMode === 'economy' ? 2000 : settings.tokenMode === 'low_latency' ? 0 : 700;
+      // 通话本身已经由 VAD 判断完句；这里只留很短的合并窗，避免又额外排队一整秒。
+      const wait = settings.tokenMode === 'economy' ? 1400 : settings.tokenMode === 'low_latency' ? 0 : 350;
       if (utteranceBuffer.size && Date.now() - bufferChangedAt >= wait) {
         const batch = [...utteranceBuffer.values()];
         const content = batch.map(e => e.text).join('\n');
@@ -44,7 +45,7 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
     } catch (e) { log('木屋通话轮询失败', e?.message); }
     finally { busy = false; }
   }
-  const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 1000);
-  poll(); log('木屋通话：已接上，每 1 秒取一次');
+  const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400);
+  poll(); log('木屋通话：已接上，每 0.4 秒取一次');
   return { stop() { clearInterval(timer); } };
 }

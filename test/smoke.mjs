@@ -1073,6 +1073,9 @@ try {
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes('> .018'), '通话应提前录音保住句首，并照顾轻声慢说');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
+    assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
+    const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');
+    assert.ok(callAddon.includes("? 0 : 350") && callAddon.includes('400);'), '辞端通话轮询与平衡合并窗要足够快');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
     assert.ok(recallHook.includes('origin="muwu_call"') && recallHook.includes('max_return = 2'), '通话普通内容暂停 recall，查历史才轻量召回');

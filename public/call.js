@@ -186,5 +186,6 @@
     look(k,v,out) { const l=look(); l[k] = ['text','subText','accept','hangup','normal'].includes(k) ? v : Number(v); saveLook(l); if(out) out.textContent=v; },
     bg(input) { const f=input.files&&input.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{const l=look();l.bg=r.result;saveLook(l)};r.readAsDataURL(f); }
   };
-  window.CALL = CALL; ensure(); paintLook(); poll(); timer = setInterval(poll, 2000); tickTimer = setInterval(() => { const n=document.querySelector('[data-call-time]'); if(n&&state&&state.call&&state.call.status==='active')n.textContent=elapsed(state.call); },1000);
+  // 通话中更快取字幕和语音；只是轻量状态请求，不会增加模型 context/token。
+  window.CALL = CALL; ensure(); paintLook(); poll(); timer = setInterval(poll, 700); tickTimer = setInterval(() => { const n=document.querySelector('[data-call-time]'); if(n&&state&&state.call&&state.call.status==='active')n.textContent=elapsed(state.call); },1000);
 })();
