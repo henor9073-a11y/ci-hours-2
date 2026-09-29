@@ -1063,7 +1063,7 @@ try {
     assert.ok(chat.includes('CALL.confirmDial()') && call.includes("act('accept')") && call.includes("act('reject')"), '聊天页要能拨号，来电要能接听或拒绝');
     assert.ok(chat.includes('const PHONE = \'<svg') && !chat.includes('>☎</button>'), '通话按钮要和麦克风一样使用线框图标');
     assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
-    assert.ok(call.includes('needsAudioUnlock') && call.includes('CALL.unlockAndReplay()') && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须持久显示可点击的开启声音按钮');
+    assert.ok(call.includes('needsAudioUnlock') && call.includes("addEventListener('pointerdown'") && call.includes("addEventListener('touchstart'") && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须用稳定外层接住触摸并持久显示按钮');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');

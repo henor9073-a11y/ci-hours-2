@@ -8,7 +8,7 @@
   const DEFLOOK = { bg: '', bgAlpha: 70, panelAlpha: 44, blur: 20, fontSize: 18, text: '#ffffff', subText: '#ded7df', buttonSize: 62, accept: '#55b982', hangup: '#d85858', normal: '#6e687d' };
   const look = () => { try { return { ...DEFLOOK, ...JSON.parse(localStorage.getItem('muwen-call-look') || '{}') }; } catch { return { ...DEFLOOK }; } };
   const saveLook = x => { localStorage.setItem('muwen-call-look', JSON.stringify(x)); paintLook(); };
-  let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null;
+  let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null, lastUnlockAt = 0;
   let stream = null, ctx = null, analyser = null, detector = null, recorder = null, chunks = [], speechAt = 0, startedAt = 0;
   let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
@@ -24,6 +24,18 @@
   function ensure() {
     if (document.getElementById('call-layer')) return;
     document.body.insertAdjacentHTML('beforeend', `<div id="call-layer" hidden></div><div id="call-mini" hidden></div>`);
+    const layer = document.getElementById('call-layer');
+    const unlockOnPress = e => {
+      const hit = e.target && e.target.closest && e.target.closest('.call-unlock,.call-subtitles[role="button"]');
+      if (!hit || Date.now() - lastUnlockAt < 600) return;
+      lastUnlockAt = Date.now(); e.preventDefault();
+      const button = hit.matches('.call-unlock') ? hit : hit.querySelector('.call-unlock');
+      if (button) button.textContent = '正在开启…';
+      CALL.unlockAndReplay();
+    };
+    // 监听稳定的最外层，而不是每两秒会重画的按钮；pointerdown 也能保住 iPhone 要求的直接用户手势。
+    layer.addEventListener('pointerdown', unlockOnPress, true);
+    layer.addEventListener('touchstart', unlockOnPress, { capture: true, passive: false });
   }
   function paintLook() {
     ensure(); const l = look(), root = document.documentElement;
@@ -52,7 +64,7 @@
     const status = incoming ? '小辞来电' : outgoing ? '正在呼叫小辞…' : c.status === 'reconnecting' ? '正在重新连接…' : elapsed(c);
     layer.innerHTML = `<div class="call-bg"></div><div class="call-screen"><div class="call-time" data-call-time>${status}</div>
       <div class="call-avatar">${av ? `<img src="${av}" alt="">` : '辞'}</div><div class="call-name">小辞</div>
-      <div class="call-subtitles"${needsAudioUnlock ? ' onclick="CALL.unlockAndReplay()" role="button"' : ''}>${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}${needsAudioUnlock ? '<button class="call-unlock" onclick="event.stopPropagation();CALL.unlockAndReplay()">开启声音</button>' : ''}</div>
+      <div class="call-subtitles"${needsAudioUnlock ? ' role="button" aria-label="开启声音"' : ''}>${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}${needsAudioUnlock ? '<button type="button" class="call-unlock">开启声音</button>' : ''}</div>
       ${incoming ? `<div class="call-actions incoming"><button class="call-btn hang" onclick="CALL.act('reject')">拒绝</button><button class="call-btn accept" onclick="CALL.act('accept')">接听</button><button class="call-btn normal" onclick="CALL.minimize()">等待</button></div>` : outgoing ? `<div class="call-actions"><button class="call-btn hang" onclick="CALL.act('hangup')">取消</button><button class="call-btn normal" onclick="CALL.minimize()">缩小</button></div>` : buttons(true)}</div>`;
   }
   async function poll() {
@@ -69,7 +81,7 @@
   }
   async function play(id) {
     audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
-    try { await audio.play(); needsAudioUnlock = false; }
+    try { await audio.play(); needsAudioUnlock = false; paint(); }
     catch {
       needsAudioUnlock = true;
       if (subtitle.at(-1) !== '声音被手机拦住了，点一下“开启声音”') subtitle.push('声音被手机拦住了，点一下“开启声音”');
