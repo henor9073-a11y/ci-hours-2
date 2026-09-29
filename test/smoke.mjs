@@ -785,14 +785,15 @@ try {
   });
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const calls = await import('../lib/muwen/calls.js');
-    let settings = calls.updateSettings({ endPause: 'fast', allowIncoming: true, quietEnabled: false });
+    let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
     assert.equal(calls.pauseMs(), 500); assert.equal(settings.endPause, 'fast');
+    assert.equal(settings.tokenMode, 'economy');
     const c = calls.start('nor'); assert.equal(c.status, 'ringing');
     assert.ok(calls.pendingForCy().events.some(e => e.type === 'ringing'));
     calls.action('cy', 'accept');
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
-    calls.say('cy', '听得到。', 'voice');
+    assert.deepEqual(await tool('call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
     calls.action('nor', 'hangup');
     assert.equal(calls.history(1)[0].status, 'ended');
     settings = calls.updateSettings({ allowIncoming: false, endPause: 'standard' });
@@ -1063,6 +1064,9 @@ try {
     assert.ok(chat.includes('const PHONE = \'<svg') && !chat.includes('>☎</button>'), '通话按钮要和麦克风一样使用线框图标');
     assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
+    assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
+    const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
+    assert.ok(recallHook.includes('origin="muwu_call"') && recallHook.includes('max_return = 2'), '通话普通内容暂停 recall，查历史才轻量召回');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {

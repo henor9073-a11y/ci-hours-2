@@ -27,8 +27,15 @@ if (-not $p) { exit 0 }
 # 木纹自己注入的召回内容（[muwen:...] 开头）和自动唤醒 prompt 不再触发召回，避免套娃
 if ($p.StartsWith('[muwen:') -or $p.StartsWith('苏醒') -or $p -match '^\[(heartbeat|自动唤醒)\]') { exit 0 }
 
+# 通话轻量模式：普通通话不自动召回；明确问过去才做最多两条的纯关键词轻量召回。
+$inCall = $p.Contains('origin="muwu_call"')
+$historyAsk = $p -match '之前|以前|上次|上回|那次|当时|原话|说过|提过|答应过|约定过|记不记得|还记得|翻一下|查一下|找一下'
+if ($inCall -and -not $historyAsk) { exit 0 }
+
 try {
-  $bodyBytes = [Text.Encoding]::UTF8.GetBytes((@{ query = $p } | ConvertTo-Json -Compress))
+  $payload = @{ query = $p }
+  if ($inCall) { $payload.max_return = 2; $payload.use_agent = $false; $payload.use_semantic = $false }
+  $bodyBytes = [Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
   $r = Invoke-RestMethod -Method Post -Uri "$url/api/recall?token=$token" `
          -ContentType 'application/json; charset=utf-8' -Body $bodyBytes -TimeoutSec $timeout
   $text = [string]$r.text

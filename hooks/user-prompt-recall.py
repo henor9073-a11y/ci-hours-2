@@ -29,6 +29,7 @@ if TIMEOUT <= 0:
     TIMEOUT = 12
 
 SKIP_RE = re.compile(r'^\[(heartbeat|自动唤醒)\]')
+HISTORY_RE = re.compile(r'之前|以前|上次|上回|那次|当时|原话|说过|提过|答应过|约定过|记不记得|还记得|翻一下|查一下|找一下')
 
 
 def main():
@@ -42,8 +43,17 @@ def main():
     if prompt.startswith('[muwen:') or prompt.startswith('苏醒') or SKIP_RE.match(prompt):
         return 0
 
+    # 通话轻量模式：普通电话内容不做每句自动召回。只有明确查过去时才给最多两条，
+    # 且关闭分类 agent / 语义兜底，避免一通电话把 context 和模型调用堆满。
+    in_call = 'origin="muwu_call"' in prompt
+    if in_call and not HISTORY_RE.search(prompt):
+        return 0
+
     try:
-        body = json.dumps({'query': prompt}).encode('utf-8')
+        payload = {'query': prompt}
+        if in_call:
+            payload.update({'max_return': 2, 'use_agent': False, 'use_semantic': False})
+        body = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(
             f'{URL}/api/recall?token={TOKEN}', data=body, method='POST',
             headers={'Content-Type': 'application/json; charset=utf-8'})
