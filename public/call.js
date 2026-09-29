@@ -9,7 +9,7 @@
   const look = () => { try { return { ...DEFLOOK, ...JSON.parse(localStorage.getItem('muwen-call-look') || '{}') }; } catch { return { ...DEFLOOK }; } };
   const saveLook = x => { localStorage.setItem('muwen-call-look', JSON.stringify(x)); paintLook(); };
   let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null, lastUnlockAt = 0;
-  let stream = null, ctx = null, analyser = null, detector = null, recorder = null, chunks = [], speechAt = 0, startedAt = 0;
+  let stream = null, ctx = null, analyser = null, detector = null, recorder = null, speechAt = 0, captureStartedAt = 0, micStopping = false;
   let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
   let playCtx = null, playGain = null, playKeeper = null, voiceSource = null;
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -119,23 +119,34 @@
   async function startMic() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      micStopping = false;
       ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream); analyser = ctx.createAnalyser(); analyser.fftSize = 1024; src.connect(analyser);
+      beginCapture();
       const data = new Uint8Array(analyser.fftSize); let speaking = false;
       detector = setInterval(() => {
         if (muted || !state || !state.call || state.call.status !== 'active') return;
         analyser.getByteTimeDomainData(data); let sum = 0; for (const v of data) { const x = (v - 128) / 128; sum += x * x; }
-        const loud = Math.sqrt(sum / data.length) > .025, now = Date.now();
+        const loud = Math.sqrt(sum / data.length) > .018, now = Date.now();
         if (loud) {
           speechAt = now;
-          if (!speaking) { speaking = true; audio.pause(); if (voiceSource) try { voiceSource.stop(); } catch {} chunks = []; recorder = new MediaRecorder(stream); recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; recorder.onstop = sendRecording; recorder.start(200); }
+          if (!speaking && recorder && recorder.state === 'recording') { speaking = true; audio.pause(); if (voiceSource) try { voiceSource.stop(); } catch {} }
         }
-        if (speaking && !loud && now - speechAt >= (state.pause_ms || 800)) { speaking = false; if (recorder && recorder.state !== 'inactive') recorder.stop(); }
+        if (speaking && !loud && now - speechAt >= (state.pause_ms || 1500)) { speaking = false; if (recorder && recorder.state === 'recording') { recorder._send = true; recorder.stop(); } }
+        // 空闲时每四秒换一段，始终保留本轮开口前最多四秒，避免吞掉句首又不无限积累静音。
+        if (!speaking && !loud && recorder && recorder.state === 'recording' && now - captureStartedAt > 4000) { recorder._send = false; recorder.stop(); }
       }, 80);
     } catch (e) { subtitle.push('麦克风没有开启：' + e.message); paint(); }
   }
-  function stopMic() { if (detector) clearInterval(detector); detector = null; if (recorder && recorder.state !== 'inactive') try { recorder.stop(); } catch {} recorder = null; if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (ctx) ctx.close().catch(() => {}); ctx = null; }
-  async function sendRecording() {
-    const blob = new Blob(chunks, { type: recorder && recorder.mimeType || 'audio/webm' }); chunks = []; if (blob.size < 1000) return;
+  function beginCapture() {
+    if (micStopping || !stream || !state || !state.call || state.call.status !== 'active') return;
+    const rec = new MediaRecorder(stream), parts = []; rec._send = false;
+    rec.ondataavailable = e => { if (e.data.size) parts.push(e.data); };
+    rec.onstop = () => { if (rec._send) sendRecording(parts, rec.mimeType); if (!micStopping) beginCapture(); };
+    recorder = rec; captureStartedAt = Date.now(); rec.start(200);
+  }
+  function stopMic() { micStopping = true; if (detector) clearInterval(detector); detector = null; if (recorder && recorder.state !== 'inactive') try { recorder._send = false; recorder.stop(); } catch {} recorder = null; if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (ctx) ctx.close().catch(() => {}); ctx = null; }
+  async function sendRecording(parts, mime) {
+    const blob = new Blob(parts, { type: mime || 'audio/webm' }); if (blob.size < 1000) return;
     const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(blob); });
     try { await post('/api/call/transcribe', { audio_base64: b64, mime: blob.type }); } catch { subtitle.push('这一句没有听清'); paint(); }
   }
@@ -145,7 +156,7 @@
     const row = (label, k) => `<div class="cx-set-row" style="font-size:${compact ? 12 : 14}px"><span>${label}</span><button class="cx-tg${s[k] ? ' on' : ''}" onclick="CALL.setting('${k}',${!s[k]})"><i></i></button></div>`;
     el.innerHTML = `${row('允许辞来电','allowIncoming')}${row('安静时间','quietEnabled')}${row('普通留言推送','messagePush')}${row('来电推送','callPush')}${row('辞的滚动字幕','subtitles')}${row('允许插话打断','interrupt')}${row('断线自动重连','reconnect')}
       <div class="call-setting-line"><label>安静时段 <input type="time" value="${s.quietStart || '23:30'}" onchange="CALL.setting('quietStart',this.value)">—<input type="time" value="${s.quietEnd || '08:00'}" onchange="CALL.setting('quietEnd',this.value)"></label></div>
-      <div class="call-setting-line"><label>判断我说完 <select onchange="CALL.setting('endPause',this.value)"><option value="fast"${s.endPause==='fast'?' selected':''}>快 · 0.5 秒</option><option value="standard"${s.endPause==='standard'?' selected':''}>标准 · 0.8 秒</option><option value="slow"${s.endPause==='slow'?' selected':''}>慢 · 1.3 秒</option></select></label></div>
+      <div class="call-setting-line"><label>判断我说完 <select onchange="CALL.setting('endPause',this.value)"><option value="fast"${s.endPause==='fast'?' selected':''}>快 · 0.8 秒</option><option value="standard"${s.endPause==='standard'?' selected':''}>标准 · 1.5 秒</option><option value="slow"${s.endPause==='slow'?' selected':''}>慢 · 2.5 秒</option><option value="very_slow"${s.endPause==='very_slow'?' selected':''}>很慢 · 4 秒</option></select></label></div>
       <div class="call-setting-line"><label>通话用量 <select onchange="CALL.setting('tokenMode',this.value)"><option value="economy"${s.tokenMode==='economy'?' selected':''}>省 token · 合并短句</option><option value="balanced"${s.tokenMode==='balanced'?' selected':''}>平衡</option><option value="low_latency"${s.tokenMode==='low_latency'?' selected':''}>低延迟</option></select></label></div>
       <div class="call-setting-line"><label>来电等待 <select onchange="CALL.setting('ringSeconds',+this.value)">${[30,60,90,120].map(n=>`<option${s.ringSeconds===n?' selected':''}>${n}</option>`).join('')}</select> 秒</label></div>
       <div class="call-setting-line"><label>来电补发提醒 <select onchange="CALL.setting('barkRepeats',+this.value)">${[0,1,2].map(n=>`<option value="${n}"${s.barkRepeats===n?' selected':''}>${n===0?'不补发':n+' 次'}</option>`).join('')}</select></label></div>

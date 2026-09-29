@@ -786,7 +786,7 @@ try {
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const calls = await import('../lib/muwen/calls.js');
     let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
-    assert.equal(calls.pauseMs(), 500); assert.equal(settings.endPause, 'fast');
+    assert.equal(calls.pauseMs(), 800); assert.equal(settings.endPause, 'fast');
     assert.equal(settings.tokenMode, 'economy');
     const c = calls.start('nor'); assert.equal(c.status, 'ringing');
     assert.ok(calls.pendingForCy().events.some(e => e.type === 'ringing'));
@@ -1063,7 +1063,7 @@ try {
     assert.ok(css.includes('.search-box') && css.includes('.cal-day') && css.includes('backdrop-filter: blur(var(--card-blur))'), '日期、搜索和日历要共用磨砂透明卡片');
     assert.ok(html.includes('call.js') && html.includes('st-call-settings'), '木屋要加载通话界面和来电设置');
     const call = await fetch(`${base}/call.js?token=${TOKEN}`).then(r => r.text());
-    assert.ok(call.includes('快 · 0.5 秒') && call.includes('标准 · 0.8 秒') && call.includes('慢 · 1.3 秒'), '说完速度三档要在设置里');
+    assert.ok(call.includes('快 · 0.8 秒') && call.includes('标准 · 1.5 秒') && call.includes('慢 · 2.5 秒') && call.includes('很慢 · 4 秒'), '说完速度四档要在设置里');
     assert.ok(chat.includes('CALL.confirmDial()') && call.includes("act('accept')") && call.includes("act('reject')"), '聊天页要能拨号，来电要能接听或拒绝');
     assert.ok(chat.includes('const PHONE = \'<svg') && !chat.includes('>☎</button>'), '通话按钮要和麦克风一样使用线框图标');
     assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
@@ -1071,6 +1071,8 @@ try {
     assert.ok(call.includes('提前开启声音') && call.includes('声音已开启') && call.includes('CALL.enableSound()'), '辞说话前要能主动开启通话声音');
     assert.ok(call.includes('playKeeper') && call.includes('decodeAudioData') && call.includes('createBufferSource'), '手机只授权一次，后续每句话复用常驻 Web Audio 通道');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
+    assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes('> .018'), '通话应提前录音保住句首，并照顾轻声慢说');
+    assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
     assert.ok(recallHook.includes('origin="muwu_call"') && recallHook.includes('max_return = 2'), '通话普通内容暂停 recall，查历史才轻量召回');
