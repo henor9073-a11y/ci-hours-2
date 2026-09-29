@@ -491,7 +491,8 @@ body.chat-open > .header { display: none; }
 .call-subtitles { width:min(360px,92vw); min-height:110px; margin-top:28px; text-align:center; display:flex; flex-direction:column; justify-content:flex-end; gap:8px; font-size:var(--call-font); line-height:1.55; text-shadow:0 1px 4px rgba(0,0,0,.5); }
 .call-subtitles > div:not(:last-child) { color:var(--call-sub); opacity:.6; font-size:.86em; }
 .call-subtitles .quiet { color:var(--call-sub); opacity:.75; }
-.call-unlock { align-self:center;border:1px solid rgba(255,255,255,.45);border-radius:12px;background:rgba(255,255,255,.14);color:#fff;padding:8px 16px;font-family:inherit; }
+.call-unlock { align-self:center;position:relative;z-index:5;min-width:132px;min-height:44px;border:1px solid rgba(255,255,255,.72);border-radius:14px;background:rgba(255,255,255,.28);box-shadow:0 8px 24px rgba(0,0,0,.22);color:#fff;padding:9px 18px;font:600 15px/1.2 inherit;touch-action:manipulation; }
+.call-subtitles[role="button"] { cursor:pointer; }
 .call-actions { margin-top:auto; width:100%; display:flex; justify-content:center; gap:24px; }
 .call-actions.incoming { gap:18px; }
 .call-btn { width:var(--call-btn); height:var(--call-btn); border-radius:50%; border:none; color:#fff; font-size:12px; box-shadow:0 5px 22px rgba(0,0,0,.24); }

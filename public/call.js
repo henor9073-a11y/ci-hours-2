@@ -10,7 +10,7 @@
   const saveLook = x => { localStorage.setItem('muwen-call-look', JSON.stringify(x)); paintLook(); };
   let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null;
   let stream = null, ctx = null, analyser = null, detector = null, recorder = null, chunks = [], speechAt = 0, startedAt = 0;
-  let audio = new Audio(), subtitle = [];
+  let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
   let audioUnlocked = false;
 
@@ -52,7 +52,7 @@
     const status = incoming ? '小辞来电' : outgoing ? '正在呼叫小辞…' : c.status === 'reconnecting' ? '正在重新连接…' : elapsed(c);
     layer.innerHTML = `<div class="call-bg"></div><div class="call-screen"><div class="call-time" data-call-time>${status}</div>
       <div class="call-avatar">${av ? `<img src="${av}" alt="">` : '辞'}</div><div class="call-name">小辞</div>
-      <div class="call-subtitles">${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}</div>
+      <div class="call-subtitles"${needsAudioUnlock ? ' onclick="CALL.unlockAndReplay()" role="button"' : ''}>${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}${needsAudioUnlock ? '<button class="call-unlock" onclick="event.stopPropagation();CALL.unlockAndReplay()">开启声音</button>' : ''}</div>
       ${incoming ? `<div class="call-actions incoming"><button class="call-btn hang" onclick="CALL.act('reject')">拒绝</button><button class="call-btn accept" onclick="CALL.act('accept')">接听</button><button class="call-btn normal" onclick="CALL.minimize()">等待</button></div>` : outgoing ? `<div class="call-actions"><button class="call-btn hang" onclick="CALL.act('hangup')">取消</button><button class="call-btn normal" onclick="CALL.minimize()">缩小</button></div>` : buttons(true)}</div>`;
   }
   async function poll() {
@@ -69,11 +69,11 @@
   }
   async function play(id) {
     audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
-    try { await audio.play(); }
+    try { await audio.play(); needsAudioUnlock = false; }
     catch {
-      subtitle.push('声音被手机拦住了，点一下“开启声音”'); paint();
-      const box = document.querySelector('.call-subtitles');
-      if (box && !box.querySelector('.call-unlock')) box.insertAdjacentHTML('beforeend', '<button class="call-unlock" onclick="CALL.unlockAndReplay()">开启声音</button>');
+      needsAudioUnlock = true;
+      if (subtitle.at(-1) !== '声音被手机拦住了，点一下“开启声音”') subtitle.push('声音被手机拦住了，点一下“开启声音”');
+      paint();
     }
   }
   async function startMic() {
@@ -127,7 +127,7 @@
     },
     async dial() { unlockAudio(); try { await post('/api/call/start'); minimized = false; poll(); } catch(e) { alert(e.message); } },
     async act(action) { try { if (action === 'accept') unlockAudio(); await post('/api/call/action', { action }); if (action === 'accept') minimized = false; poll(); } catch(e) { alert(e.message); } },
-    unlockAndReplay() { unlockAudio(); setTimeout(() => { const cy=[...(state&&state.events||[])].reverse().find(e=>e.type==='utterance'&&e.by==='cy'); if(cy) play(cy.id); },80); },
+    unlockAndReplay() { needsAudioUnlock = false; const cy=[...(state&&state.events||[])].reverse().find(e=>e.type==='utterance'&&e.by==='cy'); if(cy) play(cy.id); else { unlockAudio(); paint(); } },
     minimize() { minimized = true; paint(); }, expand() { minimized = false; paint(); },
     mute() { muted = !muted; if (stream) stream.getAudioTracks().forEach(t => t.enabled = !muted); paint(); },
     setting: setSetting, renderSettings, lookPanel,
