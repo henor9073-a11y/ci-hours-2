@@ -11,15 +11,27 @@
   let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null, lastUnlockAt = 0;
   let stream = null, ctx = null, analyser = null, detector = null, recorder = null, chunks = [], speechAt = 0, startedAt = 0;
   let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
+  let playCtx = null, playGain = null, playKeeper = null, voiceSource = null;
+  const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
   let audioUnlocked = false;
 
   function unlockAudio() {
-    // iOS 必须在点击事件本身里真正播放过同一个 audio 元素；空 src 的 play() 不算解锁。
+    // iOS 会把每个新 MP3 当成一次新播放。用户点一次后保持一个 Web Audio 通道常驻，
+    // 后续每句话都在这个通道里播，不再逐句索要手势。
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (IS_IOS && AudioCtx && !playCtx) {
+      playCtx = new AudioCtx(); playGain = playCtx.createGain(); playGain.gain.value = 1; playGain.connect(playCtx.destination);
+      playKeeper = playCtx.createOscillator(); const quiet = playCtx.createGain(); quiet.gain.value = .000001;
+      playKeeper.connect(quiet); quiet.connect(playCtx.destination); playKeeper.start();
+    }
+    const resumed = playCtx ? playCtx.resume() : Promise.reject(new Error('Web Audio unavailable'));
+    resumed.then(() => { audioUnlocked = true; needsAudioUnlock = false; paint(); }).catch(() => {});
+    // 同时解锁普通 audio，供不支持 Web Audio 的浏览器备用。
     audio.src = SILENT;
     const p = audio.play();
-    if (p && p.then) p.then(() => { audioUnlocked = true; needsAudioUnlock = false; paint(); }).catch(() => { audioUnlocked = false; paint(); });
-    return p;
+    if (p && p.then) p.then(() => { audioUnlocked = true; needsAudioUnlock = false; paint(); }).catch(() => { if (!playCtx || playCtx.state !== 'running') audioUnlocked = false; paint(); });
+    return resumed;
   }
 
   function ensure() {
@@ -83,6 +95,19 @@
     } catch { /* 下一轮重连 */ }
   }
   async function play(id) {
+    if (audioUnlocked && playCtx) {
+      try {
+        if (playCtx.state !== 'running') await playCtx.resume();
+        const r = await fetch(apiUrl('/api/call/audio/' + id)); if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const decoded = await playCtx.decodeAudioData(await r.arrayBuffer());
+        if (voiceSource) try { voiceSource.stop(); } catch {}
+        voiceSource = playCtx.createBufferSource(); voiceSource.buffer = decoded; voiceSource.connect(playGain); voiceSource.start();
+        needsAudioUnlock = false; paint(); return;
+      } catch (e) {
+        if (playCtx.state === 'suspended') { audioUnlocked = false; needsAudioUnlock = true; paint(); return; }
+        subtitle.push('这一句声音生成失败'); paint(); return;
+      }
+    }
     audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
     try { await audio.play(); needsAudioUnlock = false; paint(); }
     catch {
@@ -102,7 +127,7 @@
         const loud = Math.sqrt(sum / data.length) > .025, now = Date.now();
         if (loud) {
           speechAt = now;
-          if (!speaking) { speaking = true; audio.pause(); chunks = []; recorder = new MediaRecorder(stream); recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; recorder.onstop = sendRecording; recorder.start(200); }
+          if (!speaking) { speaking = true; audio.pause(); if (voiceSource) try { voiceSource.stop(); } catch {} chunks = []; recorder = new MediaRecorder(stream); recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; recorder.onstop = sendRecording; recorder.start(200); }
         }
         if (speaking && !loud && now - speechAt >= (state.pause_ms || 800)) { speaking = false; if (recorder && recorder.state !== 'inactive') recorder.stop(); }
       }, 80);

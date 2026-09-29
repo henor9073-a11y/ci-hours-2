@@ -1069,6 +1069,7 @@ try {
     assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
     assert.ok(call.includes('needsAudioUnlock') && call.includes("addEventListener('pointerdown'") && call.includes("addEventListener('touchstart'") && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须用稳定外层接住触摸并持久显示按钮');
     assert.ok(call.includes('提前开启声音') && call.includes('声音已开启') && call.includes('CALL.enableSound()'), '辞说话前要能主动开启通话声音');
+    assert.ok(call.includes('playKeeper') && call.includes('decodeAudioData') && call.includes('createBufferSource'), '手机只授权一次，后续每句话复用常驻 Web Audio 通道');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
