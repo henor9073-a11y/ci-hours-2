@@ -69,7 +69,7 @@
   function sigOf(m) {
     return JSON.stringify([
       m.read, m.starred, m.transcript_status, m.transcript, m.has_image,
-      m.content, m.thinking, m.tools, m.voice_id, m.duration, m.quote
+      m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote
     ]);
   }
 
@@ -159,8 +159,8 @@
 
   // ---------- 语音条（照微信）：`)))  12″`，越长条越长；点一下播放，再点停；「转文字」在条外面 ----------
   // 棋子录的走 /api/chat/voice，辞的语音回复（m.voice_id）走 speak 那套；两种长得一样。
-  const isVoice = m => m.type === 'voice' || (m.sender === 'cy' && !!m.voice_id);
-  const voiceSrc = m => m.type === 'voice' ? apiUrl('/api/chat/voice/' + m.id) : MW.audioUrl(m.voice_id);
+  const isVoice = m => m.type === 'voice' || (m.sender === 'cy' && (!!m.voice_id || m.voice_stream));
+  const voiceSrc = m => m.type === 'voice' ? apiUrl('/api/chat/voice/' + m.id) : m.voice_stream ? apiUrl('/api/chat/voice-stream/' + m.id) : MW.audioUrl(m.voice_id);
   const voiceText = m => m.type === 'voice'
     ? (m.transcript_status === 'pending' ? '转写中…' : m.transcript || (m.transcript_status === 'failed' ? '没转出文字' : '（没听清）'))
     : m.content;
@@ -179,7 +179,7 @@
     const open = !!expanded['v' + m.id];
     const dot = isAi && !played.has(m.id) ? '<i class="cx-vdot"></i>' : '';
     return `<div class="cx-vrow">
-        <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : '…'}</span></div>
+        <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : m.voice_stream ? '播放' : '…'}</span></div>
         <button class="cx-vt-btn" data-act="vt">${open ? '收起' : '转文字'}</button>${dot}
       </div><div class="cx-voice-text"${open ? '' : ' hidden'}>${esc(voiceText(m))}</div>`;
   }
@@ -187,7 +187,7 @@
   function probeDurations(scope) {
     (scope || document).querySelectorAll('.cx-vdur').forEach(n => {
       if (!n.textContent.startsWith('…')) return;
-      const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || durCache[m.id] !== undefined) return;
+      const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || m.voice_stream || durCache[m.id] !== undefined) return;
       durCache[m.id] = 0;
       const a = new Audio(); a.preload = 'metadata';
       a.onloadedmetadata = () => {
@@ -327,6 +327,7 @@
           <span class="cx-sp"></span>
           <button class="cx-tb" onclick="CX.newline()" title="换行">↵</button>
           <button class="cx-mic" id="cx-rec" title="按住说话" aria-label="按住说话">${MIC}</button>
+          <button class="cx-phone" onclick="CALL.confirmDial()" title="给辞打电话" aria-label="给辞打电话">☎</button>
           <button class="cx-send" onclick="CX.send()" title="发送">↑</button>
         </div>
         <div id="cx-msg" class="cx-hint"></div>
@@ -669,7 +670,10 @@
         ${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','')">清除</span>` : ''}
         <div class="cx-set-l">背景图透明度 <span id="cx-v-bgAlpha">${c.bgAlpha}</span>%</div>
         <input type="range" min="0" max="100" value="${c.bgAlpha}" oninput="CX.slide('bgAlpha',this.value)">
-        <div class="cx-set-l" style="margin-top:10px">配色（樱海石夜雾）和拍一拍库在「设置」页</div>`;
+        <div class="cx-set-l" style="margin-top:10px">配色（樱海石夜雾）和拍一拍库在「设置」页</div>
+        <div class="cx-set-t" style="margin-top:18px;padding-top:12px;border-top:1px solid var(--cx-think-bd)">来电设置</div>
+        <div id="cx-call-settings"><div class="cx-set-l">读取中…</div></div>`;
+      setTimeout(() => window.CALL && CALL.renderSettings('cx-call-settings', true), 0);
     },
     set(k, v) { const c = cfg(); c[k] = v; saveCfg(c); if ($('#cx-set').dataset.kind === 'look') CX.panel(true); },
     // 滑块 oninput 一秒几十次：只改 CSS 变量，而且一帧最多改一次

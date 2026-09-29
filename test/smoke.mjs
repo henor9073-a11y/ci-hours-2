@@ -750,13 +750,13 @@ try {
     const bad = await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sender: 'nor', type: 'text', content: '  ' }) });
     assert.equal(bad.status, 400);
   });
-  await step('辞的语音回复：文字照送、没 key 也不中断、前端文字＋播放器都在', async () => {
-    // 没配 ELEVENLABS key 的情况下：话必须送到，只是没声音
+  await step('辞的语音回复：文字先送、音频流式生成、旧播放器仍兼容', async () => {
+    // 不在工具调用里等待整段音频；先送文字，播放时才打开 streaming 端点
     const r = await tool('chat_reply', { content: '我的卫衣。你穿着我的衣服出门了。', voice: true });
     assert.equal(r.sender, 'cy');
     assert.equal(r.content, '我的卫衣。你穿着我的衣服出门了。', '语音失败不能吞掉文字');
-    assert.ok(r.warning && r.warning.includes('ELEVENLABS'), `该说明为什么没声音：${r.warning}`);
     assert.ok(!r.voice_id);
+    assert.equal(r.voice_stream, true);
     // 不要语音就当普通回复
     const plain = await tool('chat_reply', { content: '纯文字这条' });
     assert.ok(!plain.warning && !plain.voice_id);
@@ -782,6 +782,22 @@ try {
     const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
     assert.ok(js.includes('cx-tts') && js.includes('m.voice_id'), 'chat.js 该渲染语音播放器');
     assert.ok(js.includes('cx-voice-text'), '辞的语音要有转文字');
+  });
+  await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
+    const calls = await import('../lib/muwen/calls.js');
+    let settings = calls.updateSettings({ endPause: 'fast', allowIncoming: true, quietEnabled: false });
+    assert.equal(calls.pauseMs(), 500); assert.equal(settings.endPause, 'fast');
+    const c = calls.start('nor'); assert.equal(c.status, 'ringing');
+    assert.ok(calls.pendingForCy().events.some(e => e.type === 'ringing'));
+    calls.action('cy', 'accept');
+    const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
+    assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
+    calls.say('cy', '听得到。', 'voice');
+    calls.action('nor', 'hangup');
+    assert.equal(calls.history(1)[0].status, 'ended');
+    settings = calls.updateSettings({ allowIncoming: false, endPause: 'standard' });
+    assert.equal(calls.start('cy').reason, 'incoming_disabled');
+    calls.updateSettings({ allowIncoming: true });
   });
   await step('木屋聊天：送进辞窗口（pending→delivered=两个勾）、网页冒充不了辞', async () => {
     const post = b => fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
@@ -1040,6 +1056,11 @@ try {
     assert.ok(chat.includes('bgAlpha') && muwu.includes('聊天背景图透明度'), '聊天背景图透明度要能调');
     assert.ok(css.includes('color-mix(in srgb, var(--card) var(--card-alpha), transparent)') && !css.includes('opacity: var(--card-alpha)'), '卡片透明度不能把文字一起变淡');
     assert.ok(css.includes('.search-box') && css.includes('.cal-day') && css.includes('backdrop-filter: blur(var(--card-blur))'), '日期、搜索和日历要共用磨砂透明卡片');
+    assert.ok(html.includes('call.js') && html.includes('st-call-settings'), '木屋要加载通话界面和来电设置');
+    const call = await fetch(`${base}/call.js?token=${TOKEN}`).then(r => r.text());
+    assert.ok(call.includes('快 · 0.5 秒') && call.includes('标准 · 0.8 秒') && call.includes('慢 · 1.3 秒'), '说完速度三档要在设置里');
+    assert.ok(chat.includes('CALL.confirmDial()') && call.includes("act('accept')") && call.includes("act('reject')"), '聊天页要能拨号，来电要能接听或拒绝');
+    assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
   });
   await step('两个前端都挂得上（静态 + /muwu 路由）', async () => {
     for (const p of ['/', '/style.css', '/app.js', '/muwen.js', '/muwu', '/muwu.js', '/chat.js']) {

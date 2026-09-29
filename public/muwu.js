@@ -873,13 +873,15 @@ async function voiceTick() {
 async function openVoice() {
   sheetLoading('语音');
   try {
-    const hist = await rest('/api/voice/history?limit=60');
+    const [hist, calls] = await Promise.all([rest('/api/voice/history?limit=60'), rest('/api/call/history?limit=50').catch(() => [])]);
     sheetSet(`<div class="card">
         <div class="card-title" style="font-size:14px">自动播放</div>
         <div class="card-desc" style="margin-top:4px">辞用 speak 说话时，这个页面开着就会自动播出来。手机上必须先手动点一下才允许出声（浏览器的限制）。</div>
         <button class="btn" id="vc-unlock" style="margin-top:10px" ${voiceUnlocked ? 'disabled' : ''} onclick="unlockVoice()">${voiceUnlocked ? '声音已开启' : '开启声音播放'}</button>
       </div>
-      <div class="section-title">说过的话 ${hist.length ? `<span style="color:var(--text-light);font-weight:400">${hist.length} 条</span>` : ''}</div>
+      <div class="section-title">通话记录 ${calls.length ? `<span style="color:var(--text-light);font-weight:400">${calls.length} 通</span>` : ''}</div>
+      ${calls.length ? calls.map(c => `<div class="entry"><div class="entry-head"><span>${c.caller === 'cy' ? '辞拨出' : '棋子拨出'}</span><span>${esc(({ended:'已挂断',rejected:'已拒绝',missed:'未接通',blocked:'安静时间'}[c.status] || c.status))}</span></div><div class="entry-body">${esc(fmtTime(c.created_at))}${c.accepted_at ? ` · ${Math.max(0,Math.round((Date.parse(c.ended_at||new Date())-Date.parse(c.accepted_at))/1000))} 秒` : ''}</div>${c.events && c.events.some(e=>e.type==='utterance') ? `<details class="intimate-fold"><summary>通话文字</summary><div class="intimate-body">${c.events.filter(e=>e.type==='utterance').map(e=>`<div style="margin-top:6px"><b>${e.by==='cy'?'辞':'棋子'}：</b>${esc(e.text)}</div>`).join('')}</div></details>` : ''}</div>`).join('') : '<div class="empty">还没有通话记录</div>'}
+      <div class="section-title">语音记录 ${hist.length ? `<span style="color:var(--text-light);font-weight:400">${hist.length} 条</span>` : ''}</div>
       ${hist.length ? hist.map(x => `<div class="entry">
         <div class="entry-head">${esc(fmtTime(x.createdAt))}</div>
         <div class="entry-body">${esc(x.text)}</div>
@@ -1046,6 +1048,7 @@ function loadSettings() {
   $('#st-sliders').innerHTML = sliders.map(([k, n, min, max, step, unit]) => `<div class="card">
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" onchange="commitUI()" style="width:100%;margin-top:8px"></div>`).join('');
+  if (window.CALL) CALL.renderSettings('st-call-settings');
 }
 // 选樱海石夜雾之一：全站换，聊天页也跟着换同一套；选别的（暖灰绿那七套）聊天页不动
 function pickPreset(k) { const t = MW.loadTheme(); t.preset = k; t.custom = {}; MW.saveTheme(t); if (CX.themes[k]) CX.setTheme(k); loadSettings(); }

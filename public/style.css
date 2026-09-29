@@ -318,6 +318,7 @@ body.chat-open > .header { display: none; }
 .cx-sp { flex: 1; }
 .cx-model { border: 1px solid var(--cx-think-bd); background: var(--cx-think-bg); color: var(--cx-name); border-radius: 8px; padding: 3px 6px; font-size: 11px; font-family: inherit; max-width: 118px; }
 .cx-send { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--cx-accent); color: #fff; font-size: 14px; cursor: pointer; margin-left: 4px; flex-shrink: 0; }
+.cx-phone { width: 30px; height: 30px; border: none; background: none; color: var(--cx-name); font-size: 23px; cursor: pointer; padding: 0; }
 .cx-hint { font-size: 11px; text-align: center; color: var(--cx-time); min-height: 0; }
 .cx-hint:not(:empty) { margin-top: 5px; }
 
@@ -476,3 +477,27 @@ body.chat-open > .header { display: none; }
 .st-order button { background: var(--primary-light); border: none; border-radius: 8px; padding: 4px 10px; color: var(--text); cursor: pointer; margin-left: 6px; font-family: inherit; }
 .st-av { display: flex; gap: 20px; justify-content: center; }
 .st-av > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+/* ---- 持续通话 ---- */
+#call-layer { position: fixed; inset: 0; z-index: 1000; color: var(--call-text); }
+#call-layer[hidden], #call-mini[hidden] { display: none; }
+.call-bg { position: absolute; inset: 0; background: var(--call-bg) center/cover; }
+.call-bg::after { content:''; position:absolute; inset:0; background:rgba(12,12,18,calc(1 - var(--call-bg-a))); backdrop-filter:blur(var(--call-blur)); -webkit-backdrop-filter:blur(var(--call-blur)); }
+.call-screen { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; padding: max(34px,env(safe-area-inset-top)) 22px max(34px,env(safe-area-inset-bottom)); background: rgba(25,24,32,var(--call-panel-a)); }
+.call-time { font-size: 16px; color: var(--call-sub); min-height: 28px; }
+.call-avatar { width: 112px; height: 112px; margin-top: 10vh; border-radius: 50%; overflow: hidden; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.16); font-size:30px; border:2px solid rgba(255,255,255,.35); }
+.call-avatar img { width:100%; height:100%; object-fit:cover; }
+.call-name { font-size: 25px; font-weight: 600; margin-top: 18px; }
+.call-subtitles { width:min(360px,92vw); min-height:110px; margin-top:28px; text-align:center; display:flex; flex-direction:column; justify-content:flex-end; gap:8px; font-size:var(--call-font); line-height:1.55; text-shadow:0 1px 4px rgba(0,0,0,.5); }
+.call-subtitles > div:not(:last-child) { color:var(--call-sub); opacity:.6; font-size:.86em; }
+.call-subtitles .quiet { color:var(--call-sub); opacity:.75; }
+.call-actions { margin-top:auto; width:100%; display:flex; justify-content:center; gap:24px; }
+.call-actions.incoming { gap:18px; }
+.call-btn { width:var(--call-btn); height:var(--call-btn); border-radius:50%; border:none; color:#fff; font-size:12px; box-shadow:0 5px 22px rgba(0,0,0,.24); }
+.call-btn.hang { background:var(--call-hang); }.call-btn.accept { background:var(--call-accept); }.call-btn.normal { background:var(--call-normal); }.call-btn.normal.on { outline:3px solid rgba(255,255,255,.7); }
+#call-mini { position:fixed; z-index:950; top:max(10px,env(safe-area-inset-top)); left:10px; right:10px; min-height:58px; border-radius:18px; background:color-mix(in srgb,var(--card) 75%,transparent); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); box-shadow:0 6px 24px rgba(0,0,0,.18); display:flex; align-items:center; padding:8px 10px; gap:8px; color:var(--text); }
+#call-mini > div { flex:1; min-width:0; display:flex; flex-direction:column; font-size:12px; } #call-mini span { color:var(--text-secondary); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#call-mini button { border:0; border-radius:10px; padding:7px 9px; color:var(--text); background:var(--primary-light); }
+.call-setting-line { margin-top:10px; font-size:12px; color:inherit; }.call-setting-line label { display:flex; align-items:center; justify-content:space-between; gap:6px; }.call-setting-line input[type=time],.call-setting-line select { min-width:0; border:1px solid var(--border); border-radius:8px; padding:5px; color:var(--text); background:transparent; }
+.call-look-pop { position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; padding:20px; }.call-look-card { position:relative; width:min(360px,100%); max-height:85vh; overflow:auto; background:var(--card); color:var(--text); border-radius:20px; padding:20px; }.call-look-x { position:absolute;right:12px;top:12px;border:0;background:none;color:var(--text);font-size:18px}.call-look-card h3{margin-bottom:14px}.call-look-card>label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;margin-top:12px}.call-look-card input[type=range]{width:150px}.call-look-card input[type=color]{width:48px;height:30px;border:0;background:none}
+.call-dial-confirm { position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.48);display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px) }.call-dial-card{width:min(330px,100%);padding:24px;border:1px solid color-mix(in srgb,var(--border) 70%,transparent);border-radius:22px;background:color-mix(in srgb,var(--card) 82%,transparent);text-align:center;box-shadow:0 14px 40px rgba(0,0,0,.22)}.call-dial-title{font-size:19px;font-weight:700}.call-dial-sub{font-size:12px;color:var(--text-secondary);margin:6px 0 20px}.call-dial-card>div:last-child{display:grid;grid-template-columns:1fr 1fr;gap:12px}.call-dial-card button{border:0;border-radius:14px;padding:12px;color:var(--text);background:var(--primary-light);font-family:inherit}.call-dial-card button.dial{background:var(--accent);color:#fff}

@@ -12,6 +12,22 @@
 | `pre-compact-ring.mjs` | `PreCompact` | 压缩前把这个窗口的对话原文自动存进年轮（`add_ring`，`source_type=auto_extract`）。年轮层 auto_extract 类型的来源就是它。 |
 | `user-prompt-recall.ps1` | `UserPromptSubmit` | 自动召回注入：棋子每条消息调木纹 `POST /api/recall`，把匹配到的 3–5 条记忆作为额外 context 注入（`[muwen:recall] …`）。琐碎消息跳过；网络慢/失败静默。 |
 | `chat-annotate.py` | `PostToolUse`（matcher `mcp__muwen__chat_reply`） | 辞回木屋消息之后，从会话记录取这一轮真实的 thinking 和工具调用补到那条消息上（棋子那边显示成 Thought process / Used N tools）。静默失败，不记日志。 |
+
+## 木屋实时通话（GPD）
+
+把 `voice-channel-calls-addon.mjs` 放到 GPD 的 `voice-channel.mjs` 同目录。在原文件 import 区增加：
+
+```js
+import { startCallBridge } from './voice-channel-calls-addon.mjs'
+```
+
+在 `const MUWU = loadMuwu()` 之后增加：
+
+```js
+startCallBridge({ mcp, muwu: MUWU, safeMeta, log })
+```
+
+它复用原来的 `.muwu.json`、MCP channel 和当前 Claude Code session，每秒取一次通话事件；不会改变原来的房间麦克风和普通留言轮询。
 | `prune-injections.py` | `UserPromptSubmit` | 阅后即焚：木纹注入进对话的召回内容（以 `[muwen:<类型>]` 开头）每类只留最新一条，旧的 content 清成 `[""]` 留空壳保链。顺序无关，Windows 用 msvcrt 锁。 |
 
 `~/.claude/settings.json` 示例：

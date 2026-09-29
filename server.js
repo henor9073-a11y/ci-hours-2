@@ -16,7 +16,7 @@ import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
-import { getVoiceHistory, getVoiceFilePath } from './lib/voice.js';
+import { getVoiceHistory, getVoiceFilePath, streamSpeech } from './lib/voice.js';
 import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById, getDailySummariesByMonth } from './lib/transcripts.js';
 import { getDiaryPublic } from './lib/diary.js';
 import { publicLabels } from './lib/muwen/labels.js';
@@ -266,6 +266,31 @@ app.post('/api/chat/pats', (req, res) => {
   try { res.json(mw.chat.setPats((req.body || {}).list)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+
+// ---- 持续通话：网页与 GPD 上当前 Claude Code session 之间的状态桥 ----
+app.get('/api/call/state', (req, res) => res.json(mw.calls.getState({ since: req.query.since || '' })));
+app.get('/api/call/history', (req, res) => res.json(mw.calls.history(Number(req.query.limit) || 50)));
+app.get('/api/call/settings', (_, res) => res.json(mw.calls.getSettings()));
+app.post('/api/call/settings', (req, res) => res.json(mw.calls.updateSettings(req.body || {})));
+app.post('/api/call/start', (req, res) => { try { res.json(mw.calls.start('nor')); } catch (e) { res.status(409).json({ error: String(e.message || e) }); } });
+app.post('/api/call/action', (req, res) => { try { res.json(mw.calls.action('nor', (req.body || {}).action)); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
+app.post('/api/call/say', (req, res) => { try { res.json(mw.calls.say('nor', (req.body || {}).text, (req.body || {}).source || 'voice')); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
+app.post('/api/call/transcribe', async (req, res) => {
+  try {
+    const b = req.body || {}, buf = Buffer.from(String(b.audio_base64 || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
+    if (!buf.length) return res.status(400).json({ error: '没有音频' });
+    const { transcribeAudio } = await import('./lib/voice.js');
+    const text = await transcribeAudio(buf, b.mime || 'audio/webm');
+    const event = text ? mw.calls.say('nor', text, 'voice') : null; res.json({ text, event });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+app.get('/api/call/pending', (_, res) => res.json(mw.calls.pendingForCy()));
+app.post('/api/call/delivered', (req, res) => res.json(mw.calls.markDelivered((req.body || {}).ids || [])));
+app.get('/api/call/audio/:eventId', async (req, res) => {
+  const e = mw.calls.event(req.params.eventId);
+  if (!e || e.type !== 'utterance' || e.by !== 'cy') return res.status(404).json({ error: '找不到这句通话语音' });
+  try { await streamSpeech(e.text, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
+});
 app.get('/api/chat/image/:id', (req, res) => {
   const r = mw.chat.imageRef(req.params.id);
   if (!r) return res.status(404).json({ error: '找不到这张图' });
@@ -304,6 +329,11 @@ app.get('/api/chat/voice/:id', (req, res) => {
   }
   res.setHeader('Content-Length', stat.size);
   fs.createReadStream(v.path).pipe(res);
+});
+app.get('/api/chat/voice-stream/:id', async (req, res) => {
+  const m = mw.chat.getMessage(req.params.id);
+  if (!m || m.sender !== 'cy' || !m.voice_stream || !m.content) return res.status(404).json({ error: '找不到这条流式语音' });
+  try { await streamSpeech(m.content, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
 app.get('/api/moment', (req, res) => res.json(mw.moments.getMoment(req.query.date)));
 app.post('/api/moment', (req, res) => {
