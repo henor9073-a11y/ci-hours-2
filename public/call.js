@@ -18,7 +18,8 @@
     // iOS 必须在点击事件本身里真正播放过同一个 audio 元素；空 src 的 play() 不算解锁。
     audio.src = SILENT;
     const p = audio.play();
-    if (p && p.then) p.then(() => { audioUnlocked = true; }).catch(() => {});
+    if (p && p.then) p.then(() => { audioUnlocked = true; needsAudioUnlock = false; paint(); }).catch(() => { audioUnlocked = false; paint(); });
+    return p;
   }
 
   function ensure() {
@@ -26,9 +27,10 @@
     document.body.insertAdjacentHTML('beforeend', `<div id="call-layer" hidden></div><div id="call-mini" hidden></div>`);
     const layer = document.getElementById('call-layer');
     const unlockOnPress = e => {
-      const hit = e.target && e.target.closest && e.target.closest('.call-unlock,.call-subtitles[role="button"]');
+      const hit = e.target && e.target.closest && e.target.closest('.call-unlock,.call-subtitles[role="button"],.call-sound-toggle');
       if (!hit || Date.now() - lastUnlockAt < 600) return;
       lastUnlockAt = Date.now(); e.preventDefault();
+      if (hit.matches('.call-sound-toggle')) { hit.textContent = '正在开启…'; CALL.enableSound(); return; }
       const button = hit.matches('.call-unlock') ? hit : hit.querySelector('.call-unlock');
       if (button) button.textContent = '正在开启…';
       CALL.unlockAndReplay();
@@ -64,6 +66,7 @@
     const status = incoming ? '小辞来电' : outgoing ? '正在呼叫小辞…' : c.status === 'reconnecting' ? '正在重新连接…' : elapsed(c);
     layer.innerHTML = `<div class="call-bg"></div><div class="call-screen"><div class="call-time" data-call-time>${status}</div>
       <div class="call-avatar">${av ? `<img src="${av}" alt="">` : '辞'}</div><div class="call-name">小辞</div>
+      <button type="button" class="call-sound-toggle${audioUnlocked ? ' on' : ''}" aria-pressed="${audioUnlocked}">${audioUnlocked ? '声音已开启' : '提前开启声音'}</button>
       <div class="call-subtitles"${needsAudioUnlock ? ' role="button" aria-label="开启声音"' : ''}>${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}${needsAudioUnlock ? '<button type="button" class="call-unlock">开启声音</button>' : ''}</div>
       ${incoming ? `<div class="call-actions incoming"><button class="call-btn hang" onclick="CALL.act('reject')">拒绝</button><button class="call-btn accept" onclick="CALL.act('accept')">接听</button><button class="call-btn normal" onclick="CALL.minimize()">等待</button></div>` : outgoing ? `<div class="call-actions"><button class="call-btn hang" onclick="CALL.act('hangup')">取消</button><button class="call-btn normal" onclick="CALL.minimize()">缩小</button></div>` : buttons(true)}</div>`;
   }
@@ -139,6 +142,7 @@
     },
     async dial() { unlockAudio(); try { await post('/api/call/start'); minimized = false; poll(); } catch(e) { alert(e.message); } },
     async act(action) { try { if (action === 'accept') unlockAudio(); await post('/api/call/action', { action }); if (action === 'accept') minimized = false; poll(); } catch(e) { alert(e.message); } },
+    enableSound() { unlockAudio(); },
     unlockAndReplay() { needsAudioUnlock = false; const cy=[...(state&&state.events||[])].reverse().find(e=>e.type==='utterance'&&e.by==='cy'); if(cy) play(cy.id); else { unlockAudio(); paint(); } },
     minimize() { minimized = true; paint(); }, expand() { minimized = false; paint(); },
     mute() { muted = !muted; if (stream) stream.getAudioTracks().forEach(t => t.enabled = !muted); paint(); },

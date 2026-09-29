@@ -796,6 +796,10 @@ try {
     assert.deepEqual(await tool('call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
     calls.action('nor', 'hangup');
     assert.equal(calls.history(1)[0].status, 'ended');
+    const endedPending = calls.pendingForCy().events.find(e => e.type === 'ended');
+    assert.ok(endedPending && endedPending.delivered_to_cy === false, '挂断后 ended 仍要交给辞');
+    calls.markDelivered([endedPending.id]);
+    assert.ok(!calls.pendingForCy().events.some(e => e.id === endedPending.id), '辞收到 ended 后应标记完成');
     settings = calls.updateSettings({ allowIncoming: false, endPause: 'standard' });
     assert.equal(calls.start('cy').reason, 'incoming_disabled');
     calls.updateSettings({ allowIncoming: true });
@@ -1064,6 +1068,7 @@ try {
     assert.ok(chat.includes('const PHONE = \'<svg') && !chat.includes('>☎</button>'), '通话按钮要和麦克风一样使用线框图标');
     assert.ok(call.includes('function unlockAudio()') && call.includes('UklGRiQAAABXQVZF'), '接听手势必须真正解锁 iPhone 音频');
     assert.ok(call.includes('needsAudioUnlock') && call.includes("addEventListener('pointerdown'") && call.includes("addEventListener('touchstart'") && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须用稳定外层接住触摸并持久显示按钮');
+    assert.ok(call.includes('提前开启声音') && call.includes('声音已开启') && call.includes('CALL.enableSound()'), '辞说话前要能主动开启通话声音');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
