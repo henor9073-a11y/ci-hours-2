@@ -47,8 +47,18 @@
   const MODELS = ['Opus 4.6 [1m]', 'Opus 5.5', 'Opus 5', 'Sonnet 5', 'Fable 5.1', 'Haiku 4.5'];
   const EMOJI = '😀 😁 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😗 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 😐 😑 😶 🙄 😏 😣 😥 😮 😪 😴 😌 🥱 😒 😓 😔 😕 🙃 🥲 😲 😳 🥺 😦 😧 😨 😰 😢 😭 😱 😖 😞 😩 😫 😤 😡 😠 🤬 😈 👿 💀 👻 🐶 🐱 🐰 🦊 🐻 🐼 🐺 🌙 ⭐ ✨ 🌸 🌷 🍓 🍰 ☕ 🎵 💤 💢 💦 ❤️ 🩷 💕 💞 💗 💔 👍 👎 👌 ✌️ 🤞 🫶 🙏 👏 🙌 🤝 😘 💋'.split(' ');
 
-  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, alpha: 72, frost: true, bg: '', bgAlpha: 100 };
+  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, alpha: 72, aiColor: '', meColor: '', aiAlpha: null, meAlpha: null, frost: true, bg: '', bgAlpha: 100 };
   function cfg() { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('muwen-chat-cfg') || '{}')); } catch { return { ...DEF }; } }
+  const rgbHex = rgb => '#' + String(rgb).split(',').map(x => Math.max(0,Math.min(255,Number(x)||0)).toString(16).padStart(2,'0')).join('');
+  const hexRgb = hex => { const h=String(hex||'').replace('#',''); return h.length===6 ? `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}` : ''; };
+  function bubbleLook(c, t) {
+    const old = Math.max(.15, Math.min(1, c.alpha / 100));
+    return {
+      aiColor: c.aiColor || rgbHex(t.ai), meColor: c.meColor || rgbHex(t.me),
+      aiAlpha: c.aiAlpha == null ? Math.round((t.aiA || .75) * old / .75 * 100) : c.aiAlpha,
+      meAlpha: c.meAlpha == null ? Math.round((t.meA || .38) * old / .75 * 100) : c.meAlpha
+    };
+  }
   function saveCfg(c) {
     try { localStorage.setItem('muwen-chat-cfg', JSON.stringify(c)); }
     catch { hint('存不下（背景图太大了，换张小点的）'); }
@@ -296,9 +306,9 @@
     const root = $('#chat-root .cx'); if (!root) return;
     const c = cfg(), t = THEMES[c.theme] || THEMES.sakura;
     root.style.background = t.bg;
-    const a = Math.max(.15, Math.min(1, c.alpha / 100));
+    const b = bubbleLook(c, t);
     const v = {
-      '--cx-ai': `rgba(${t.ai},${(t.aiA || .75) * a / .75})`, '--cx-me': `rgba(${t.me},${(t.meA || .38) * a / .75})`,
+      '--cx-ai': `rgba(${hexRgb(b.aiColor)},${b.aiAlpha / 100})`, '--cx-me': `rgba(${hexRgb(b.meColor)},${b.meAlpha / 100})`,
       '--cx-text': t.text, '--cx-accent': t.accent, '--cx-time': t.time, '--cx-head': t.head, '--cx-name': t.nameC,
       '--cx-think-bg': t.thinkBg, '--cx-think-bd': t.thinkBd, '--cx-panel': t.panel,
       '--cx-av-bg': t.accent + '28', '--cx-radius': c.radius + 'px', '--cx-font': c.fontSize + 'px',
@@ -664,12 +674,16 @@
       const box = $('#cx-set'); if (!box) return;
       if (!keep && !box.hidden && box.dataset.kind === 'look') { box.hidden = true; return; }
       box.dataset.kind = 'look'; box.classList.remove('bottom'); box.hidden = false;
-      const c = cfg();
+      const c = cfg(), t = THEMES[c.theme] || THEMES.sakura, b = bubbleLook(c, t);
       box.innerHTML = `<div class="cx-set-t">聊天外观</div>
         <div class="cx-set-row"><span>磨砂玻璃</span><button class="cx-tg${c.frost ? ' on' : ''}" onclick="CX.set('frost',${!c.frost})"><i></i></button></div>
         <div class="cx-set-row"><span>显示头像</span><button class="cx-tg${c.avatars ? ' on' : ''}" onclick="CX.set('avatars',${!c.avatars})"><i></i></button></div>
-        <div class="cx-set-l">气泡透明度 <span id="cx-v-alpha">${c.alpha}</span>%</div>
-        <input type="range" min="20" max="100" value="${c.alpha}" oninput="CX.slide('alpha',this.value)">
+        <div class="cx-set-row"><span>辞的消息框颜色</span><input type="color" value="${b.aiColor}" onchange="CX.set('aiColor',this.value)"></div>
+        <div class="cx-set-l">辞的消息框透明度 <span id="cx-v-aiAlpha">${b.aiAlpha}</span>%</div>
+        <input type="range" min="0" max="100" value="${b.aiAlpha}" oninput="CX.slide('aiAlpha',this.value)">
+        <div class="cx-set-row"><span>我的消息框颜色</span><input type="color" value="${b.meColor}" onchange="CX.set('meColor',this.value)"></div>
+        <div class="cx-set-l">我的消息框透明度 <span id="cx-v-meAlpha">${b.meAlpha}</span>%</div>
+        <input type="range" min="0" max="100" value="${b.meAlpha}" oninput="CX.slide('meAlpha',this.value)">
         <div class="cx-set-l">气泡圆角 <span id="cx-v-radius">${c.radius}</span>px</div>
         <input type="range" min="4" max="24" value="${c.radius}" oninput="CX.slide('radius',this.value)">
         <div class="cx-set-l">字号 <span id="cx-v-fontSize">${c.fontSize}</span>px</div>
