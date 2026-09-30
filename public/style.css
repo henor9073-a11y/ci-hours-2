@@ -1,4 +1,5 @@
 /* 木纹 / 木屋 共用样式。配色全走 CSS 变量，设置页改变量就整站变。 */
+.physical-note .note-drawing{display:block;width:100%;height:90px}
 :root {
   --bg: #F6F5F2; --card: #FFFFFF;
   --primary: #8FA39B; --primary-light: #E4EBE8;
