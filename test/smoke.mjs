@@ -1075,6 +1075,10 @@ try {
     assert.ok(chat.includes("m.voice_id ? MW.audioUrl(m.voice_id)") && chat.includes("'准备中'") && chat.includes("m.voice_stream && !m.voice_id"), '辞的语音应后台缓存，准备好后恢复时长并直接播放完整文件');
     const chatBackend = fs.readFileSync(path.join(process.cwd(), 'lib/muwen/chat.js'), 'utf8');
     assert.ok(chatBackend.includes('synthesizeVoiceLater(msg.id, msg.content)') && chatBackend.includes('m.voice_id = voice.id'), 'chat_reply 文字先返回，语音要在后台预生成缓存');
+    const voiceBackend = fs.readFileSync(path.join(process.cwd(), 'lib/voice.js'), 'utf8');
+    assert.ok(voiceBackend.includes("MODEL_ID === 'eleven_v4' ? 'eleven_v4_turbo'") && voiceBackend.includes('stability: 0.3'), 'v4 留言走高质量版、通话走 Turbo，稳定性为 0.3');
+    assert.ok(voiceBackend.includes("startsWith('eleven_v4')") && !voiceBackend.includes('const VOICE_SETTINGS'), 'v4 不能继续发送旧版 style/speed 设置');
+    assert.ok(voiceBackend.includes("return latin ? undefined : 'ja'") && voiceBackend.includes("return latin ? undefined : 'zh'") && voiceBackend.includes("return 'en'"), '中英日混说要交给 v4 自动判断，单语短句才锁语言');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? .045 : .018"), '通话应提前录音保住句首，并照顾轻声慢说');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
