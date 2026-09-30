@@ -1209,14 +1209,28 @@ async function removePat(i) {
   try { await CX.savePats(list); renderPats(); } catch (e) { $('#st-pat-msg').textContent = '没删掉：' + e.message; }
 }
 // ---------- 搜索页：收藏的消息 ----------
+function starredVoice(m) { return m.type === 'voice' || (m.sender === 'cy' && (m.voice_id || m.voice_stream)); }
+function starredVoiceSrc(m) {
+  if (m.type === 'voice') return MW.apiUrl('/api/chat/voice/' + m.id);
+  if (m.voice_id) return MW.audioUrl(m.voice_id);
+  return MW.apiUrl('/api/chat/voice-stream/' + m.id);
+}
+function starredBody(m) {
+  if (m.type === 'image') return `<img src="${MW.apiUrl('/api/chat/image/' + m.id)}" style="max-width:160px;border-radius:10px">`;
+  if (starredVoice(m)) {
+    const words = m.type === 'voice' ? m.transcript : m.content;
+    return `<audio controls preload="metadata" src="${starredVoiceSrc(m)}" style="width:100%;margin:3px 0 6px"></audio>${words ? `<div style="font-size:12px;color:var(--text-light)">${esc(words)}</div>` : ''}`;
+  }
+  if (m.type === 'pat') return '拍了拍' + esc(m.content || '');
+  return esc(m.content);
+}
 async function openStarred() {
   sheetLoading('收藏的消息');
   try {
     const list = await rest('/api/chat?starred=1&limit=500');
     sheetSet(list.length ? list.slice().reverse().map(m => `<div class="entry">
         <div class="entry-head"><span>${m.sender === 'cy' ? '辞' : '棋子'}</span><span>${esc(fmtTime(m.at))}</span></div>
-        <div class="entry-body">${m.type === 'image' ? `<img src="${MW.apiUrl('/api/chat/image/' + m.id)}" style="max-width:160px;border-radius:10px">` :
-          m.type === 'voice' ? '🎤 ' + esc(m.transcript || '语音') : m.type === 'pat' ? '👋 拍了拍' + esc(m.content || '') : esc(m.content)}</div></div>`).join('')
+        <div class="entry-body">${starredBody(m)}</div></div>`).join('')
       : '<div class="empty">还没有收藏。聊天里长按一条消息 → 收藏</div>');
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }

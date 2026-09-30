@@ -1085,6 +1085,7 @@ try {
     assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
     const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');
     assert.ok(callAddon.includes("? 0 : 350") && callAddon.includes('400);'), '辞端通话轮询与平衡合并窗要足够快');
+    assert.ok(muwu.includes('function starredVoice(m)') && muwu.includes('m.voice_id || m.voice_stream') && muwu.includes('<audio controls preload="metadata"'), '收藏页要保留棋子录音和辞的语音播放器，不能降级成纯文本');
     assert.ok(call.includes('省 token · 合并短句') && call.includes("s.tokenMode==='balanced'"), '通话设置要有省 token / 平衡 / 低延迟');
     const recallHook = fs.readFileSync(path.join(process.cwd(), 'hooks/user-prompt-recall.ps1'), 'utf8');
     assert.ok(recallHook.includes('origin="muwu_call"') && recallHook.includes('max_return = 2'), '通话普通内容暂停 recall，查历史才轻量召回');
