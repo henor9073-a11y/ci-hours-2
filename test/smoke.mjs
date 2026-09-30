@@ -1072,6 +1072,9 @@ try {
     assert.ok(call.includes('playKeeper') && call.includes('decodeAudioData') && call.includes('createBufferSource'), '手机只授权一次，后续每句话复用常驻 Web Audio 通道');
     assert.ok(call.includes('callAudioQueue') && call.includes('queuePlay(e.id)') && call.includes('now - loudSince < 600'), '通话语音要排队播放，短促扬声器回声不能掐掉辞');
     assert.ok(chat.includes('playPending') && chat.includes("e.name === 'AbortError'"), '留言流式语音加载中不能被重复点按 abort，也不能把取消误报成损坏');
+    assert.ok(chat.includes("m.voice_id ? MW.audioUrl(m.voice_id)") && chat.includes("'准备中'") && chat.includes("m.voice_stream && !m.voice_id"), '辞的语音应后台缓存，准备好后恢复时长并直接播放完整文件');
+    const chatBackend = fs.readFileSync(path.join(process.cwd(), 'lib/muwen/chat.js'), 'utf8');
+    assert.ok(chatBackend.includes('synthesizeVoiceLater(msg.id, msg.content)') && chatBackend.includes('m.voice_id = voice.id'), 'chat_reply 文字先返回，语音要在后台预生成缓存');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
     assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? .045 : .018"), '通话应提前录音保住句首，并照顾轻声慢说');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');

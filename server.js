@@ -333,6 +333,11 @@ app.get('/api/chat/voice/:id', (req, res) => {
 app.get('/api/chat/voice-stream/:id', async (req, res) => {
   const m = mw.chat.getMessage(req.params.id);
   if (!m || m.sender !== 'cy' || !m.voice_stream || !m.content) return res.status(404).json({ error: '找不到这条流式语音' });
+  // 页面拿到旧消息后后台可能刚好缓存完成：直接转到完整 MP3，不再重复生成。
+  if (m.voice_id && getVoiceFilePath(m.voice_id)) {
+    const token = req.query.token ? `?token=${encodeURIComponent(String(req.query.token))}` : '';
+    return res.redirect(302, `/api/voice/${encodeURIComponent(m.voice_id)}/audio${token}`);
+  }
   try { await streamSpeech(m.content, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
 app.get('/api/moment', (req, res) => res.json(mw.moments.getMoment(req.query.date)));

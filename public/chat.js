@@ -161,7 +161,7 @@
   // ---------- 语音条（照微信）：`)))  12″`，越长条越长；点一下播放，再点停；「转文字」在条外面 ----------
   // 棋子录的走 /api/chat/voice，辞的语音回复（m.voice_id）走 speak 那套；两种长得一样。
   const isVoice = m => m.type === 'voice' || (m.sender === 'cy' && (!!m.voice_id || m.voice_stream));
-  const voiceSrc = m => m.type === 'voice' ? apiUrl('/api/chat/voice/' + m.id) : m.voice_stream ? apiUrl('/api/chat/voice-stream/' + m.id) : MW.audioUrl(m.voice_id);
+  const voiceSrc = m => m.type === 'voice' ? apiUrl('/api/chat/voice/' + m.id) : m.voice_id ? MW.audioUrl(m.voice_id) : apiUrl('/api/chat/voice-stream/' + m.id);
   const voiceText = m => m.type === 'voice'
     ? (m.transcript_status === 'pending' ? '转写中…' : m.transcript || (m.transcript_status === 'failed' ? '没转出文字' : '（没听清）'))
     : m.content;
@@ -180,7 +180,7 @@
     const open = !!expanded['v' + m.id];
     const dot = isAi && !played.has(m.id) ? '<i class="cx-vdot"></i>' : '';
     return `<div class="cx-vrow">
-        <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : m.voice_stream ? '播放' : '…'}</span></div>
+        <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : m.voice_stream && !m.voice_id ? '准备中' : '…'}</span></div>
         <button class="cx-vt-btn" data-act="vt">${open ? '收起' : '转文字'}</button>${dot}
       </div><div class="cx-voice-text"${open ? '' : ' hidden'}>${esc(voiceText(m))}</div>`;
   }
@@ -188,7 +188,7 @@
   function probeDurations(scope) {
     (scope || document).querySelectorAll('.cx-vdur').forEach(n => {
       if (!n.textContent.startsWith('…')) return;
-      const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || m.voice_stream || durCache[m.id] !== undefined) return;
+      const item = n.closest('.cx-item'); const m = item && byId.get(item.dataset.id); if (!m || (m.voice_stream && !m.voice_id) || durCache[m.id] !== undefined) return;
       durCache[m.id] = 0;
       const a = new Audio(); a.preload = 'metadata';
       a.onloadedmetadata = () => {
