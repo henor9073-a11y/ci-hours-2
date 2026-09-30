@@ -200,15 +200,23 @@
     });
   }
   const player = new Audio();
-  let playingId = null;
+  let playingId = null, playPending = false, playAttempt = 0;
   function togglePlay(m, bub) {
     document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing'));
+    if (playingId === m.id && playPending) return; // 流式音频还在起播，重复点会把前一次 abort 掉
     if (playingId === m.id && !player.paused) { player.pause(); playingId = null; return; }
+    const attempt = ++playAttempt;
     playingId = m.id;
+    playPending = true; bub.classList.add('playing');
     player.src = voiceSrc(m);
-    player.play().then(() => { bub.classList.add('playing'); markPlayed(m.id); }).catch(e => { hint('放不出来：' + (e.message || e)); playingId = null; });
+    player.play().then(() => { if (attempt !== playAttempt) return; playPending = false; bub.classList.add('playing'); markPlayed(m.id); }).catch(e => {
+      if (attempt !== playAttempt) return; playPending = false; playingId = null;
+      if (e && e.name === 'AbortError') return;
+      hint('放不出来：' + (e.message || e));
+    });
   }
-  player.onended = player.onpause = () => { document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
+  player.onended = () => { playPending = false; playingId = null; document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
+  player.onpause = () => { document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
   function ticks(m) {
     if (m.sender !== 'nor') return '';
     return m.read ? '<span class="cx-tick read" title="辞已读">✓✓</span>' : '<span class="cx-tick" title="已发出">✓</span>';

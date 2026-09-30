@@ -1070,8 +1070,10 @@ try {
     assert.ok(call.includes('needsAudioUnlock') && call.includes("addEventListener('pointerdown'") && call.includes("addEventListener('touchstart'") && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须用稳定外层接住触摸并持久显示按钮');
     assert.ok(call.includes('提前开启声音') && call.includes('声音已开启') && call.includes('CALL.enableSound()'), '辞说话前要能主动开启通话声音');
     assert.ok(call.includes('playKeeper') && call.includes('decodeAudioData') && call.includes('createBufferSource'), '手机只授权一次，后续每句话复用常驻 Web Audio 通道');
+    assert.ok(call.includes('callAudioQueue') && call.includes('queuePlay(e.id)') && call.includes('now - loudSince < 600'), '通话语音要排队播放，短促扬声器回声不能掐掉辞');
+    assert.ok(chat.includes('playPending') && chat.includes("e.name === 'AbortError'"), '留言流式语音加载中不能被重复点按 abort，也不能把取消误报成损坏');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
-    assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes('> .018'), '通话应提前录音保住句首，并照顾轻声慢说');
+    assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? .045 : .018"), '通话应提前录音保住句首，并照顾轻声慢说');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
     assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
     const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');

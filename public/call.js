@@ -9,9 +9,10 @@
   const look = () => { try { return { ...DEFLOOK, ...JSON.parse(localStorage.getItem('muwen-call-look') || '{}') }; } catch { return { ...DEFLOOK }; } };
   const saveLook = x => { localStorage.setItem('muwen-call-look', JSON.stringify(x)); paintLook(); };
   let state = null, seen = new Set(), minimized = false, muted = false, timer = null, tickTimer = null, lastUnlockAt = 0;
-  let stream = null, ctx = null, analyser = null, detector = null, recorder = null, speechAt = 0, captureStartedAt = 0, micStopping = false;
+  let stream = null, ctx = null, analyser = null, detector = null, recorder = null, speechAt = 0, captureStartedAt = 0, micStopping = false, loudSince = 0;
   let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
   let playCtx = null, playGain = null, playKeeper = null, voiceSource = null;
+  let voicePlaying = false, callAudioQueue = Promise.resolve();
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
   let audioUnlocked = false;
@@ -87,12 +88,15 @@
       const next = await rest('/api/call/state'); state = next;
       for (const e of next.events || []) {
         if (seen.has(e.id)) continue; seen.add(e.id);
-        if (e.type === 'utterance' && e.by === 'cy') { subtitle.push(e.text); if (next.settings.subtitles !== false) paint(); play(e.id); }
+        if (e.type === 'utterance' && e.by === 'cy') { subtitle.push(e.text); if (next.settings.subtitles !== false) paint(); queuePlay(e.id); }
       }
       const c = next.call;
       if (c && c.status === 'active' && !stream) startMic();
       await paint();
     } catch { /* 下一轮重连 */ }
+  }
+  function queuePlay(id) {
+    callAudioQueue = callAudioQueue.then(() => play(id)).catch(() => {});
   }
   async function play(id) {
     if (audioUnlocked && playCtx) {
@@ -100,16 +104,20 @@
         if (playCtx.state !== 'running') await playCtx.resume();
         const r = await fetch(apiUrl('/api/call/audio/' + id)); if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const decoded = await playCtx.decodeAudioData(await r.arrayBuffer());
-        if (voiceSource) try { voiceSource.stop(); } catch {}
         voiceSource = playCtx.createBufferSource(); voiceSource.buffer = decoded; voiceSource.connect(playGain); voiceSource.start();
-        needsAudioUnlock = false; paint(); return;
+        voicePlaying = true; needsAudioUnlock = false; paint();
+        await new Promise(resolve => { voiceSource.onended = resolve; }); voicePlaying = false; return;
       } catch (e) {
         if (playCtx.state === 'suspended') { audioUnlocked = false; needsAudioUnlock = true; paint(); return; }
         subtitle.push('这一句声音生成失败'); paint(); return;
       }
     }
     audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
-    try { await audio.play(); needsAudioUnlock = false; paint(); }
+    try {
+      await audio.play(); voicePlaying = true; needsAudioUnlock = false; paint();
+      await new Promise(resolve => { const done=()=>{audio.removeEventListener('ended',done);audio.removeEventListener('error',done);audio.removeEventListener('pause',done);resolve()}; audio.addEventListener('ended',done);audio.addEventListener('error',done);audio.addEventListener('pause',done); });
+      voicePlaying = false;
+    }
     catch {
       needsAudioUnlock = true;
       if (subtitle.at(-1) !== '声音被手机拦住了，点一下“开启声音”') subtitle.push('声音被手机拦住了，点一下“开启声音”');
@@ -126,11 +134,15 @@
       detector = setInterval(() => {
         if (muted || !state || !state.call || state.call.status !== 'active') return;
         analyser.getByteTimeDomainData(data); let sum = 0; for (const v of data) { const x = (v - 128) / 128; sum += x * x; }
-        const loud = Math.sqrt(sum / data.length) > .018, now = Date.now();
+        const level = Math.sqrt(sum / data.length), now = Date.now();
+        const loud = level > (voicePlaying ? .045 : .018);
         if (loud) {
+          if (!loudSince) loudSince = now;
+          // 辞播放时要持续较响 0.6 秒才算真的插话，短促回声不再掐掉他的声音。
+          if (voicePlaying && (state.settings.interrupt === false || now - loudSince < 600)) return;
           speechAt = now;
           if (!speaking && recorder && recorder.state === 'recording') { speaking = true; audio.pause(); if (voiceSource) try { voiceSource.stop(); } catch {} }
-        }
+        } else loudSince = 0;
         if (speaking && !loud && now - speechAt >= (state.pause_ms || 1500)) { speaking = false; if (recorder && recorder.state === 'recording') { recorder._send = true; recorder.stop(); } }
         // 空闲时每四秒换一段，始终保留本轮开口前最多四秒，避免吞掉句首又不无限积累静音。
         if (!speaking && !loud && recorder && recorder.state === 'recording' && now - captureStartedAt > 4000) { recorder._send = false; recorder.stop(); }
