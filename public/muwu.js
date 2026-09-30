@@ -237,7 +237,7 @@ async function loadChatCard() {
   try {
     const last = (await rest('/api/chat?limit=1'))[0];
     if (!last) return;
-    const who = last.sender === 'cy' ? '辞' : '我';
+    const who = last.sender === 'cy' ? '辞' : '棋子';
     const txt = last.type === 'voice' ? '[语音]' : last.type === 'image' ? '[图片]' : last.type === 'pat' ? '[拍一拍]' : oneLine(last.content);
     n.textContent = `${who}：${txt.slice(0, 16)}`;
   } catch {}
@@ -252,8 +252,9 @@ function openKissDetail() {
 const CUSTOM_TARGETS = [
   ['album', '相册', '册', 'openAlbum()'], ['fishing', '钓鱼', '鱼', 'openFishing()'], ['schedule', '日程', '程', 'openSchedule()'],
   ['songs', '歌单', '歌', 'openSongs()'], ['voice', '语音', '语', 'openVoice()'], ['shelf', '书架', '书', 'openShelf()'],
-  ['push', '推送历史', '推', 'openPushHistory()'], ['sleep', '睡眠', '眠', 'openSleep()'], ['cycle', '生理期', '期', 'openCycle()'],
-  ['health', '身体状况', '健', 'openHealth()'], ['phone', '手机活动', '机', 'openPhone()'], ['calendar', '日历', '历', "switchPage('life')"]
+  ['push', '推送历史', '推', 'openPushHistory()'], ['health', '健康', '健', 'openHealthHub()'],
+  ['diary', '日记', '记', 'openDiary()'], ['wheel', '转盘', '转', 'openWheels()'], ['board', '留言板', '贴', 'openMessageBoard()'],
+  ['phone', '手机活动', '机', 'openPhone()'], ['calendar', '日历', '历', "switchPage('life')"]
 ];
 function homeShortcuts() {
   try {
@@ -437,10 +438,13 @@ async function loadLife() {
   rest('/api/push-history?limit=1').then(p => $('#l-push').textContent = p.length ? `最近：${oneLine(p[0].title)}` : '还没推过').catch(() => {});
   loadMuwuCal();
   rest('/api/schedule').then(s => $('#l-sched').textContent = `${s.filter(x => x.status === 'pending').length} 条待办`).catch(() => $('#l-sched').textContent = '—');
-  rest('/api/health/sleep').then(s => $('#l-sleep').textContent = s.length ? `昨晚 ${s[0].sleepTime}→${s[0].wakeTime}` : '还没记').catch(() => {});
-  rest('/api/health/cycle').then(c => { $('#l-cycle').textContent = cycleStatus(c).short; }).catch(() => {});
-  // 健康备注是"某天记过什么"，不是当前状态——带上日期，免得一条旧的看起来像今天的
-  rest('/api/health/notes').then(n => $('#l-health').textContent = n.length ? `${n[0].date}：${oneLine(n[0].text).slice(0, 22)}` : '还没记').catch(() => {});
+  Promise.all([rest('/api/health/sleep'), rest('/api/health/cycle'), rest('/api/health/notes')]).then(([s, c, n]) => {
+    const bits = [];
+    if (s.length) bits.push(`睡眠 ${s[0].hours || '?'}h`);
+    if (c.length) bits.push(cycleStatus(c).ongoing ? '生理期进行中' : '生理期已记录');
+    if (n.length) bits.push('身体有记录');
+    $('#l-health').textContent = bits.join(' · ') || '睡眠 · 生理期 · 身体状况';
+  }).catch(() => {});
   rest('/api/shelf').then(b => $('#l-shelf').textContent = `${b.length} 本`).catch(() => {});
   rest('/api/songs').then(x => $('#l-songs').textContent = `${x.length} 首`).catch(() => {});
   rest('/api/voice/history?limit=1').then(v => $('#l-voice').textContent = v.length ? `最近：${oneLine(v[0].text).slice(0, 18)}` : '还没说过话').catch(() => $('#l-voice').textContent = '—');
@@ -504,6 +508,30 @@ async function openSchedule() {
     const s = await rest('/api/schedule?includeInactive=1');
     sheetSet(s.length ? s.map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.date)} ${esc(x.time)}</span><span class="tag plain">${x.status === 'done' ? '已完成' : x.status === 'removed' ? '已移除' : '待办'}</span></div><div class="entry-body">${esc(x.text)}</div></div>`).join('') : '<div class="empty">没有日程</div>');
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function openHealthHub() {
+  openSheet('健康', `<div class="life-icon-grid" style="margin-top:8px">
+    <div class="lc tap" onclick="openSleep()"><div class="lc-i" data-icon="sleep">眠</div><div class="lc-l">睡眠</div><div class="lc-s">睡眠时长与记录</div></div>
+    <div class="lc tap" onclick="openCycle()"><div class="lc-i" data-icon="cycle">期</div><div class="lc-l">生理期</div><div class="lc-s">周期与预计日期</div></div>
+    <div class="lc tap" onclick="openHealth()"><div class="lc-i" data-icon="health">身</div><div class="lc-l">身体状况</div><div class="lc-s">不舒服与身体备注</div></div>
+  </div>`);
+  applyIcons();
+}
+const DIARY_NAMES = { diary: '辞的日记', wife_observation: '妻子观察日记' };
+const diaryCache = {};
+function openDiary(book) {
+  openSheet('日记', `<div class="chip-row" id="dy-tabs" style="margin:6px 0 10px"><div class="chip" data-book="diary" onclick="showDiaryBook('diary')">辞的日记</div><div class="chip" data-book="wife_observation" onclick="showDiaryBook('wife_observation')">妻子观察日记</div></div><div id="dy-list"></div>`);
+  showDiaryBook(book || 'diary');
+}
+async function showDiaryBook(book) {
+  document.querySelectorAll('#dy-tabs [data-book]').forEach(n => n.classList.toggle('on', n.dataset.book === book));
+  const list = $('#dy-list'); if (!list) return;
+  list.innerHTML = diaryCache[book] || '<div class="loading">读取中…</div>';
+  try {
+    const ds = await rest('/api/diary?category=' + encodeURIComponent(book));
+    const html = ds.length ? ds.map(x => `<article class="entry"><div class="entry-head"><span>${esc(x.date || fmtDate(x.at))}</span><span>${esc(fmtTime(x.at || x.date))}</span></div><div class="entry-body" style="white-space:pre-wrap">${esc(x.text)}</div></article>`).join('') : `<div class="empty">还没有${esc(DIARY_NAMES[book])}</div>`;
+    diaryCache[book] = html; list.innerHTML = html;
+  } catch (e) { list.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 async function openSleep() {
   sheetLoading('睡眠');
@@ -586,6 +614,64 @@ async function openHealth() {
     sheetSet(n.length ? n.map(x => `<div class="entry"><div class="entry-head">${esc(x.date)}</div><div class="entry-body">${esc(x.text)}</div></div>`).join('') : '<div class="empty">还没记</div>');
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
+async function postJSON(path, body, method = 'POST') {
+  return rest(path, { method, headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN }, body: JSON.stringify(body || {}) });
+}
+
+// ---------- 共享随机转盘 ----------
+let wheelDB = { wheels: [], history: [] }, wheelCurrent = '';
+async function openWheels(id) {
+  sheetLoading('转盘');
+  try { wheelDB = await rest('/api/wheels'); wheelCurrent = id || wheelCurrent || wheelDB.wheels[0]?.id || ''; renderWheels(); }
+  catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function wheelPalette(n) { const c = ['#efb2c5','#f4d7a9','#c8ddd4','#bfd0ea','#d9bee0','#f3c3b8','#c9dba9','#d2c7ef']; return Array.from({ length: n }, (_, i) => c[i % c.length]); }
+function renderWheels() {
+  const w = wheelDB.wheels.find(x => x.id === wheelCurrent);
+  sheetSet(`<div class="wheel-top"><select onchange="wheelCurrent=this.value;renderWheels()">${wheelDB.wheels.map(x => `<option value="${x.id}"${x.id===wheelCurrent?' selected':''}>${esc(x.name)}</option>`).join('')}</select><button class="btn" onclick="openWheelEditor()">＋ 新建</button></div>
+    ${w ? `<div class="wheel-stage card"><div class="real-wheel" id="real-wheel" style="--segments:${w.options.length};background:conic-gradient(${wheelPalette(w.options.length).map((c,i)=>`${c} ${i*360/w.options.length}deg ${(i+1)*360/w.options.length}deg`).join(',')})">${w.options.map((o,i)=>`<span style="transform:rotate(${(i+.5)*360/w.options.length}deg) translateY(-92px) rotate(${-(i+.5)*360/w.options.length}deg)">${esc(o)}</span>`).join('')}<i>转</i></div><div class="wheel-pointer"></div><button class="btn wheel-spin" onclick="doWheelSpin('${w.id}')">转一次</button><div id="wheel-result" class="wheel-result">2～20 个选项 · 棋子和辞都可以转</div><button class="link-btn" onclick="openWheelEditor('${w.id}')">编辑选项</button></div>` : '<div class="empty">还没有转盘，先新建一个吧</div>'}
+    <div class="section-title">全部历史</div><div>${wheelDB.history.length ? wheelDB.history.map(x => `<button class="wheel-history" onclick="openSpinHistory('${x.id}')"><span><b>${esc(x.wheel_name)}</b><small>${esc(x.by)} · ${esc(fmtTime(x.at))}</small></span><em>${esc(x.result)}</em><i>›</i></button>`).join('') : '<div class="empty">还没有转过</div>'}</div>`);
+}
+function openWheelEditor(id) {
+  const w = wheelDB.wheels.find(x => x.id === id);
+  openSheet(w ? '编辑转盘' : '新建转盘', `<div class="card"><label>名称</label><input id="wh-name" maxlength="40" value="${esc(w?.name || '')}" placeholder="比如：今晚吃什么"><label style="display:block;margin-top:12px">选项（每行一个，2～20 个）</label><textarea id="wh-options" style="min-height:220px">${esc((w?.options || []).join('\n'))}</textarea><div id="wh-msg" class="card-desc"></div><button class="btn" onclick="saveWheel('${id || ''}')">保存</button></div>`);
+}
+async function saveWheel(id) {
+  const body = { name: $('#wh-name').value.trim(), options: $('#wh-options').value.split('\n').map(x=>x.trim()).filter(Boolean), by: '棋子' };
+  try { const w = await postJSON(id ? `/api/wheels/${id}` : '/api/wheels', body); wheelCurrent = w.id; closeSheet(); sheetDrop(); openWheels(w.id); } catch (e) { $('#wh-msg').textContent = e.message; }
+}
+async function doWheelSpin(id) {
+  try { const x = await postJSON(`/api/wheels/${id}/spin`, { by: '棋子' }); const w = wheelDB.wheels.find(y=>y.id===id), n=w.options.length, angle=2160-(x.result_index+.5)*360/n; $('#real-wheel').style.transform=`rotate(${angle}deg)`; setTimeout(()=>{wheelDB.history.unshift(x);renderWheels();const result=$('#wheel-result');if(result)result.textContent=`结果：${x.result}`},1700); }
+  catch(e){ $('#wheel-result').textContent='没转成：'+e.message; }
+}
+function openSpinHistory(id) { const x=wheelDB.history.find(y=>y.id===id); if(!x)return; openSheet(x.wheel_name, `<div class="card"><div class="card-title">那次的答案：${esc(x.result)}</div><div class="card-desc">${esc(x.by)} · ${esc(fmtTime(x.at))}</div></div><div class="section-title">当时转盘里的全部选项</div><div class="chip-row">${x.options.map(o=>`<span class="chip${o===x.result?' on':''}">${esc(o)}</span>`).join('')}</div>`); }
+
+// ---------- 共享实体便签留言板 ----------
+let boardNotes = [], boardMode = localStorage.getItem('muwu-board-mode') || 'glass';
+function boardLook() { try { return JSON.parse(localStorage.getItem('muwu-board-look') || '{}'); } catch { return {}; } }
+function saveBoardLook(v) { localStorage.setItem('muwu-board-look', JSON.stringify(v)); }
+async function openMessageBoard() { sheetLoading('留言板'); try { boardNotes = await rest('/api/board-notes'); renderMessageBoard(); } catch(e){sheetSet(`<div class="err">${esc(e.message)}</div>`)} }
+function renderMessageBoard() {
+  const look=boardLook(), active=boardNotes.filter(x=>!x.archived), custom=look[boardMode+'Bg'], palettes={pink:['#f4d9e4','#dfcadf'],cream:['#fff4e7','#eadbcf'],lilac:['#e7def1','#d2c4e2'],blue:['#dceaf2','#ead9e4']},pc=palettes[look[boardMode+'Color']]||palettes.pink;
+  const bgStyle=custom?`--board-photo:url('${custom}')`:`background-image:linear-gradient(145deg,${pc[0]},${pc[1]})`;
+  sheetSet(`<div class="board-mode"><button class="${boardMode==='glass'?'on':''}" onclick="setBoardMode('glass')">磨砂玻璃</button><button class="${boardMode==='journal'?'on':''}" onclick="setBoardMode('journal')">手账</button></div><div class="shared-board ${boardMode}" id="shared-board" data-pattern="${esc(look.pattern||'plain')}" style="${bgStyle};--board-alpha:${(look.alpha??55)/100};--board-blur:${look.blur??14}px">${boardMode==='glass'?'<div class="glass-layer"></div>':'<div class="journal-fold"></div>'}${active.map(renderBoardNote).join('')}<button class="board-add" onclick="openNoteEditor()">＋ 写便签</button><button class="note-store ${boardMode==='glass'?'acrylic-store':'envelope-store'}" onclick="openNoteArchive()">${boardMode==='glass'?'旧便签抽屉':'封底信封袋'}<small>${boardNotes.length-active.length} 张</small></button><button class="board-tab" onclick="toggleBoardSettings()">外观</button><section class="board-settings" id="board-settings" hidden><b>${boardMode==='glass'?'玻璃板外观':'手账页面'}</b><div class="board-builtins">${['pink','cream','lilac','blue'].map(x=>`<button class="bg-${x}" onclick="setBoardBg('${x}')"></button>`).join('')}</div><label class="btn ghost">从相册选背景<input hidden type="file" accept="image/*" onchange="setBoardPhoto(this)"></label>${boardMode==='glass'?`<label>透明度 <output>${look.alpha??55}%</output></label><input type="range" min="10" max="90" value="${look.alpha??55}" oninput="setBoardRange('alpha',this)"><label>磨砂程度 <output>${look.blur??14}</output></label><input type="range" min="0" max="32" value="${look.blur??14}" oninput="setBoardRange('blur',this)">`:`<label>页面图案</label><div class="chip-row"><button class="chip" onclick="setJournalPattern('plain')">素纸</button><button class="chip" onclick="setJournalPattern('lines')">横线</button><button class="chip" onclick="setJournalPattern('dots')">圆点</button><button class="chip" onclick="setJournalPattern('floral')">碎花</button></div>`}<button class="link-btn" onclick="toggleBoardSettings()">收起</button></section></div>`);
+  enableBoardDrag();
+}
+function renderBoardNote(n){return `<article class="physical-note" data-note="${n.id}" style="left:${n.x}%;top:${n.y}%;background:${esc(n.color)};color:${esc(n.text_color)};font-size:${n.font_size}px;font-weight:${n.bold?'700':'400'};text-decoration:${n.underline?'underline':'none'}">${n.drawing?`<img src="${n.drawing}" alt="便签涂鸦">`:''}<div>${esc(n.text)}</div><footer>${esc(n.by)} · ${esc(fmtTime(n.created_at))}</footer><button onclick="event.stopPropagation();archiveNote('${n.id}')">撕下</button></article>`}
+function setBoardMode(m){boardMode=m;localStorage.setItem('muwu-board-mode',m);renderMessageBoard()}
+function toggleBoardSettings(){const x=$('#board-settings');x.hidden=!x.hidden}
+function setBoardBg(name){const colors={pink:['#f4d9e4','#dfcadf'],cream:['#fff4e7','#eadbcf'],lilac:['#e7def1','#d2c4e2'],blue:['#dceaf2','#ead9e4']},l=boardLook(),c=colors[name];l[boardMode+'Bg']='';l[boardMode+'Color']=name;saveBoardLook(l);const b=$('#shared-board');b.style.removeProperty('--board-photo');b.style.backgroundImage=`linear-gradient(145deg,${c[0]},${c[1]})`}
+function setBoardRange(k,input){const l=boardLook();l[k]=+input.value;saveBoardLook(l);input.previousElementSibling.querySelector('output').value=input.value+(k==='alpha'?'%':'');$('#shared-board').style.setProperty(k==='alpha'?'--board-alpha':'--board-blur',k==='alpha'?input.value/100:input.value+'px')}
+function setJournalPattern(p){const b=$('#shared-board');b.dataset.pattern=p;const l=boardLook();l.pattern=p;saveBoardLook(l)}
+function setBoardPhoto(input){const f=input.files?.[0];input.value='';if(!f)return;const img=new Image(),r=new FileReader();r.onload=()=>img.src=r.result;img.onload=()=>{const scale=Math.min(1,1200/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*scale);cv.height=Math.round(img.height*scale);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);const l=boardLook();l[boardMode+'Bg']=cv.toDataURL('image/jpeg',.76);try{saveBoardLook(l);renderMessageBoard()}catch{alert('图片太大，换一张尺寸小一点的')}};r.readAsDataURL(f)}
+function openNoteEditor(){openSheet('写便签',`<div class="card"><div class="chip-row"><button class="chip on" onclick="noteEditMode('text',this)">写文字</button><button class="chip" onclick="noteEditMode('draw',this)">画画</button></div><textarea id="bn-text" style="min-height:130px" placeholder="写点什么给辞吧…"></textarea><canvas id="bn-canvas" width="640" height="320" hidden></canvas><div class="note-format"><button id="bn-bold" onclick="this.classList.toggle('on')"><b>B</b></button><button id="bn-under" onclick="this.classList.toggle('on')"><u>U</u></button><label>字<input id="bn-text-color" type="color" value="#4b3d45"></label><label>纸<input id="bn-color" type="color" value="#fff1bd"></label><label>大小<input id="bn-size" type="range" min="11" max="30" value="16"></label></div><button class="btn" onclick="saveBoardNote()">贴到留言板</button><div id="bn-msg" class="card-desc"></div></div>`);setTimeout(initNoteCanvas,0)}
+function noteEditMode(m,btn){btn.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===btn));$('#bn-text').hidden=m==='draw';$('#bn-canvas').hidden=m!=='draw'}
+function initNoteCanvas(){const c=$('#bn-canvas');if(!c)return;const x=c.getContext('2d');x.lineWidth=8;x.lineCap='round';let d=false;c.onpointerdown=e=>{d=true;const r=c.getBoundingClientRect();x.beginPath();x.moveTo((e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height)};c.onpointermove=e=>{if(!d)return;const r=c.getBoundingClientRect();x.strokeStyle=$('#bn-text-color').value;x.lineTo((e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height);x.stroke()};c.onpointerup=()=>d=false}
+async function saveBoardNote(){const c=$('#bn-canvas');try{await postJSON('/api/board-notes',{text:$('#bn-text').value, drawing:c&&!c.hidden?c.toDataURL('image/png'):'',by:'棋子',x:10+Math.random()*42,y:10+Math.random()*45,color:$('#bn-color').value,text_color:$('#bn-text-color').value,font_size:+$('#bn-size').value,bold:$('#bn-bold').classList.contains('on'),underline:$('#bn-under').classList.contains('on')});closeSheet();sheetDrop();openMessageBoard()}catch(e){$('#bn-msg').textContent=e.message}}
+async function archiveNote(id){await postJSON(`/api/board-notes/${id}/archive`);boardNotes.find(x=>x.id===id).archived=true;renderMessageBoard()}
+function openNoteArchive(){const old=boardNotes.filter(x=>x.archived);openSheet('旧便签',old.length?old.map(x=>`<div class="entry"><div class="entry-head">${esc(x.by)} · ${esc(fmtTime(x.created_at))}</div><div class="entry-body">${esc(x.text)||'[涂鸦]'}</div><button class="btn ghost" onclick="restoreNote('${x.id}')">重新贴出</button></div>`).join(''):'<div class="empty">这里还没有旧便签</div>')}
+async function restoreNote(id){await postJSON(`/api/board-notes/${id}/restore`);closeSheet();sheetDrop();openMessageBoard()}
+function enableBoardDrag(){document.querySelectorAll('.physical-note').forEach(n=>{let sx,sy,l,t,d=false;n.onpointerdown=e=>{if(e.target.tagName==='BUTTON')return;d=true;sx=e.clientX;sy=e.clientY;l=n.offsetLeft;t=n.offsetTop;n.setPointerCapture(e.pointerId)};n.onpointermove=e=>{if(!d)return;n.style.left=l+e.clientX-sx+'px';n.style.top=t+e.clientY-sy+'px'};n.onpointerup=async()=>{if(!d)return;d=false;const b=$('#shared-board'),x=n.offsetLeft/b.clientWidth*100,y=n.offsetTop/b.clientHeight*100;await postJSON(`/api/board-notes/${n.dataset.note}`,{x,y})}})}
 async function openShelf() {
   sheetLoading('书架');
   try {
@@ -718,7 +804,7 @@ async function loadMuwuCal() {
     if ((row.daily || []).length) dots.push('<i></i>');
     if ((row.schedule || []).length) dots.push('<i style="background:var(--primary)"></i>');
     if (importantOn(ds)) dots.push('<i class="imp"></i>');
-    h += `<div class="cal-day${ds === td ? ' today' : ''}${ds === lcSel ? ' sel' : ''}" onclick="showMuwuDay('${ds}')">
+    h += `<div class="cal-day${ds === td ? ' today' : ''}${ds === lcSel ? ' sel' : ''}" data-date="${ds}" onclick="showMuwuDay('${ds}')">
       <span>${d}</span><span class="cal-moon">${MW.moon(ds).icon}</span>
       ${row.intimate ? '<span class="cal-heart">♥</span>' : ''}
       ${dots.length ? `<span class="cal-dots">${dots.join('')}</span>` : ''}</div>`;
@@ -729,6 +815,7 @@ async function loadMuwuCal() {
 async function showMuwuDay(ds) {
   lcSel = ds; loadMuwuCal.__skip || null;
   document.querySelectorAll('#lc-grid .cal-day').forEach(n => n.classList.remove('sel'));
+  const selected = document.querySelector(`#lc-grid .cal-day[data-date="${CSS.escape(ds)}"]`); if (selected) selected.classList.add('sel');
   const box = $('#lc-detail'); if (!box) return;
   const mo = MW.moon(ds);
   const anchors = ANCHORS.filter(a => (a.md && a.md === ds.slice(5)) || (a.date && a.date.slice(5) === ds.slice(5)));
@@ -1071,9 +1158,9 @@ async function renderAvatarMgmt() {
     <div style="font-size:13px">${w === 'cy' ? '辞' : '棋子'}</div><span class="link" onclick="openAvatarPicker('${w}')">换一张</span></div>`; }).join('');
 }
 // ---------- 图标：每个图标可以改字或换成图片（存本机，图片缩到 96px 存 dataURL）----------
-const ICON_KEYS = [['chat', '首页 · 留言', '聊'], ['kiss', '首页 · 亲亲', '亲'],
+const ICON_KEYS = [['chat', '首页 · 聊天', '聊'], ['kiss', '首页 · 亲亲', '亲'],
   ['fish', '生活 · 钓鱼', '鱼'], ['sched', '生活 · 日程', '程'], ['songs', '生活 · 歌单', '歌'], ['tools', '生活 · 工具', '具'], ['voice', '生活 · 语音', '语'], ['album', '生活 · 相册', '册'],
-  ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['sleep', '身体 · 睡眠', '眠'], ['cycle', '身体 · 生理期', '期'], ['health', '身体 · 身体状况', '健'],
+  ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['diary', '生活 · 日记', '记'], ['wheel', '生活 · 转盘', '转'], ['board', '生活 · 留言板', '贴'], ['health', '生活 · 健康', '健'],
   ['phone', '生活 · 手机活动', '机'], ['calendar', '生活 · 日历', '历']];
 function iconsCfg() { try { return JSON.parse(localStorage.getItem('muwu-icons') || '{}'); } catch { return {}; } }
 function saveIcons(c) { try { localStorage.setItem('muwu-icons', JSON.stringify(c)); } catch { alert('存不下了，图片太多，换小一点的'); } applyIcons(); }
@@ -1109,7 +1196,7 @@ function setIconImage(k, input) {
 }
 function resetIcon(k) { const c = iconsCfg(); delete c[k]; saveIcons(c); renderIcons(); location.reload(); }
 // ---------- 首页图标顺序 / 显示 ----------
-function homeLabels() { return Object.fromEntries([['chat', '给辞留言'], ['kiss', '亲亲记数'], ...CUSTOM_TARGETS.map(x => [x[0], x[1]])]); }
+function homeLabels() { return Object.fromEntries([['chat', '聊天'], ['kiss', '亲亲记数'], ...CUSTOM_TARGETS.map(x => [x[0], x[1]])]); }
 function homeOrder() {
   const keys = ['chat', 'kiss', ...homeShortcuts()];
   try { const saved = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return [...saved.filter(k => keys.includes(k)), ...keys.filter(k => !saved.includes(k))]; }

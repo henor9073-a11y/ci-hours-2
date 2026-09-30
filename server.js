@@ -32,6 +32,7 @@ import {
   addSleepEntry, getSleepEntries, updateSleepEntry, removeSleepEntry,
   addHealthNote, getHealthNotes, updateHealthNote, removeHealthNote
 } from './lib/health.js';
+import { getWheels, createWheel, updateWheel, removeWheel, spinWheel, getBoardNotes, createBoardNote, updateBoardNote, archiveBoardNote, restoreBoardNote } from './lib/shared-spaces.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 木纹：启动时把 ci-hours 的 memory.json 迁进 grains/profiles（只跑一次，旧文件原样保留当备份）
@@ -504,6 +505,17 @@ app.get('/api/diary', (req, res) => {
   try { res.json(getDiaryPublic(Number(req.query.limit) || 50, req.query.category || 'diary')); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+// ---- 木屋共享转盘与实体便签留言板 ----
+app.get('/api/wheels', (_, res) => res.json(getWheels()));
+app.post('/api/wheels', (req, res) => { try { res.json(createWheel(req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.post('/api/wheels/:id', (req, res) => { try { res.json(updateWheel(req.params.id, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.post('/api/wheels/:id/spin', (req, res) => { try { res.json(spinWheel(req.params.id, req.body?.by)); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.delete('/api/wheels/:id', (req, res) => { try { res.json(removeWheel(req.params.id)); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.get('/api/board-notes', (_, res) => res.json(getBoardNotes()));
+app.post('/api/board-notes', (req, res) => { try { res.json(createBoardNote(req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.post('/api/board-notes/:id', (req, res) => { try { res.json(updateBoardNote(req.params.id, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.post('/api/board-notes/:id/archive', (req, res) => { try { res.json(archiveBoardNote(req.params.id)); } catch (e) { res.status(400).json({ error: e.message }); } });
+app.post('/api/board-notes/:id/restore', (req, res) => { try { res.json(restoreBoardNote(req.params.id)); } catch (e) { res.status(400).json({ error: e.message }); } });
 // ---- 标签总表：前端所有分类名从这里读，跟后端 remember 的路由是同一份 ----
 app.get('/api/labels', (_, res) => res.json(publicLabels()));
 // ---- 棋子想说：轻量留言，辞不强制每条都回 ----

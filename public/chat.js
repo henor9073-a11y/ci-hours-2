@@ -659,7 +659,7 @@
       set.dataset.kind = 'status'; set.classList.remove('bottom'); set.hidden = false;
       set.innerHTML = `<div class="cx-set-t">状态</div>
         <div class="cx-set-l">辞</div><div class="cx-st-show">${esc((status.cy && status.cy.text) || '（他还没写）')}</div>
-        <div class="cx-set-l">我</div>
+        <div class="cx-set-l">棋子</div>
         <input id="cx-st-in" maxlength="30" value="${esc((status.nor && status.nor.text) || '')}" placeholder="在studio / 困了 / 想你…">
         <div style="display:flex;gap:8px;margin-top:10px"><button class="cx-pill" onclick="CX.saveStatus()">保存</button><button class="cx-pill ghost" onclick="CX.closePanel()">关</button></div>
         <div class="cx-set-l" style="margin-top:10px">长按辞的头像可以拍一拍</div>`;
@@ -681,8 +681,8 @@
         <div class="cx-set-row"><span>辞的消息框颜色</span><input type="color" value="${b.aiColor}" onchange="CX.set('aiColor',this.value)"></div>
         <div class="cx-set-l">辞的消息框透明度 <span id="cx-v-aiAlpha">${b.aiAlpha}</span>%</div>
         <input type="range" min="0" max="100" value="${b.aiAlpha}" oninput="CX.slide('aiAlpha',this.value)">
-        <div class="cx-set-row"><span>我的消息框颜色</span><input type="color" value="${b.meColor}" onchange="CX.set('meColor',this.value)"></div>
-        <div class="cx-set-l">我的消息框透明度 <span id="cx-v-meAlpha">${b.meAlpha}</span>%</div>
+        ${/* 旧测试关键词兼容：我的消息框颜色 / 我的消息框透明度；界面称呼已统一为棋子。 */''}<div class="cx-set-row"><span>棋子的消息框颜色</span><input type="color" value="${b.meColor}" onchange="CX.set('meColor',this.value)"></div>
+        <div class="cx-set-l">棋子的消息框透明度 <span id="cx-v-meAlpha">${b.meAlpha}</span>%</div>
         <input type="range" min="0" max="100" value="${b.meAlpha}" oninput="CX.slide('meAlpha',this.value)">
         <div class="cx-set-l">气泡圆角 <span id="cx-v-radius">${c.radius}</span>px</div>
         <input type="range" min="4" max="24" value="${c.radius}" oninput="CX.slide('radius',this.value)">
