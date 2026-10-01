@@ -429,8 +429,9 @@ async function toolsStatus() {
   // 服务器自己 + 它靠的几把钥匙
   push('木纹 / 木屋', '木纹（这台服务器）', 'on', `运行 ${Math.round(process.uptime() / 60)} 分钟`);
   push('木纹 / 木屋', 'Anthropic（召回/语义）', process.env.ANTHROPIC_API_KEY ? 'on' : 'unset', process.env.ANTHROPIC_API_KEY ? `模型 ${process.env.MUWEN_RECALL_MODEL || 'claude-opus-5'}` : '没配 key，召回走关键词');
-  const voiceModel = process.env.ELEVENLABS_MODEL_ID || 'eleven_v3';
-  const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);
+  const voiceModel = process.env.ELEVENLABS_MESSAGE_MODEL_ID || 'eleven_v3';
+  const legacyCallModel = process.env.ELEVENLABS_MODEL_ID;
+  const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || legacyCallModel || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);
   push('木纹 / 木屋', 'ElevenLabs（语音）', process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID ? 'on' : 'unset', process.env.ELEVENLABS_VOICE_ID ? `声音 ${process.env.ELEVENLABS_VOICE_ID.slice(0, 8)}… · 留言 ${voiceModel} · 通话 ${callModel}` : '');
   push('木纹 / 木屋', 'Bark（推手机）', process.env.BARK_KEY ? 'on' : 'unset');
   const sb = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
