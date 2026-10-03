@@ -1051,9 +1051,13 @@ try {
     assert.ok(chat.includes('cx-sheet-drag') && css.includes('.cx-sheet.expanded'), '思考层要能上拉展开');
     assert.ok(!muwu.includes("addEventListener('touchstart'"), '木屋不再使用左右滑动翻页');
     assert.ok(!html.includes('日期音乐') && !muwu.includes('loadDateMusic'), '首页不再显示日期音乐');
-    assert.ok(muwu.includes('homeShortcuts') && muwu.includes('a.length < 6'), '首页快捷图标总数上限为 8');
-    assert.ok(muwu.includes('setWallpaperFile') && html.includes('从相册选择'), '壁纸要能从相册导入');
     const homeStart = html.indexOf('id="page-home"'), lifeStart = html.indexOf('id="page-life"');
+    assert.ok(muwu.includes('homeShortcuts') && muwu.includes('a.length < 5'), '首页固定三个 App 后，快捷图标总数上限仍为 8');
+    const settingsStart = html.indexOf('id="page-settings"');
+    assert.ok(html.indexOf('data-key="workbench"') > homeStart && html.indexOf('data-key="workbench"') < lifeStart, '换窗工作台应该是首页桌面 App');
+    assert.ok(!html.slice(settingsStart).includes('onclick="openWindowWorkbench()"'), '设置页不该再放换窗工作台入口');
+    assert.ok(muwu.includes('const wwOpenHistory = new Set()') && muwu.includes("wwOpenHistory.has(j.id)"), '交接简报展开状态应跨轮询刷新保留');
+    assert.ok(muwu.includes('setWallpaperFile') && html.includes('从相册选择'), '壁纸要能从相册导入');
     const countdownAt = html.indexOf('id="h-countdowns"');
     assert.ok(countdownAt > homeStart && countdownAt < lifeStart, '倒数日应该在首页，不在生活页');
     assert.ok(theme.includes('chromeAlpha') && muwu.includes('顶栏 / 导航透明度'), '顶栏和导航透明度要能调');

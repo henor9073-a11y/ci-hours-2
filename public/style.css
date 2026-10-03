@@ -550,6 +550,5 @@ body.chat-open > .header { display: none; }
 .ww-range { margin-top:7px; padding:8px 10px; border-radius:10px; background:color-mix(in srgb,var(--primary-light) 42%,transparent); }
 .ww-range summary { cursor:pointer; color:var(--text-secondary); }
 .ww-empty { color:var(--text-light); margin-top:5px; }
-.ww-history { cursor:pointer; }
-.ww-history .link { margin-top:6px; font-size:12px; }
+.ww-history-toggle { display:block; margin-top:6px; padding:0; border:0; background:none; font:inherit; font-size:12px; cursor:pointer; }
 @media (max-width:370px) { .ww-packet-grid { grid-template-columns:1fr; } .ww-meta { grid-template-columns:1fr; } }

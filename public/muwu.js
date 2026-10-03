@@ -250,7 +250,7 @@ function openKissDetail() {
     <div class="card-desc" style="text-align:center;margin-top:6px">还差 ${w.remaining}${w.last ? ` · 上次记于 ${esc(w.last.date)}（${w.last.kiss_count} 次）` : ''}</div>
     <div class="card-desc" style="margin-top:12px">来源：每日总结里的 kiss_count 累计${w.baseline ? ` + 起始 ${w.baseline}` : ''}，一共记了 ${w.counted_days || 0} 天。</div></div>`);
 }
-// 首页快捷入口：固定两枚（留言、亲亲）之外，可从生活页再选最多六枚，总数不超过 8。
+// 首页快捷入口：固定三枚（聊天、亲亲、换窗）之外，可从生活页再选最多五枚，总数不超过 8。
 const CUSTOM_TARGETS = [
   ['album', '相册', '册', 'openAlbum()'], ['fishing', '钓鱼', '鱼', 'openFishing()'], ['schedule', '日程', '程', 'openSchedule()'],
   ['songs', '歌单', '歌', 'openSongs()'], ['voice', '语音', '语', 'openVoice()'], ['shelf', '书架', '书', 'openShelf()'],
@@ -264,10 +264,10 @@ function homeShortcuts() {
     if (!Array.isArray(a)) a = [];
     const old = localStorage.getItem('muwu-home-custom');
     if (old && !a.includes(old)) { a.push(old); localStorage.removeItem('muwu-home-custom'); }
-    return [...new Set(a)].filter(k => CUSTOM_TARGETS.some(x => x[0] === k)).slice(0, 6);
+    return [...new Set(a)].filter(k => CUSTOM_TARGETS.some(x => x[0] === k)).slice(0, 5);
   } catch { return []; }
 }
-function saveHomeShortcuts(a) { try { localStorage.setItem('muwu-home-shortcuts', JSON.stringify(a.slice(0, 6))); } catch {} }
+function saveHomeShortcuts(a) { try { localStorage.setItem('muwu-home-shortcuts', JSON.stringify(a.slice(0, 5))); } catch {} }
 function paintHomeShortcuts() {
   const grid = document.querySelector('#page-home .fn-grid'); if (!grid) return;
   grid.querySelectorAll('.home-shortcut').forEach(n => n.remove());
@@ -283,12 +283,12 @@ function paintHomeShortcuts() {
 }
 function pickCustomBlock() {
   const selected = homeShortcuts();
-  openSheet('管理首页图标', `<div class="card-desc" style="margin:6px 4px 10px">已选 ${selected.length + 2}/8。点一下添加或移除。</div>` +
+  openSheet('管理首页图标', `<div class="card-desc" style="margin:6px 4px 10px">已选 ${selected.length + 3}/8。点一下添加或移除。</div>` +
     CUSTOM_TARGETS.map(x => `<div class="card tap" onclick="toggleHomeShortcut('${x[0]}')"><div class="card-row"><div class="card-icon${selected.includes(x[0]) ? ' accent' : ''}">${x[2]}</div><div class="card-title" style="flex:1">${x[1]}</div><span class="link">${selected.includes(x[0]) ? '移除' : '添加'}</span></div></div>`).join(''));
 }
 function toggleHomeShortcut(k) {
   const a = homeShortcuts(), i = a.indexOf(k);
-  if (i >= 0) a.splice(i, 1); else if (a.length < 6) a.push(k); else return;
+  if (i >= 0) a.splice(i, 1); else if (a.length < 5) a.push(k); else return;
   saveHomeShortcuts(a); paintHomeShortcuts(); sheetDrop(); pickCustomBlock(); if (setLoaded) renderHomeOrder();
 }
 
@@ -1106,6 +1106,7 @@ async function addWake() {
 // ================= 换窗工作台 =================
 let wwTimer = null;
 let wwDraft = { mode: 'handoff', model: 'claude-opus-4-6[1m]', thinking_display: 'summarized' };
+const wwOpenHistory = new Set();
 
 async function wwRequest(path, method = 'GET', body) {
   const r = await fetch(MW.apiUrl(path), {
@@ -1171,7 +1172,10 @@ function wwRender(data, node) {
       <div class="card-desc">真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。完成或失败都会 Bark 提醒。</div></div>`;
   }
   const history = data.history || [];
-  if (history.length) h += `<div class="section-title">最近记录</div>${history.slice(0, 6).map(j => `<div class="entry ww-history" onclick="wwHistory('${j.id}')"><div class="entry-head"><b>${j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : '连续换窗'}</b><span class="tag plain">${esc(wwJobName(j.status))}</span></div><div class="card-desc">${esc(fmtTime(j.requested_at))} · ${esc(j.model || '')}</div>${j.packet_preview ? '<div class="link">查看当时的交接简报 ›</div>' : ''}<div id="ww-h-${j.id}"></div></div>`).join('')}`;
+  if (history.length) h += `<div class="section-title">最近记录</div>${history.slice(0, 6).map(j => {
+    const open = wwOpenHistory.has(j.id);
+    return `<div class="entry ww-history"><div class="entry-head"><b>${j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : '连续换窗'}</b><span class="tag plain">${esc(wwJobName(j.status))}</span></div><div class="card-desc">${esc(fmtTime(j.requested_at))} · ${esc(j.model || '')}</div>${j.packet_preview ? `<button class="link ww-history-toggle" onclick="wwHistory(event,'${j.id}')">${open ? '收起交接简报⌃' : '查看当时的交接简报 ›'}</button>` : ''}<div id="ww-h-${j.id}">${open ? wwPacket(j.packet_preview) : ''}</div></div>`;
+  }).join('')}`;
   node.innerHTML = h; node._wwData = data;
 }
 async function wwRefresh(showLoading = false) {
@@ -1195,10 +1199,15 @@ async function wwCancel(id) {
   try { await wwRequest(`/api/window-workbench/jobs/${encodeURIComponent(id)}/cancel`, 'POST', {}); await wwRefresh(false); }
   catch (e) { alert('取消失败：' + e.message); }
 }
-function wwHistory(id) {
+function wwHistory(event, id) {
+  if (event) event.stopPropagation();
   const layer = sheetStack[sheetStack.length - 1], data = layer && layer.node && layer.node._wwData;
   const job = data && (data.history || []).find(x => x.id === id), target = byId('ww-h-' + id);
-  if (!job || !target) return; target.innerHTML = target.innerHTML ? '' : wwPacket(job.packet_preview);
+  if (!job || !target) return;
+  if (wwOpenHistory.has(id)) wwOpenHistory.delete(id); else wwOpenHistory.add(id);
+  target.innerHTML = wwOpenHistory.has(id) ? wwPacket(job.packet_preview) : '';
+  const button = target.parentElement && target.parentElement.querySelector('.ww-history-toggle');
+  if (button) button.textContent = wwOpenHistory.has(id) ? '收起交接简报⌃' : '查看当时的交接简报 ›';
 }
 
 // ================= 设 =================
@@ -1260,7 +1269,7 @@ async function renderAvatarMgmt() {
     <div style="font-size:13px">${w === 'cy' ? '辞' : '棋子'}</div><span class="link" onclick="openAvatarPicker('${w}')">换一张</span></div>`; }).join('');
 }
 // ---------- 图标：每个图标可以改字或换成图片（存本机，图片缩到 96px 存 dataURL）----------
-const ICON_KEYS = [['chat', '首页 · 聊天', '聊'], ['kiss', '首页 · 亲亲', '亲'],
+const ICON_KEYS = [['chat', '首页 · 聊天', '聊'], ['kiss', '首页 · 亲亲', '亲'], ['workbench', '首页 · 换窗工作台', '窗'],
   ['fish', '生活 · 钓鱼', '鱼'], ['sched', '生活 · 日程', '程'], ['songs', '生活 · 歌单', '歌'], ['tools', '生活 · 工具', '具'], ['voice', '生活 · 语音', '语'], ['album', '生活 · 相册', '册'],
   ['shelf', '生活 · 书架', '书'], ['push', '生活 · 推送历史', '推'], ['diary', '生活 · 日记', '记'], ['wheel', '生活 · 转盘', '转'], ['board', '生活 · 留言板', '贴'], ['health', '生活 · 健康', '健'],
   ['phone', '生活 · 手机活动', '机'], ['calendar', '生活 · 日历', '历']];
@@ -1298,14 +1307,14 @@ function setIconImage(k, input) {
 }
 function resetIcon(k) { const c = iconsCfg(); delete c[k]; saveIcons(c); renderIcons(); location.reload(); }
 // ---------- 首页图标顺序 / 显示 ----------
-function homeLabels() { return Object.fromEntries([['chat', '聊天'], ['kiss', '亲亲记数'], ...CUSTOM_TARGETS.map(x => [x[0], x[1]])]); }
+function homeLabels() { return Object.fromEntries([['chat', '聊天'], ['kiss', '亲亲记数'], ['workbench', '换窗工作台'], ...CUSTOM_TARGETS.map(x => [x[0], x[1]])]); }
 function homeOrder() {
-  const keys = ['chat', 'kiss', ...homeShortcuts()];
+  const keys = ['chat', 'kiss', 'workbench', ...homeShortcuts()];
   try { const saved = JSON.parse(localStorage.getItem('muwu-home-order') || '[]'); return [...saved.filter(k => keys.includes(k)), ...keys.filter(k => !saved.includes(k))]; }
   catch { return keys; }
 }
 function homeHidden() {
-  const allowed = new Set(['chat', 'kiss', ...homeShortcuts()]);
+  const allowed = new Set(['chat', 'kiss', 'workbench', ...homeShortcuts()]);
   try { return new Set(JSON.parse(localStorage.getItem('muwu-home-hidden') || '[]').filter(k => allowed.has(k))); } catch { return new Set(); }
 }
 function applyHomeOrder() {
