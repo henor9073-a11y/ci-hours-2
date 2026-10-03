@@ -44,6 +44,8 @@ function openSheet(t, h) {
 // 扔掉最上面一层（不负责显示下一层）——"关掉这层马上重开同一种"的地方用
 function sheetDrop() { const s = sheetStack.pop(); if (s && s.node) s.node.remove(); return s; }
 function closeSheet() {
+  const closing = sheetStack[sheetStack.length - 1];
+  if (closing && closing.t === '换窗工作台' && wwTimer) { clearInterval(wwTimer); wwTimer = null; }
   sheetDrop();
   const s = sheetStack[sheetStack.length - 1];
   if (s) showLayer(s); else $('#sheet').classList.remove('open');
@@ -1099,6 +1101,104 @@ async function addWake() {
   $('#wk-msg').textContent = '…';
   try { const r = await mcp('add_wake_time', { slot, why: $('#wk-why').value.trim() }); $('#wk-msg').textContent = r.ok ? `加好了：${slot}` : (r.message || '没加成'); }
   catch (e) { $('#wk-msg').textContent = '失败：' + e.message; }
+}
+
+// ================= 换窗工作台 =================
+let wwTimer = null;
+let wwDraft = { mode: 'handoff', model: 'claude-opus-4-6[1m]', thinking_display: 'summarized' };
+
+async function wwRequest(path, method = 'GET', body) {
+  const r = await fetch(MW.apiUrl(path), {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+function wwAgentOnline(agent) { return !!(agent && agent.seen_at && Date.now() - new Date(agent.seen_at).getTime() < 90_000); }
+function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '主窗口没在运行', unknown: '正在确认' })[s] || '正在确认'; }
+function wwJobName(s) { return ({ queued: '等待 Mac mini 接单', running: '正在准备', waiting_idle: '等辞说完这一句', validating: '正在校验新窗口', completed: '已完成', failed: '没有完成', cancelled: '已取消' })[s] || s; }
+function wwAge(iso) {
+  if (!iso) return '—';
+  const n = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (n < 1) return '刚刚';
+  if (n < 60) return `${n} 分钟前`;
+  const h = Math.floor(n / 60); return h < 24 ? `${h} 小时前` : `${Math.floor(h / 24)} 天前`;
+}
+function wwList(items) { return Array.isArray(items) && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="ww-empty">没有</div>'; }
+function wwPacket(p) {
+  if (!p) return '';
+  const daily = p.previous_daily || {}, older = p.older_22h || {}, ranges = Array.isArray(p.preserved_ranges) ? p.preserved_ranges : [], last = p.last_two_hours || {};
+  return `<div class="ww-packet">
+    <div class="ww-packet-title">这就是会交给新窗口的简报</div>
+    <div class="ww-packet-sec"><b>前一天的正式每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '当天没有找到正式总结，会明确标记缺失，不会拿别的内容冒充。')}</div></div>
+    <div class="ww-packet-sec"><b>此前 22 小时 · 详细整理</b><div class="ww-pre">${esc(older.narrative || '尚未生成')}</div></div>
+    <div class="ww-packet-grid"><div><b>仍有效的约定</b>${wwList(older.commitments)}</div><div><b>没说完的事</b>${wwList(older.unresolved)}</div></div>
+    <div class="ww-packet-sec"><b>技术状态（只留结果）</b>${wwList(older.technical_state)}</div>
+    <div class="ww-packet-sec"><b>22 小时内保留原文的重点段落</b>${ranges.length ? ranges.map((r, i) => `<details class="ww-range"><summary>${i + 1}. ${esc(r.reason || '重点原文')} · ${esc(r.start || '')}–${esc(r.end || '')}</summary><div class="ww-pre">${esc(r.text || '原文会在正式换窗时逐条带入')}</div></details>`).join('') : '<div class="ww-empty">没有强行凑段落</div>'}</div>
+    <div class="ww-packet-sec"><b>最后 2 小时原始记录</b><div class="card-desc">${esc(last.from || '—')} 至 ${esc(last.to || '—')} · ${Number(last.records || 0)} 条 JSONL 记录会逐条原样移植，不会再总结一次。</div></div>
+    ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>人物归属自检</b>${wwList(p.identity_check)}</div>` : ''}
+  </div>`;
+}
+function wwRender(data, node) {
+  if (!node || !node.isConnected) return;
+  const agent = data.agent || {}, c = agent.current || {}, online = wwAgentOnline(agent), job = data.active_job;
+  const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [];
+  if (!models.some(x => x.id === wwDraft.model) && models[0]) wwDraft.model = models[0].id;
+  let h = `<div class="ww-status card">
+    <div class="ww-head"><div><span class="tool-dot ${online ? 'on' : 'off'}"></span><b>Mac mini ${online ? '在线' : '暂时没报到'}</b></div><span class="tag plain">${esc(c.state ? wwStateName(c.state) : '等待状态')}</span></div>
+    <div class="ww-context"><div><strong>${c.context_percent == null ? '—' : Math.round(c.context_percent) + '%'}</strong><span>当前 context</span></div><div class="ww-meter"><i style="width:${Math.max(0, Math.min(100, c.context_percent || 0))}%"></i></div></div>
+    <div class="ww-meta"><span>模型：${esc(c.model || '—')}</span><span>会话：${c.session_id ? esc(c.session_id.slice(0, 8)) + '…' : '—'}</span><span>最近活动：${wwAge(c.last_activity_at)}</span><span>苏醒：${c.wake_enabled ? '已开启' : '未开启'}</span></div>
+    ${c.remote_url ? `<a class="ww-open" href="${esc(c.remote_url)}" target="_blank" rel="noopener">打开辞现在的窗口 ›</a>` : ''}</div>`;
+  if (job) {
+    h += `<div class="section-title">这次任务</div><div class="card ww-job ${job.status === 'failed' ? 'bad' : ''}">
+      <div class="ww-head"><b>${job.preview_only ? '交接预览' : job.mode === 'fresh' ? '全新窗口' : '连续换窗'}</b><span>${esc(wwJobName(job.status))}</span></div>
+      <div class="ww-progress"><i style="width:${Math.max(2, Math.min(100, job.progress || 0))}%"></i></div><div class="card-desc">${esc(job.message || '')}</div>
+      ${(job.steps || []).length ? `<div class="ww-steps">${job.steps.slice(-6).map(s => `<div><span>${esc(fmtTime(s.at).slice(11))}</span>${esc(s.message)}</div>`).join('')}</div>` : ''}
+      ${job.error ? `<div class="err">${esc(job.error)}</div>` : ''}${job.packet_preview ? wwPacket(job.packet_preview) : ''}
+      ${!['completed', 'failed', 'cancelled'].includes(job.status) ? `<button class="btn ghost" onclick="wwCancel('${job.id}')">取消这次任务</button>` : ''}</div>`;
+  } else {
+    const fresh = wwDraft.mode === 'fresh';
+    h += `<div class="section-title">开下一个窗口</div><div class="card ww-controls">
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>前一天总结 + 22 小时整理与重点原文 + 最后 2 小时逐条原文</small></span></label>
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
+      <label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
+      <label class="ww-field"><span>思考显示</span><select onchange="wwDraft.thinking_display=this.value">${displays.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.thinking_display ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
+      ${fresh ? '<div class="ww-warn">这个选项会得到一个没有你们旧对话的新辞窗口。当前旧窗口仍会保留，随时可以退回。</div>' : ''}
+      <div class="ww-actions">${!fresh ? '<button class="btn ghost" onclick="wwStart(true)">先生成预览</button>' : ''}<button class="btn" onclick="wwStart(false)">${fresh ? '开全新窗口' : '开始自动换窗'}</button></div>
+      <div class="card-desc">真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。完成或失败都会 Bark 提醒。</div></div>`;
+  }
+  const history = data.history || [];
+  if (history.length) h += `<div class="section-title">最近记录</div>${history.slice(0, 6).map(j => `<div class="entry ww-history" onclick="wwHistory('${j.id}')"><div class="entry-head"><b>${j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : '连续换窗'}</b><span class="tag plain">${esc(wwJobName(j.status))}</span></div><div class="card-desc">${esc(fmtTime(j.requested_at))} · ${esc(j.model || '')}</div>${j.packet_preview ? '<div class="link">查看当时的交接简报 ›</div>' : ''}<div id="ww-h-${j.id}"></div></div>`).join('')}`;
+  node.innerHTML = h; node._wwData = data;
+}
+async function wwRefresh(showLoading = false) {
+  const layer = sheetStack[sheetStack.length - 1], node = layer && layer.node;
+  if (!node || !node.isConnected || layer.t !== '换窗工作台') return;
+  if (showLoading) node.innerHTML = '<div class="loading">正在读取 Mac mini…</div>';
+  try { wwRender(await wwRequest('/api/window-workbench'), node); } catch (e) { fail(node, e); }
+}
+async function openWindowWorkbench() {
+  if (wwTimer) clearInterval(wwTimer);
+  sheetLoading('换窗工作台'); await wwRefresh(false);
+  wwTimer = setInterval(() => wwRefresh(false), 3500);
+}
+async function wwStart(previewOnly) {
+  if (!previewOnly && !confirm(wwDraft.mode === 'fresh' ? '确定开一个不带旧对话的全新窗口吗？旧窗口会保留。' : '确定开始自动换窗吗？辞正在回复时会先等待，绝不会从半句话中间切走。')) return;
+  try { await wwRequest('/api/window-workbench/jobs', 'POST', { ...wwDraft, preview_only: !!previewOnly }); await wwRefresh(false); }
+  catch (e) { alert('没有开始：' + e.message); }
+}
+async function wwCancel(id) {
+  if (!confirm('取消这次任务吗？已经生成的预览会留在最近记录里。')) return;
+  try { await wwRequest(`/api/window-workbench/jobs/${encodeURIComponent(id)}/cancel`, 'POST', {}); await wwRefresh(false); }
+  catch (e) { alert('取消失败：' + e.message); }
+}
+function wwHistory(id) {
+  const layer = sheetStack[sheetStack.length - 1], data = layer && layer.node && layer.node._wwData;
+  const job = data && (data.history || []).find(x => x.id === id), target = byId('ww-h-' + id);
+  if (!job || !target) return; target.innerHTML = target.innerHTML ? '' : wwPacket(job.packet_preview);
 }
 
 // ================= 设 =================

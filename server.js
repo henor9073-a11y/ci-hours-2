@@ -23,6 +23,7 @@ import { publicLabels } from './lib/muwen/labels.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
 import { sendPush } from './lib/bark.js';
+import * as windowWorkbench from './lib/window-workbench.js';
 import {
   addSchedule, getSchedule, updateSchedule, completeSchedule, removeSchedule, getDueSchedules, markSchedulePushed,
   getScheduleByMonth, getScheduleForDate
@@ -51,7 +52,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, x-window-agent-key');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -367,6 +368,57 @@ app.post('/api/wake-ping', (req, res) => {
   // 给 GPD 上的 ScheduleWakeup / CyHeartbeat 报到用：POST {layer, note}
   try { res.json(mw.wake.wakePing((req.body || {}).layer, (req.body || {}).note)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
+// ---- 换窗工作台 ----
+// 网页只能提交几种固定任务，真正的文件和会话操作由 Mac mini 主动轮询后在本机完成。
+// Render 不接收 shell、文件路径或任意命令，避免把木屋变成远程终端。
+function windowAgentAllowed(req) {
+  const expected = process.env.WINDOW_AGENT_TOKEN;
+  if (!expected) return true; // 没单独配置时仍受上面的 ACCESS_PASSWORD 保护
+  return req.headers['x-window-agent-key'] === expected;
+}
+function windowAgent(req, res, next) {
+  if (!windowAgentAllowed(req)) return res.status(403).json({ error: '不是已登记的 Mac mini' });
+  next();
+}
+app.get('/api/window-workbench', (_, res) => res.json(windowWorkbench.getWorkbench()));
+app.post('/api/window-workbench/jobs', (req, res) => {
+  try { res.json(windowWorkbench.createJob(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/jobs/:id/cancel', (req, res) => {
+  try { res.json(windowWorkbench.cancelJob(req.params.id)); }
+  catch (e) { res.status(404).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/heartbeat', windowAgent, (req, res) => {
+  try { res.json(windowWorkbench.agentHeartbeat(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/claim', windowAgent, (req, res) => {
+  try { res.json({ job: windowWorkbench.claimJob((req.body || {}).agent_id) }); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/jobs/:id/progress', windowAgent, (req, res) => {
+  try { res.json(windowWorkbench.updateJob(req.params.id, req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (req, res) => {
+  try {
+    const job = windowWorkbench.completeJob(req.params.id, req.body || {});
+    res.json(job);
+    const label = job.preview_only ? '交接预览生成好了' : '辞换窗完成';
+    sendPush(label, job.preview_only ? '可以在木屋的换窗工作台检查内容了。' : '新窗口已经校验并接替主窗口。', 'complete')
+      .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/jobs/:id/fail', windowAgent, async (req, res) => {
+  try {
+    const job = windowWorkbench.failJob(req.params.id, req.body || {});
+    res.json(job);
+    sendPush('辞换窗没有完成', job.error || job.message || '旧窗口仍然保留，可以在工作台查看原因。', 'error')
+      .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // 响应体里的非 ASCII 全部转成 \uXXXX——JSON 转义序列本身是纯 ASCII，
 // 不管客户端怎么猜字符集都不会解错。PS 5.1 在中文这件事上翻过两次车了，这里一劳永逸。
