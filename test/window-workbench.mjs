@@ -31,8 +31,8 @@ const fresh = ww.createJob({ mode: 'fresh', preview_only: false });
 assert.equal(fresh.mode, 'fresh');
 const cancelled = ww.cancelJob(fresh.id);
 assert.equal(cancelled.status, 'cancelled');
+assert.equal(ww.completeJob(fresh.id, { message: '晚到的完成回报' }).status, 'cancelled');
 assert.equal(ww.getWorkbench().active_job, null);
 
 assert.throws(() => ww.createJob({ mode: 'fresh', preview_only: true }), /没有交接包/);
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');
-

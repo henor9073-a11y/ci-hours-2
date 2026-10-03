@@ -407,6 +407,7 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
   try {
     const job = windowWorkbench.completeJob(req.params.id, req.body || {});
     res.json(job);
+    if (job.status !== 'completed') return;
     const label = job.preview_only ? '交接预览生成好了' : '辞换窗完成';
     sendPush(label, job.preview_only ? '可以在木屋的换窗工作台检查内容了。' : '新窗口已经校验并接替主窗口。', 'complete')
       .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
@@ -416,6 +417,7 @@ app.post('/api/window-workbench/agent/jobs/:id/fail', windowAgent, async (req, r
   try {
     const job = windowWorkbench.failJob(req.params.id, req.body || {});
     res.json(job);
+    if (job.status !== 'failed') return;
     sendPush('辞换窗没有完成', job.error || job.message || '旧窗口仍然保留，可以在工作台查看原因。', 'error')
       .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
