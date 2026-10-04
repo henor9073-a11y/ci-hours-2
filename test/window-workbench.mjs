@@ -15,7 +15,16 @@ assert.equal(job.status, 'queued');
 assert.equal(job.model, 'claude-opus-4-6[1m]');
 assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 
-ww.agentHeartbeat({ agent_id: 'mini', current: { session_id: 's1', model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true } });
+const primaryId = '11111111-1111-4111-8111-111111111111';
+const otherId = '22222222-2222-4222-8222-222222222222';
+ww.agentHeartbeat({ agent_id: 'mini', current: {
+  session_id: primaryId, model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true,
+  windows: [
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4 },
+    { session_id: otherId, name: 'Opus 5.5', model: 'claude-opus-5-5[1m]', is_primary: false, state: 'offline', context_percent: 18 }
+  ]
+} });
+assert.equal(ww.getWorkbench().agent.current.windows.length, 2);
 const claimed = ww.claimJob('mini');
 assert.equal(claimed.id, job.id);
 assert.equal(claimed.status, 'running');
@@ -35,4 +44,16 @@ assert.equal(ww.completeJob(fresh.id, { message: '晚到的完成回报' }).stat
 assert.equal(ww.getWorkbench().active_job, null);
 
 assert.throws(() => ww.createJob({ mode: 'fresh', preview_only: true }), /没有交接包/);
+
+const promote = ww.createJob({ mode: 'set_primary', target_session_id: otherId });
+assert.equal(promote.mode, 'set_primary');
+assert.equal(promote.target_session_id, otherId);
+assert.equal(promote.model, 'claude-opus-5-5[1m]');
+ww.cancelJob(promote.id);
+assert.throws(() => ww.createJob({ mode: 'set_primary', target_session_id: '33333333-3333-4333-8333-333333333333' }), /不在 Mac mini/);
+
+const secondary = ww.createJob({ mode: 'secondary', model: 'claude-opus-5-5[1m]', source_session_id: primaryId });
+assert.equal(secondary.mode, 'secondary');
+assert.equal(secondary.source_session_id, primaryId);
+ww.cancelJob(secondary.id);
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');

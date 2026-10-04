@@ -551,4 +551,13 @@ body.chat-open > .header { display: none; }
 .ww-range summary { cursor:pointer; color:var(--text-secondary); }
 .ww-empty { color:var(--text-light); margin-top:5px; }
 .ww-history-toggle { display:block; margin-top:6px; padding:0; border:0; background:none; font:inherit; font-size:12px; cursor:pointer; }
+.ww-window-list { display:flex; flex-direction:column; gap:10px; }
+.ww-window { border:1px solid transparent; }
+.ww-window.primary { border-color:color-mix(in srgb,var(--accent) 45%,transparent); box-shadow:0 8px 28px color-mix(in srgb,var(--accent) 13%,transparent); }
+.ww-window-model { margin-top:8px; font-size:13px; color:var(--text-secondary); }
+.ww-window-context { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:10px; margin-top:12px; font-size:11px; color:var(--text-light); }
+.ww-window-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; }
+.ww-window-actions .ww-open { margin-top:0; }
+.ww-window-actions .btn { width:auto; min-height:36px; padding:8px 12px; margin:0; }
+.ww-window-actions .btn:disabled { opacity:.45; }
 @media (max-width:370px) { .ww-packet-grid { grid-template-columns:1fr; } .ww-meta { grid-template-columns:1fr; } }
