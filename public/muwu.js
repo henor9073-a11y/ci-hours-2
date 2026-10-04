@@ -1132,15 +1132,16 @@ function wwList(items) { return Array.isArray(items) && items.length ? `<ul>${it
 function wwPacket(p) {
   if (!p) return '';
   const daily = p.previous_daily || {}, older = p.older_22h || {}, ranges = Array.isArray(p.preserved_ranges) ? p.preserved_ranges : [], last = p.last_two_hours || {};
+  const raw22 = Number.isFinite(Number(older.records));
   return `<div class="ww-packet">
     <div class="ww-packet-title">这就是会交给新窗口的简报</div>
-    <div class="ww-packet-sec"><b>前一天的正式每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '当天没有找到正式总结，会明确标记缺失，不会拿别的内容冒充。')}</div></div>
-    <div class="ww-packet-sec"><b>此前 22 小时 · 详细整理</b><div class="ww-pre">${esc(older.narrative || '尚未生成')}</div></div>
-    <div class="ww-packet-grid"><div><b>仍有效的约定</b>${wwList(older.commitments)}</div><div><b>没说完的事</b>${wwList(older.unresolved)}</div></div>
+    <div class="ww-packet-sec"><b>最新一份正式每日总结 · ${esc(daily.date || '日期缺失')}</b><div class="ww-pre">${esc(daily.body || daily.headline || '没有找到正式总结，会明确标记缺失，不会拿别的内容冒充。')}</div></div>
+    <div class="ww-packet-sec"><b>${raw22 ? `前 22 小时 · ${Number(older.records)} 条完整原话` : '此前 22 小时 · 旧版详细整理'}</b><div class="ww-pre">${esc(older.narrative || '尚未生成')}</div></div>
+    ${raw22 ? '' : `<div class="ww-packet-grid"><div><b>仍有效的约定</b>${wwList(older.commitments)}</div><div><b>没说完的事</b>${wwList(older.unresolved)}</div></div>
     <div class="ww-packet-sec"><b>技术状态（只留结果）</b>${wwList(older.technical_state)}</div>
-    <div class="ww-packet-sec"><b>22 小时内保留原文的重点段落</b>${ranges.length ? ranges.map((r, i) => `<details class="ww-range"><summary>${i + 1}. ${esc(r.reason || '重点原文')} · ${esc(r.start || '')}–${esc(r.end || '')}</summary><div class="ww-pre">${esc(r.text || '原文会在正式换窗时逐条带入')}</div></details>`).join('') : '<div class="ww-empty">没有强行凑段落</div>'}</div>
+    <div class="ww-packet-sec"><b>22 小时内保留原文的重点段落</b>${ranges.length ? ranges.map((r, i) => `<details class="ww-range"><summary>${i + 1}. ${esc(r.reason || '重点原文')} · ${esc(r.start || '')}–${esc(r.end || '')}</summary><div class="ww-pre">${esc(r.text || '原文会在正式换窗时逐条带入')}</div></details>`).join('') : '<div class="ww-empty">没有强行凑段落</div>'}</div>`}
     <div class="ww-packet-sec"><b>最后 2 小时原始记录</b><div class="card-desc">${esc(last.from || '—')} 至 ${esc(last.to || '—')} · ${Number(last.records || 0)} 条 JSONL 记录会逐条原样移植，不会再总结一次。</div></div>
-    ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>人物归属自检</b>${wwList(p.identity_check)}</div>` : ''}
+    ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>${raw22 ? '来源核对' : '人物归属自检'}</b>${wwList(p.identity_check)}</div>` : ''}
   </div>`;
 }
 function wwRender(data, node) {
@@ -1163,7 +1164,7 @@ function wwRender(data, node) {
   } else {
     const fresh = wwDraft.mode === 'fresh';
     h += `<div class="section-title">开下一个窗口</div><div class="card ww-controls">
-      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>前一天总结 + 22 小时整理与重点原文 + 最后 2 小时逐条原文</small></span></label>
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>最新每日总结 + 前 22 小时完整原话 + 最后 2 小时逐条 JSONL</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
       <label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
       <label class="ww-field"><span>思考显示</span><select onchange="wwDraft.thinking_display=this.value">${displays.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.thinking_display ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
