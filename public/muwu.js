@@ -1131,7 +1131,7 @@ function wwAge(iso) {
 function wwList(items) { return Array.isArray(items) && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="ww-empty">没有</div>'; }
 function wwPacket(p) {
   if (!p) return '';
-  const daily = p.previous_daily || {}, older = p.older_22h || {}, ranges = Array.isArray(p.preserved_ranges) ? p.preserved_ranges : [], last = p.last_two_hours || {};
+  const daily = p.previous_daily || {}, older = p.older_22h || {}, ranges = Array.isArray(p.preserved_ranges) ? p.preserved_ranges : [];
   const raw22 = Number.isFinite(Number(older.records));
   return `<div class="ww-packet">
     <div class="ww-packet-title">这就是会交给新窗口的简报</div>
@@ -1140,7 +1140,6 @@ function wwPacket(p) {
     ${raw22 ? '' : `<div class="ww-packet-grid"><div><b>仍有效的约定</b>${wwList(older.commitments)}</div><div><b>没说完的事</b>${wwList(older.unresolved)}</div></div>
     <div class="ww-packet-sec"><b>技术状态（只留结果）</b>${wwList(older.technical_state)}</div>
     <div class="ww-packet-sec"><b>22 小时内保留原文的重点段落</b>${ranges.length ? ranges.map((r, i) => `<details class="ww-range"><summary>${i + 1}. ${esc(r.reason || '重点原文')} · ${esc(r.start || '')}–${esc(r.end || '')}</summary><div class="ww-pre">${esc(r.text || '原文会在正式换窗时逐条带入')}</div></details>`).join('') : '<div class="ww-empty">没有强行凑段落</div>'}</div>`}
-    <div class="ww-packet-sec"><b>最后 2 小时原始记录</b><div class="card-desc">${esc(last.from || '—')} 至 ${esc(last.to || '—')} · ${Number(last.records || 0)} 条 JSONL 记录会逐条原样移植，不会再总结一次。</div></div>
     ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>${raw22 ? '来源核对' : '人物归属自检'}</b>${wwList(p.identity_check)}</div>` : ''}
   </div>`;
 }
