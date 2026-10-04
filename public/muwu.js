@@ -45,7 +45,10 @@ function openSheet(t, h) {
 function sheetDrop() { const s = sheetStack.pop(); if (s && s.node) s.node.remove(); return s; }
 function closeSheet() {
   const closing = sheetStack[sheetStack.length - 1];
-  if (closing && closing.t === '换窗工作台' && wwTimer) { clearInterval(wwTimer); wwTimer = null; }
+  if (closing && closing.t === '换窗工作台') {
+    if (wwTimer) { clearInterval(wwTimer); wwTimer = null; }
+    wwDetailSessionId = null; wwPendingAction = null;
+  }
   sheetDrop();
   const s = sheetStack[sheetStack.length - 1];
   if (s) showLayer(s); else $('#sheet').classList.remove('open');
@@ -1107,6 +1110,9 @@ async function addWake() {
 let wwTimer = null;
 let wwDraft = { mode: 'handoff', model: 'claude-opus-4-6[1m]', thinking_display: 'summarized' };
 const wwOpenHistory = new Set();
+let wwPrefs = {};
+let wwDetailSessionId = null;
+let wwPendingAction = null;
 
 async function wwRequest(path, method = 'GET', body) {
   const r = await fetch(MW.apiUrl(path), {
@@ -1119,9 +1125,9 @@ async function wwRequest(path, method = 'GET', body) {
   return data;
 }
 function wwAgentOnline(agent) { return !!(agent && agent.seen_at && Date.now() - new Date(agent.seen_at).getTime() < 90_000); }
-function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '主窗口没在运行', unknown: '正在确认' })[s] || '正在确认'; }
+function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '已停止，记录完整', unknown: '正在确认' })[s] || '正在确认'; }
 function wwJobName(s) { return ({ queued: '等待 Mac mini 接单', running: '正在准备', waiting_idle: '等辞说完这一句', validating: '正在校验新窗口', completed: '已完成', failed: '没有完成', cancelled: '已取消' })[s] || s; }
-function wwJobTitle(j) { return j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : '连续换窗'; }
+function wwJobTitle(j) { return j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? '停止窗口' : j.mode === 'restore_window' ? '恢复窗口' : '连续换窗'; }
 function wwAge(iso) {
   if (!iso) return '—';
   const n = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
@@ -1144,15 +1150,48 @@ function wwPacket(p) {
     ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>${raw22 ? '来源核对' : '人物归属自检'}</b>${wwList(p.identity_check)}</div>` : ''}
   </div>`;
 }
-function wwWindowCard(w, locked) {
+function wwAvatar(speaker) {
+  const id = wwPrefs['avatar_' + speaker];
+  const label = speaker === 'cy' ? '辞' : '棋';
+  return `<span class="ww-dialog-avatar${id ? ' has-image' : ''}">${id ? `<img src="${imageUrl(id)}" alt="${label}">` : label}</span>`;
+}
+function wwDetailHtml(w) {
+  const messages = Array.isArray(w.recent_messages) ? w.recent_messages.slice(-10) : [];
+  const pct = w.context_percent == null ? '—' : Math.round(Number(w.context_percent)) + '%';
+  return `<div class="ww-modal-shade" onclick="wwCloseDetails()"><section class="ww-dialog" role="dialog" aria-modal="true" aria-label="${esc(w.name || '窗口')}详情" onclick="event.stopPropagation()">
+    <header class="ww-dialog-head"><div><span>${esc(w.name || '未命名窗口')} · ${esc(wwStateName(w.state))}</span><h3>最近 10 条对话</h3></div><button type="button" aria-label="关闭详情" onclick="wwCloseDetails()">×</button></header>
+    <div class="ww-dialog-session"><span>${esc(w.model || '模型未知')}</span><span>context ${pct}</span><span>${messages.length} 条</span></div>
+    <div class="ww-dialog-messages">${messages.length ? messages.map(m => `<div class="ww-dialog-row ${m.speaker === 'nor' ? 'me' : ''}">${wwAvatar(m.speaker)}<div><div class="ww-dialog-bubble">${esc(m.text)}</div><time>${esc(m.at ? fmtTime(m.at).slice(11, 16) : '')}</time></div></div>`).join('') : '<div class="ww-dialog-empty">这个窗口还没有可显示的棋子/辞正文。</div>'}</div>
+    <footer>只显示棋子和辞的正文，不含系统消息、工具记录和 thinking。</footer>
+  </section></div>`;
+}
+function wwConfirmHtml(w, mode) {
+  const stopping = mode === 'stop_window';
+  return `<div class="ww-modal-shade ww-confirm-shade" onclick="wwCloseConfirm()"><section class="ww-confirm" role="alertdialog" aria-modal="true" aria-label="确认${stopping ? '停止' : '恢复'}窗口" onclick="event.stopPropagation()">
+    <h3>${stopping ? '停止这个窗口？' : '恢复这个窗口？'}</h3>
+    <p><b>${esc(w.name || '未命名窗口')}</b></p>
+    <p>${stopping ? '只会停止后台运行。会话、原始记录、session ID 和客户端入口都会保留，并移到“历史窗口”。' : '会沿用原来的 session 和完整上下文，以并行窗口恢复；不会抢占 Telegram、语音或其他主要通道。'}</p>
+    <div><button class="btn ghost" onclick="wwCloseConfirm()">取消</button><button class="btn" onclick="wwRunWindowAction()">确认${stopping ? '停止' : '恢复'}</button></div>
+  </section></div>`;
+}
+function wwWindowCard(w, locked, historical) {
   const pct = w.context_percent == null ? null : Math.max(0, Math.min(100, Number(w.context_percent)));
   const source = w.source_session_id ? `来源：${esc(w.source_session_id.slice(0, 8))}…` : '原始窗口';
-  return `<div class="card ww-window ${w.is_primary ? 'primary' : ''}">
+  let actions = w.remote_url ? `<a class="ww-open" href="${esc(w.remote_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">打开客户端记录 ›</a>` : '<span class="card-desc">客户端入口暂未取回</span>';
+  if (historical) {
+    actions += `<button class="btn" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('restore_window','${w.session_id}')">恢复窗口</button>`;
+  } else if (w.is_primary) {
+    actions += '<span class="ww-protected">主要窗口不可停止</span>';
+  } else {
+    actions += `<button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSetPrimary('${w.session_id}')">设为主要</button><button class="btn ghost ww-stop" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('stop_window','${w.session_id}')">停止</button>`;
+  }
+  return `<div class="card ww-window ${w.is_primary ? 'primary' : ''}" role="button" tabindex="0" onclick="wwOpenDetails('${w.session_id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();wwOpenDetails('${w.session_id}')}">
     <div class="ww-head"><div><span class="tool-dot ${w.state === 'offline' ? 'off' : 'on'}"></span><b>${esc(w.name || '未命名窗口')}</b>${w.is_primary ? '<span class="tag">主要</span>' : ''}</div><span class="tag plain">${esc(wwStateName(w.state))}</span></div>
     <div class="ww-window-model">${esc(w.model || '模型未知')} · ${w.thinking_display === 'none' ? '不显示思考' : '思考摘要'}</div>
     <div class="ww-window-context"><span>context ${pct == null ? '—' : Math.round(pct) + '%'}</span><div class="ww-meter"><i style="width:${pct || 0}%"></i></div></div>
     <div class="ww-meta"><span>会话：${esc(w.session_id.slice(0, 8))}…</span><span>${source}</span><span>创建：${esc(fmtTime(w.created_at || ''))}</span><span>最近活动：${wwAge(w.last_activity_at)}</span><span>消息：${w.message_count == null ? '—' : Number(w.message_count)}</span><span>记录：${w.transcript_bytes == null ? '—' : Math.max(1, Math.round(Number(w.transcript_bytes) / 1024)) + ' KB'}</span></div>
-    <div class="ww-window-actions">${w.remote_url ? `<a class="ww-open" href="${esc(w.remote_url)}" target="_blank" rel="noopener">打开这个窗口 ›</a>` : '<span class="card-desc">离线但记录完整保留</span>'}${w.is_primary ? '' : `<button class="btn ghost" ${locked ? 'disabled' : ''} onclick="wwSetPrimary('${w.session_id}')">设为主要窗口</button>`}</div>
+    <div class="ww-window-hint">点开查看最近 10 条对话 ›</div>
+    <div class="ww-window-actions" onclick="event.stopPropagation()">${actions}</div>
   </div>`;
 }
 function wwRender(data, node) {
@@ -1166,7 +1205,10 @@ function wwRender(data, node) {
     <div class="ww-meta"><span>模型：${esc(c.model || '—')}</span><span>会话：${c.session_id ? esc(c.session_id.slice(0, 8)) + '…' : '—'}</span><span>最近活动：${wwAge(c.last_activity_at)}</span><span>苏醒：${c.wake_enabled ? '已开启' : '未开启'}</span></div>
     ${c.remote_url ? `<a class="ww-open" href="${esc(c.remote_url)}" target="_blank" rel="noopener">打开辞现在的窗口 ›</a>` : ''}</div>`;
   const windows = Array.isArray(c.windows) ? c.windows : [];
-  h += `<div class="section-title">所有窗口</div>${windows.length ? `<div class="ww-window-list">${windows.map(w => wwWindowCard(w, !!job)).join('')}</div>` : '<div class="card"><div class="card-desc">Mac mini 还没有上报窗口列表。</div></div>'}`;
+  const working = windows.filter(w => w.state !== 'offline');
+  const stopped = windows.filter(w => w.state === 'offline');
+  h += `<div class="section-title">目前工作的窗口 <span class="ww-count">${working.length}</span></div>${working.length ? `<div class="ww-window-list">${working.map(w => wwWindowCard(w, !!job, false)).join('')}</div>` : '<div class="card"><div class="card-desc">目前没有正在工作的窗口。</div></div>'}`;
+  h += `<div class="section-title">历史窗口 <span class="ww-count">${stopped.length}</span></div>${stopped.length ? `<div class="ww-window-list">${stopped.map(w => wwWindowCard(w, !!job, true)).join('')}</div>` : '<div class="card"><div class="card-desc">还没有停止的历史窗口。</div></div>'}`;
   if (job) {
     h += `<div class="section-title">这次任务</div><div class="card ww-job ${job.status === 'failed' ? 'bad' : ''}">
       <div class="ww-head"><b>${wwJobTitle(job)}</b><span>${esc(wwJobName(job.status))}</span></div>
@@ -1190,17 +1232,25 @@ function wwRender(data, node) {
     const open = wwOpenHistory.has(j.id);
     return `<div class="entry ww-history"><div class="entry-head"><b>${wwJobTitle(j)}</b><span class="tag plain">${esc(wwJobName(j.status))}</span></div><div class="card-desc">${esc(fmtTime(j.requested_at))} · ${esc(j.model || '')}</div>${j.packet_preview ? `<button class="link ww-history-toggle" onclick="wwHistory(event,'${j.id}')">${open ? '收起交接简报⌃' : '查看当时的交接简报 ›'}</button>` : ''}<div id="ww-h-${j.id}">${open ? wwPacket(j.packet_preview) : ''}</div></div>`;
   }).join('')}`;
+  const detailWindow = wwDetailSessionId && windows.find(w => w.session_id === wwDetailSessionId);
+  if (detailWindow) h += wwDetailHtml(detailWindow);
+  const pendingWindow = wwPendingAction && windows.find(w => w.session_id === wwPendingAction.sessionId);
+  if (pendingWindow) h += wwConfirmHtml(pendingWindow, wwPendingAction.mode);
   node.innerHTML = h; node._wwData = data;
 }
 async function wwRefresh(showLoading = false) {
   const layer = sheetStack[sheetStack.length - 1], node = layer && layer.node;
   if (!node || !node.isConnected || layer.t !== '换窗工作台') return;
+  if (!showLoading && (wwDetailSessionId || wwPendingAction)) return;
   if (showLoading) node.innerHTML = '<div class="loading">正在读取 Mac mini…</div>';
   try { wwRender(await wwRequest('/api/window-workbench'), node); } catch (e) { fail(node, e); }
 }
 async function openWindowWorkbench() {
   if (wwTimer) clearInterval(wwTimer);
-  sheetLoading('换窗工作台'); await wwRefresh(false);
+  wwDetailSessionId = null; wwPendingAction = null;
+  sheetLoading('换窗工作台');
+  wwPrefs = await MW.loadPrefs(true).catch(() => ({}));
+  await wwRefresh(false);
   wwTimer = setInterval(() => wwRefresh(false), 3500);
 }
 async function wwStart(previewOnly) {
@@ -1217,6 +1267,27 @@ async function wwSetPrimary(sessionId) {
   if (!confirm('把这个窗口设为主要窗口吗？\n\n它会先通过启动检查，再接管 Telegram、语音、木屋和自动苏醒；现在的主要窗口会完整保留。')) return;
   try { await wwRequest('/api/window-workbench/jobs', 'POST', { mode: 'set_primary', target_session_id: sessionId }); await wwRefresh(false); }
   catch (e) { alert('没有切换：' + e.message); }
+}
+function wwRerenderLocal() {
+  const layer = sheetStack[sheetStack.length - 1], node = layer && layer.node;
+  if (node && node._wwData) wwRender(node._wwData, node);
+}
+function wwOpenDetails(sessionId) { wwDetailSessionId = sessionId; wwRerenderLocal(); }
+function wwCloseDetails() { wwDetailSessionId = null; wwRerenderLocal(); }
+function wwConfirmWindow(mode, sessionId) {
+  const layer = sheetStack[sheetStack.length - 1], data = layer && layer.node && layer.node._wwData;
+  const w = data && data.agent && data.agent.current && (data.agent.current.windows || []).find(x => x.session_id === sessionId);
+  if (!w) return;
+  if (mode === 'stop_window' && w.is_primary) { alert('主要窗口不能停止。请先把主要窗口切换到另一个窗口。'); return; }
+  wwPendingAction = { mode, sessionId }; wwRerenderLocal();
+}
+function wwCloseConfirm() { wwPendingAction = null; wwRerenderLocal(); }
+async function wwRunWindowAction() {
+  const action = wwPendingAction;
+  if (!action) return;
+  wwPendingAction = null; wwDetailSessionId = null;
+  try { await wwRequest('/api/window-workbench/jobs', 'POST', { mode: action.mode, target_session_id: action.sessionId }); await wwRefresh(true); }
+  catch (e) { alert((action.mode === 'stop_window' ? '没有停止：' : '没有恢复：') + e.message); await wwRefresh(false); }
 }
 function wwHistory(event, id) {
   if (event) event.stopPropagation();

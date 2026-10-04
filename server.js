@@ -410,11 +410,15 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
     if (job.status !== 'completed') return;
     const label = job.preview_only ? '交接预览生成好了'
       : job.mode === 'secondary' ? '并行窗口已经打开'
-        : job.mode === 'set_primary' ? '主要窗口已经切换' : '辞换窗完成';
+        : job.mode === 'set_primary' ? '主要窗口已经切换'
+          : job.mode === 'stop_window' ? '窗口已经停止'
+            : job.mode === 'restore_window' ? '窗口已经恢复' : '辞换窗完成';
     const detail = job.preview_only ? '可以在木屋的换窗工作台检查内容了。'
       : job.mode === 'secondary' ? '主要窗口没有变化，可以在工作台打开新窗口。'
         : job.mode === 'set_primary' ? '选中的窗口已经接管主要通道，其他窗口完整保留。'
-          : '新窗口已经校验并接替主窗口。';
+          : job.mode === 'stop_window' ? '只停止了运行；会话、原始记录和客户端入口都保留。'
+            : job.mode === 'restore_window' ? '原 session 已恢复为并行窗口，没有抢占主要通道。'
+              : '新窗口已经校验并接替主窗口。';
     sendPush(label, detail, 'complete')
       .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
