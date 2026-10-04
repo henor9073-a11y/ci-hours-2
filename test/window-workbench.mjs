@@ -66,6 +66,7 @@ assert.throws(() => ww.createJob({ mode: 'stop_window', target_session_id: other
 const stop = ww.createJob({ mode: 'stop_window', target_session_id: activeId });
 assert.equal(stop.mode, 'stop_window');
 assert.equal(stop.target_session_id, activeId);
+assert.equal(stop.target_name, '并行窗口');
 ww.cancelJob(stop.id);
 const restore = ww.createJob({ mode: 'restore_window', target_session_id: otherId });
 assert.equal(restore.mode, 'restore_window');
