@@ -21,7 +21,13 @@ const activeId = '44444444-4444-4444-8444-444444444444';
 ww.agentHeartbeat({ agent_id: 'mini', current: {
   session_id: primaryId, model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true,
   windows: [
-    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4 },
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4,
+      mcp_checked_at: '2026-10-05T12:00:00+11:00', mcp_checking: false,
+      mcp_servers: [
+        { name: 'muwen', kind: 'http', status: 'connected', detail: '已连接' },
+        { name: 'GPD', kind: 'connector', status: 'offline', detail: '连接失败 · HTTP 404' },
+        { name: '', kind: 'bad', status: 'bad', detail: 'drop me' }
+      ] },
     { session_id: otherId, name: 'Opus 5.5', model: 'claude-opus-5-5[1m]', is_primary: false, state: 'offline', context_percent: 18,
       recent_messages: [{ speaker: 'nor', text: '还在吗', at: '2026-10-04T10:00:00+11:00' }, { speaker: 'bad', text: '不要' }] },
     { session_id: activeId, name: '并行窗口', model: 'claude-opus-4-6[1m]', is_primary: false, state: 'idle', context_percent: 12 }
@@ -29,6 +35,7 @@ ww.agentHeartbeat({ agent_id: 'mini', current: {
 } });
 assert.equal(ww.getWorkbench().agent.current.windows.length, 3);
 assert.deepEqual(ww.getWorkbench().agent.current.windows[1].recent_messages.map(x => x.text), ['还在吗']);
+assert.deepEqual(ww.getWorkbench().agent.current.windows[0].mcp_servers.map(x => [x.name, x.status]), [['muwen', 'connected'], ['GPD', 'offline']]);
 const claimed = ww.claimJob('mini');
 assert.equal(claimed.id, job.id);
 assert.equal(claimed.status, 'running');

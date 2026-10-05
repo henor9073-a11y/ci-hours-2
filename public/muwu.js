@@ -1155,12 +1155,35 @@ function wwAvatar(speaker) {
   const label = speaker === 'cy' ? '辞' : '棋';
   return `<span class="ww-dialog-avatar${id ? ' has-image' : ''}">${id ? `<img src="${imageUrl(id)}" alt="${label}">` : label}</span>`;
 }
+function wwMcpCounts(w) {
+  const servers = Array.isArray(w.mcp_servers) ? w.mcp_servers : [];
+  return servers.reduce((out, server) => { out[server.status] = (out[server.status] || 0) + 1; return out; }, { connected: 0, offline: 0, auth: 0, unknown: 0 });
+}
+function wwMcpStatusName(status) {
+  return ({ connected: '已连接', offline: '掉线', auth: '需要登录', unknown: '待确认' })[status] || '待确认';
+}
+function wwMcpSummary(w) {
+  const count = wwMcpCounts(w), total = Object.values(count).reduce((a, b) => a + b, 0);
+  if (w.state === 'offline') return '<span class="ww-mcp-muted">窗口已停止，MCP 未运行</span>';
+  if (!total && w.mcp_checking) return '<span class="ww-mcp-muted">正在检查 MCP…</span>';
+  if (!total) return `<span class="ww-mcp-muted">${esc(w.mcp_error || '这个窗口没有启用 MCP')}</span>`;
+  return `<span class="ww-mcp-chip good">${count.connected} 已连接</span>${count.offline ? `<span class="ww-mcp-chip bad">${count.offline} 掉线</span>` : ''}${count.auth ? `<span class="ww-mcp-chip warn">${count.auth} 需登录</span>` : ''}${count.unknown ? `<span class="ww-mcp-chip">${count.unknown} 待确认</span>` : ''}${w.mcp_checking ? '<span class="ww-mcp-muted">检测中…</span>' : ''}`;
+}
+function wwMcpPanel(w, open) {
+  const servers = Array.isArray(w.mcp_servers) ? w.mcp_servers : [];
+  const checked = w.mcp_checked_at ? `上次检查：${wwAge(w.mcp_checked_at)}` : (w.mcp_checking ? '正在进行第一次检查' : '尚未检查');
+  return `<details class="ww-mcp-panel" ${open ? 'open' : ''}><summary><span><b>${esc(w.name || '未命名窗口')}</b><small>${esc(checked)}</small></span><span class="ww-mcp-summary">${wwMcpSummary(w)}</span></summary>
+    <div class="ww-mcp-list">${servers.length ? servers.map(server => `<div class="ww-mcp-row"><span class="tool-dot ${server.status === 'connected' ? 'on' : server.status === 'offline' ? 'off' : 'wait'}"></span><div><b>${esc(server.name)}</b><small>${esc(server.kind === 'connector' ? 'Claude 连接器' : server.kind === 'plugin' ? '插件通道' : server.kind === 'stdio' ? '本机 MCP' : server.kind === 'http' ? '网络 MCP' : 'MCP')} · ${esc(server.detail || wwMcpStatusName(server.status))}</small></div><span class="ww-mcp-state ${server.status}">${esc(wwMcpStatusName(server.status))}</span></div>`).join('') : `<div class="ww-dialog-empty">${esc(w.mcp_error || (w.state === 'offline' ? '窗口已停止，无法检测 MCP。' : '这个窗口没有启用 MCP。'))}</div>`}</div>
+  </details>`;
+}
 function wwDetailHtml(w) {
   const messages = Array.isArray(w.recent_messages) ? w.recent_messages.slice(-10) : [];
   const pct = w.context_percent == null ? '—' : Math.round(Number(w.context_percent)) + '%';
   return `<div class="ww-modal-shade" onclick="wwCloseDetails()"><section class="ww-dialog" role="dialog" aria-modal="true" aria-label="${esc(w.name || '窗口')}详情" onclick="event.stopPropagation()">
-    <header class="ww-dialog-head"><div><span>${esc(w.name || '未命名窗口')} · ${esc(wwStateName(w.state))}</span><h3>最近 10 条对话</h3></div><button type="button" aria-label="关闭详情" onclick="wwCloseDetails()">×</button></header>
+    <header class="ww-dialog-head"><div><span>${esc(w.name || '未命名窗口')} · ${esc(wwStateName(w.state))}</span><h3>窗口详情</h3></div><button type="button" aria-label="关闭详情" onclick="wwCloseDetails()">×</button></header>
     <div class="ww-dialog-session"><span>${esc(w.model || '模型未知')}</span><span>context ${pct}</span><span>${messages.length} 条</span></div>
+    ${wwMcpPanel(w, true)}
+    <h4 class="ww-dialog-subtitle">最近 10 条对话</h4>
     <div class="ww-dialog-messages">${messages.length ? messages.map(m => `<div class="ww-dialog-row ${m.speaker === 'nor' ? 'me' : ''}">${wwAvatar(m.speaker)}<div><div class="ww-dialog-bubble">${esc(m.text)}</div><time>${esc(m.at ? fmtTime(m.at).slice(11, 16) : '')}</time></div></div>`).join('') : '<div class="ww-dialog-empty">这个窗口还没有可显示的棋子/辞正文。</div>'}</div>
     <footer>只显示棋子和辞的正文，不含系统消息、工具记录和 thinking。</footer>
   </section></div>`;
@@ -1189,6 +1212,7 @@ function wwWindowCard(w, locked, historical) {
     <div class="ww-head"><div><span class="tool-dot ${w.state === 'offline' ? 'off' : 'on'}"></span><b>${esc(w.name || '未命名窗口')}</b>${w.is_primary ? '<span class="tag">主要</span>' : ''}</div><span class="tag plain">${esc(wwStateName(w.state))}</span></div>
     <div class="ww-window-model">${esc(w.model || '模型未知')} · ${w.thinking_display === 'none' ? '不显示思考' : '思考摘要'}</div>
     <div class="ww-window-context"><span>context ${pct == null ? '—' : Math.round(pct) + '%'}</span><div class="ww-meter"><i style="width:${pct || 0}%"></i></div></div>
+    <div class="ww-mcp-inline">${wwMcpSummary(w)}</div>
     <div class="ww-meta"><span>会话：${esc(w.session_id.slice(0, 8))}…</span><span>${source}</span><span>创建：${esc(fmtTime(w.created_at || ''))}</span><span>最近活动：${wwAge(w.last_activity_at)}</span><span>消息：${w.message_count == null ? '—' : Number(w.message_count)}</span><span>记录：${w.transcript_bytes == null ? '—' : Math.max(1, Math.round(Number(w.transcript_bytes) / 1024)) + ' KB'}</span></div>
     <div class="ww-window-hint">点开查看最近 10 条对话 ›</div>
     <div class="ww-window-actions" onclick="event.stopPropagation()">${actions}</div>
@@ -1208,6 +1232,7 @@ function wwRender(data, node) {
   const working = windows.filter(w => w.state !== 'offline');
   const stopped = windows.filter(w => w.state === 'offline');
   h += `<div class="section-title">目前工作的窗口 <span class="ww-count">${working.length}</span></div>${working.length ? `<div class="ww-window-list">${working.map(w => wwWindowCard(w, !!job, false)).join('')}</div>` : '<div class="card"><div class="card-desc">目前没有正在工作的窗口。</div></div>'}`;
+  h += `<div class="section-title">MCP 管理</div>${working.length ? `<div class="ww-mcp-manager">${working.map(w => wwMcpPanel(w, !!w.is_primary)).join('')}</div>` : '<div class="card"><div class="card-desc">没有正在运行的窗口，MCP 也没有启动。</div></div>'}`;
   h += `<div class="section-title">历史窗口 <span class="ww-count">${stopped.length}</span></div>${stopped.length ? `<div class="ww-window-list">${stopped.map(w => wwWindowCard(w, !!job, true)).join('')}</div>` : '<div class="card"><div class="card-desc">还没有停止的历史窗口。</div></div>'}`;
   if (job) {
     h += `<div class="section-title">这次任务</div><div class="card ww-job ${job.status === 'failed' ? 'bad' : ''}">
