@@ -92,8 +92,8 @@ const waitsTooLong = ww.createJob({ mode: 'stop_window', target_session_id: acti
 ww.claimJob('mini');
 ww.updateJob(waitsTooLong.id, { status: 'waiting_idle', phase: 'waiting_idle', message: '等待窗口空闲' });
 await new Promise(resolve => setTimeout(resolve, 1050));
-const timedOut = ww.updateJob(waitsTooLong.id, { status: 'waiting_idle', phase: 'waiting_idle', message: '仍在等待窗口空闲' });
-assert.equal(timedOut.status, 'failed');
-assert.match(timedOut.error, /等待窗口空闲超过 5 分钟/);
-assert.equal(ww.getWorkbench().active_job, null);
+const afterTimeout = ww.getWorkbench();
+assert.equal(afterTimeout.active_job, null);
+assert.equal(afterTimeout.history[0].status, 'failed');
+assert.match(afterTimeout.history[0].error, /等待窗口空闲超过 5 分钟/);
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');
