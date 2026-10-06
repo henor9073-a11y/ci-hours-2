@@ -19,7 +19,7 @@ assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 const primaryId = '11111111-1111-4111-8111-111111111111';
 const otherId = '22222222-2222-4222-8222-222222222222';
 const activeId = '44444444-4444-4444-8444-444444444444';
-ww.agentHeartbeat({ agent_id: 'mini', current: {
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'not_allowed'], current: {
   session_id: primaryId, model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true,
   windows: [
     { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4,
@@ -35,6 +35,7 @@ ww.agentHeartbeat({ agent_id: 'mini', current: {
   ]
 } });
 assert.equal(ww.getWorkbench().agent.current.windows.length, 3);
+assert.deepEqual(ww.getWorkbench().agent.capabilities, ['force_stop']);
 assert.deepEqual(ww.getWorkbench().agent.current.windows[1].recent_messages.map(x => x.text), ['还在吗']);
 assert.deepEqual(ww.getWorkbench().agent.current.windows[0].mcp_servers.map(x => [x.name, x.status]), [['muwen', 'connected'], ['GPD', 'offline']]);
 const claimed = ww.claimJob('mini');

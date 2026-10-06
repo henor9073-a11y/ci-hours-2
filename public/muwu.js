@@ -1198,7 +1198,7 @@ function wwConfirmHtml(w, mode) {
     <div><button class="btn ghost" onclick="wwCloseConfirm()">取消</button><button class="btn ${forcing ? 'ww-stop' : ''}" onclick="wwRunWindowAction()">确认${forcing ? '强行停止' : stopping ? '停止' : '恢复'}</button></div>
   </section></div>`;
 }
-function wwWindowCard(w, locked, historical) {
+function wwWindowCard(w, locked, historical, forceStopAvailable) {
   const pct = w.context_percent == null ? null : Math.max(0, Math.min(100, Number(w.context_percent)));
   const source = w.source_session_id ? `来源：${esc(w.source_session_id.slice(0, 8))}…` : '原始窗口';
   let actions = w.remote_url ? `<a class="ww-open" href="${esc(w.remote_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">打开客户端记录 ›</a>` : '<span class="card-desc">客户端入口暂未取回</span>';
@@ -1207,7 +1207,7 @@ function wwWindowCard(w, locked, historical) {
   } else if (w.is_primary) {
     actions += '<span class="ww-protected">主要窗口不可停止</span>';
   } else {
-    actions += `<button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSetPrimary('${w.session_id}')">设为主要</button><button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('stop_window','${w.session_id}')">停止</button><button class="btn ghost ww-stop" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('force_stop_window','${w.session_id}')">强行停止</button>`;
+    actions += `<button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSetPrimary('${w.session_id}')">设为主要</button><button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('stop_window','${w.session_id}')">停止</button>${forceStopAvailable ? `<button class="btn ghost ww-stop" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('force_stop_window','${w.session_id}')">强行停止</button>` : ''}`;
   }
   return `<div class="card ww-window ${w.is_primary ? 'primary' : ''}" role="button" tabindex="0" onclick="wwOpenDetails('${w.session_id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();wwOpenDetails('${w.session_id}')}">
     <div class="ww-head"><div><span class="tool-dot ${w.state === 'offline' ? 'off' : 'on'}"></span><b>${esc(w.name || '未命名窗口')}</b>${w.is_primary ? '<span class="tag">主要</span>' : ''}</div><span class="tag plain">${esc(wwStateName(w.state))}</span></div>
@@ -1222,6 +1222,7 @@ function wwWindowCard(w, locked, historical) {
 function wwRender(data, node) {
   if (!node || !node.isConnected) return;
   const agent = data.agent || {}, c = agent.current || {}, online = wwAgentOnline(agent), job = data.active_job;
+  const forceStopAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('force_stop');
   const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [];
   if (!models.some(x => x.id === wwDraft.model) && models[0]) wwDraft.model = models[0].id;
   let h = `<div class="ww-status card">
@@ -1232,9 +1233,9 @@ function wwRender(data, node) {
   const windows = Array.isArray(c.windows) ? c.windows : [];
   const working = windows.filter(w => w.state !== 'offline');
   const stopped = windows.filter(w => w.state === 'offline');
-  h += `<div class="section-title">目前工作的窗口 <span class="ww-count">${working.length}</span></div>${working.length ? `<div class="ww-window-list">${working.map(w => wwWindowCard(w, !!job, false)).join('')}</div>` : '<div class="card"><div class="card-desc">目前没有正在工作的窗口。</div></div>'}`;
+  h += `<div class="section-title">目前工作的窗口 <span class="ww-count">${working.length}</span></div>${working.length ? `<div class="ww-window-list">${working.map(w => wwWindowCard(w, !!job, false, forceStopAvailable)).join('')}</div>` : '<div class="card"><div class="card-desc">目前没有正在工作的窗口。</div></div>'}`;
   h += `<div class="section-title">MCP 管理</div>${working.length ? `<div class="ww-mcp-manager">${working.map(w => wwMcpPanel(w, !!w.is_primary)).join('')}</div>` : '<div class="card"><div class="card-desc">没有正在运行的窗口，MCP 也没有启动。</div></div>'}`;
-  h += `<div class="section-title">历史窗口 <span class="ww-count">${stopped.length}</span></div>${stopped.length ? `<div class="ww-window-list">${stopped.map(w => wwWindowCard(w, !!job, true)).join('')}</div>` : '<div class="card"><div class="card-desc">还没有停止的历史窗口。</div></div>'}`;
+  h += `<div class="section-title">历史窗口 <span class="ww-count">${stopped.length}</span></div>${stopped.length ? `<div class="ww-window-list">${stopped.map(w => wwWindowCard(w, !!job, true, forceStopAvailable)).join('')}</div>` : '<div class="card"><div class="card-desc">还没有停止的历史窗口。</div></div>'}`;
   if (job) {
     h += `<div class="section-title">这次任务</div><div class="card ww-job ${job.status === 'failed' ? 'bad' : ''}">
       <div class="ww-head"><b>${wwJobTitle(job)}</b><span>${esc(wwJobName(job.status))}</span></div>
