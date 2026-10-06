@@ -42,12 +42,16 @@ const claimed = ww.claimJob('mini');
 assert.equal(claimed.id, job.id);
 assert.equal(claimed.status, 'running');
 
-ww.updateJob(job.id, { phase: 'summarizing', progress: 52, message: '整理 22 小时', packet_preview: { previous_daily: { body: '昨天' } } });
+ww.updateJob(job.id, { phase: 'summarizing', progress: 52, message: '整理 22 小时', packet_preview: {
+  older_22h: { narrative: '完整原话', records: 12 },
+  last_two_hours: { records: 8 }
+} });
 const done = ww.completeJob(job.id, { message: '预览好了', result: { preview_only: true } });
 assert.equal(done.status, 'completed');
 assert.equal(done.progress, 100);
 assert.equal(ww.getWorkbench().active_job, null);
-assert.equal(ww.getWorkbench().history[0].packet_preview.previous_daily.body, '昨天');
+assert.equal(ww.getWorkbench().history[0].packet_preview.older_22h.narrative, '完整原话');
+assert.equal(ww.getWorkbench().history[0].packet_preview.last_two_hours.records, 8);
 
 const fresh = ww.createJob({ mode: 'fresh', preview_only: false });
 assert.equal(fresh.mode, 'fresh');

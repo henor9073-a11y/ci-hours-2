@@ -1138,16 +1138,9 @@ function wwAge(iso) {
 function wwList(items) { return Array.isArray(items) && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="ww-empty">没有</div>'; }
 function wwPacket(p) {
   if (!p) return '';
-  const daily = p.previous_daily || {}, older = p.older_22h || {}, ranges = Array.isArray(p.preserved_ranges) ? p.preserved_ranges : [];
-  const raw22 = Number.isFinite(Number(older.records));
+  const older = p.older_22h || {};
   return `<div class="ww-packet">
-    <div class="ww-packet-title">这就是会交给新窗口的简报</div>
-    <div class="ww-packet-sec"><b>最新一份正式每日总结 · ${esc(daily.date || '日期缺失')}</b><div class="ww-pre">${esc(daily.body || daily.headline || '没有找到正式总结，会明确标记缺失，不会拿别的内容冒充。')}</div></div>
-    <div class="ww-packet-sec"><b>${raw22 ? `前 22 小时 · ${Number(older.records)} 条完整原话` : '此前 22 小时 · 旧版详细整理'}</b><div class="ww-pre">${esc(older.narrative || '尚未生成')}</div></div>
-    ${raw22 ? '' : `<div class="ww-packet-grid"><div><b>仍有效的约定</b>${wwList(older.commitments)}</div><div><b>没说完的事</b>${wwList(older.unresolved)}</div></div>
-    <div class="ww-packet-sec"><b>技术状态（只留结果）</b>${wwList(older.technical_state)}</div>
-    <div class="ww-packet-sec"><b>22 小时内保留原文的重点段落</b>${ranges.length ? ranges.map((r, i) => `<details class="ww-range"><summary>${i + 1}. ${esc(r.reason || '重点原文')} · ${esc(r.start || '')}–${esc(r.end || '')}</summary><div class="ww-pre">${esc(r.text || '原文会在正式换窗时逐条带入')}</div></details>`).join('') : '<div class="ww-empty">没有强行凑段落</div>'}</div>`}
-    ${p.identity_check && p.identity_check.length ? `<div class="ww-packet-sec"><b>${raw22 ? '来源核对' : '人物归属自检'}</b>${wwList(p.identity_check)}</div>` : ''}
+    <div class="ww-pre">${esc(older.narrative || '')}</div>
   </div>`;
 }
 function wwAvatar(speaker) {
