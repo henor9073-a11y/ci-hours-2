@@ -4,6 +4,7 @@ import path from 'path';
 import assert from 'assert';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'window-workbench-test-'));
+process.env.WINDOW_WAITING_IDLE_TIMEOUT_MS = '1000';
 const ww = await import('../lib/window-workbench.js');
 
 const first = ww.getWorkbench();
@@ -80,4 +81,13 @@ assert.equal(restore.mode, 'restore_window');
 assert.equal(restore.model, 'claude-opus-5-5[1m]');
 ww.cancelJob(restore.id);
 assert.throws(() => ww.createJob({ mode: 'restore_window', target_session_id: activeId }), /已经在运行/);
+
+const waitsTooLong = ww.createJob({ mode: 'stop_window', target_session_id: activeId });
+ww.claimJob('mini');
+ww.updateJob(waitsTooLong.id, { status: 'waiting_idle', phase: 'waiting_idle', message: '等待窗口空闲' });
+await new Promise(resolve => setTimeout(resolve, 1050));
+const timedOut = ww.updateJob(waitsTooLong.id, { status: 'waiting_idle', phase: 'waiting_idle', message: '仍在等待窗口空闲' });
+assert.equal(timedOut.status, 'failed');
+assert.match(timedOut.error, /等待窗口空闲超过 5 分钟/);
+assert.equal(ww.getWorkbench().active_job, null);
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');
