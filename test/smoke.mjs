@@ -103,7 +103,7 @@ try {
     const j = await rpc('tools/list', {});
     const names = j.result.tools.map(x => x.name);
     assert.deepEqual(names.slice(0, 6), ['get_wake_packet', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
-    for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
+    for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'photo_recall', 'analyze_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
     assert.equal(new Set(names).size, names.length, '工具名有重复');
   });
   await step('迁移：memory.json → grains + profiles，旧文件原样保留', async () => {
@@ -277,6 +277,9 @@ try {
     assert.equal(p2.photo.mime_type, 'image/jpeg');
     assert.ok(p2.photo.width <= 2048, `最长边应 <=2048，实际 ${p2.photo.width}`);
     assert.equal(p2.photo.original_bytes, bigPng.length);
+    assert.equal(p2.photo.asset_version, 2);
+    assert.equal(p2.photo.original_mime_type, 'image/png');
+    assert.equal(p2.original_preserved, true);
     assert.ok(p2.note.includes('自动压'));
 
     // 带透明通道的大图 → webp（保住 alpha）
@@ -308,8 +311,12 @@ try {
     // 取回原图 + REST
     const got = await tool('get_photo', { id: p1.photo.id });
     assert.equal(got.image_base64, small);
+    assert.equal(got.returned, 'original');
     const img = await fetch(`${base}/api/album/${p2.photo.id}/image?token=${TOKEN}`);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
+    const original = await fetch(`${base}/api/album/${p2.photo.id}/original?token=${TOKEN}`);
+    assert.equal(original.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await original.arrayBuffer()), bigPng);
 
     // 超过收件上限 → 明确报错
     await assert.rejects(tool('save_photo', { image_base64: 'A'.repeat(28 * 1024 * 1024), mime_type: 'image/jpeg', caption: 'x' }), /上限/);
@@ -887,6 +894,11 @@ try {
     await tool('chat_star', { id: back.id });
     const starred = await rest('/api/chat?starred=1');
     assert.deepEqual(starred.map(x => x.id).sort(), [pat.id, back.id].sort());
+    assert.deepEqual((await rest('/api/chat?starred_for=nor')).map(x => x.id), [pat.id]);
+    assert.deepEqual((await rest('/api/chat?starred_for=cy')).map(x => x.id), [back.id]);
+    assert.deepEqual((await tool('chat_get_messages', { starred: true })).map(x => x.id), [back.id]);
+    const cyView = (await tool('chat_get_messages', { limit: 500 })).find(x => x.id === pat.id);
+    assert.ok(!cyView.stars?.nor, '辞的 MCP 视图不能看到棋子的私人收藏');
     await post('/api/chat/star', { id: pat.id, on: false });
     assert.equal((await rest('/api/chat?starred=1')).length, 1);
     // 状态：网页只能改棋子的，辞的只能 MCP 改
@@ -903,7 +915,8 @@ try {
   await step('木屋聊天：发图片、辞看图、收表情包、用表情包回', async () => {
     const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const img = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'image', image_base64: png, image_mime: 'image/png', sticker: true }) })).json();
-    assert.equal(img.type, 'image'); assert.ok(img.has_image);
+    assert.equal(img.type, 'image'); assert.ok(img.has_image && img.photo_id);
+    assert.ok(!(await tool('list_photos', {})).some(x => x.id === img.photo_id), '聊天图收藏前不应该出现在相册列表');
     const file = await fetch(`${base}/api/chat/image/${img.id}?token=${TOKEN}`);
     assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png');
     // 辞那边：直接把图给他看（MCP 的 image content）
@@ -921,7 +934,8 @@ try {
     assert.equal((await fetch(`${base}/api/chat/image/${r.id}?token=${TOKEN}`)).status, 200);
     // 存进相册
     const al = await tool('chat_image_to_album', { id: img.id, caption: '她发的第一张', tags: ['聊天'] });
-    assert.ok(al.photo.id && al.photo.tags.includes('聊天'));
+    assert.equal(al.photo.id, img.photo_id, '聊天图存相册应该提升同一资产，不复制第二份');
+    assert.ok(al.photo.tags.includes('聊天'));
   });
   await step('情绪清单：21 条种子、改形状、记一次', async () => {
     const d = await tool('get_emotions');

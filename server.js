@@ -179,7 +179,16 @@ app.get('/api/album/:id/image', (req, res) => {
   const meta = mw.album.getPhotoMeta(req.params.id);
   const p = mw.album.getPhotoPath(req.params.id);
   if (!meta || !p) return res.status(404).json({ error: '找不到这张照片' });
-  res.setHeader('Content-Type', meta.mime_type);
+  res.setHeader('Content-Type', meta.preview_mime_type || meta.mime_type);
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  fs.createReadStream(p).pipe(res);
+});
+app.get('/api/album/:id/original', (req, res) => {
+  const meta = mw.album.getPhotoMeta(req.params.id);
+  const p = mw.album.getPhotoOriginalPath(req.params.id);
+  if (!meta || !p) return res.status(404).json({ error: '找不到这张照片的原图' });
+  res.setHeader('Content-Type', meta.original_mime_type || meta.mime_type);
+  res.setHeader('Cache-Control', 'private, max-age=604800');
   fs.createReadStream(p).pipe(res);
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
@@ -209,7 +218,9 @@ app.get('/api/firsts', (req, res) => res.json(mw.firsts.getFirsts({ limit: Numbe
 app.get('/api/chat', (req, res) => {
   res.json(mw.chat.getMessages({
     since: req.query.since || '', before: req.query.before || '',
-    limit: Math.min(Number(req.query.limit) || 200, 500), starred: req.query.starred === '1'
+    limit: Math.min(Number(req.query.limit) || 200, 500),
+    starred: req.query.starred === '1',
+    starred_for: ['nor', 'cy'].includes(req.query.starred_for) ? req.query.starred_for : ''
   }));
 });
 app.get('/api/chat/unread', (req, res) => res.json(mw.chat.unreadSummary(req.query.who === 'cy' ? 'cy' : 'nor')));
