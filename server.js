@@ -559,6 +559,17 @@ app.get('/api/rings/search', (req, res) => {
     radius: 60
   }));
 });
+// 木屋 + Claude 的统一历史时间线。日期入口和关键词入口都落到同一个 day reader，
+// 只是在前端传入的初始 target 不同。
+app.get('/api/history/dates', (req, res) => res.json(mw.history.dates({ source: req.query.source })));
+app.get('/api/history/day', (req, res) => {
+  try { res.json(mw.history.day({ date: req.query.date, source: req.query.source })); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.get('/api/history/search', (req, res) => res.json(mw.history.search({
+  query: req.query.q, source: req.query.source,
+  limit: Math.min(Number(req.query.limit) || 80, 200), skip: Number(req.query.skip) || 0
+})));
 // ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
 app.get('/api/transcripts', (req, res) => {
   const q = (req.query.q || '').trim();
@@ -698,7 +709,10 @@ app.get('/api/calendar', (req, res) => {
   const daily = getDailySummariesByMonth(month);
   const schedule = getScheduleByMonth(month);
   const byDate = {};
-  const bucket = d => (byDate[d] = byDate[d] || { date: d, daily: [], schedule: [], intimate: false, kiss_count: null });
+  const bucket = d => (byDate[d] = byDate[d] || {
+    date: d, daily: [], schedule: [], intimate: false, kiss_count: null,
+    muwu_chat: false, claude_chat: false
+  });
   daily.forEach(x => {
     const b = bucket(x.date);
     b.daily.push(x);
@@ -711,6 +725,14 @@ app.get('/api/calendar', (req, res) => {
     }
   });
   schedule.forEach(x => bucket(x.date).schedule.push(x));
+  // 日历左上角的聊天来源标记：粉色=木屋，橙色=Claude；同一天两边都聊过就两个点。
+  const chatIndex = mw.history.dates({ source: 'all' }).dates;
+  for (const [date, counts] of Object.entries(chatIndex)) {
+    if (!date.startsWith(month + '-')) continue;
+    const b = bucket(date);
+    b.muwu_chat = counts.muwu > 0;
+    b.claude_chat = counts.claude > 0;
+  }
   res.json(Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date)));
 });
 app.get('/api/calendar/day', (req, res) => {
