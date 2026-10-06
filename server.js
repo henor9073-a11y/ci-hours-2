@@ -18,7 +18,7 @@ import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
 import { getVoiceHistory, getVoiceFilePath, streamSpeech } from './lib/voice.js';
 import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById, getDailySummariesByMonth } from './lib/transcripts.js';
-import { getDiaryPublic } from './lib/diary.js';
+import { addDiaryEntry, getDiaryPublic } from './lib/diary.js';
 import { publicLabels } from './lib/muwen/labels.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
@@ -580,6 +580,16 @@ app.get('/api/diary', (req, res) => {
   // ?category=wife_observation 读妻子观察日记；默认是辞的日记
   try { res.json(getDiaryPublic(Number(req.query.limit) || 50, req.query.category || 'diary')); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/diary', async (req, res) => {
+  // 棋子的入口永远只写棋子的日记，客户端不能靠 category 冒充辞。
+  const text = String((req.body || {}).text || '').trim();
+  if (!text) return res.status(400).json({ error: '日记内容不能为空' });
+  try {
+    const entry = addDiaryEntry(text, 'public', 'nor_diary', String((req.body || {}).date || ''));
+    await mw.chat.sendSystemEvent('棋子写了一篇日记', 'nor_diary');
+    res.json(entry);
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // ---- 木屋共享转盘与实体便签留言板 ----
 app.get('/api/wheels', (_, res) => res.json(getWheels()));
