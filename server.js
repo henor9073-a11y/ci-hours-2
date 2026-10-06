@@ -280,6 +280,22 @@ app.post('/api/chat/pats', (req, res) => {
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 
+// ---- 双向券册 ----
+// App 入口固定代表棋子：只能写给辞、只能使用自己持有的券；辞的入口只在 MCP。
+app.get('/api/coupons', (_, res) => res.json(mw.coupons.listCoupons()));
+app.post('/api/coupons', async (req, res) => {
+  try { res.json(await mw.coupons.createCoupon({ ...(req.body || {}), actor: 'nor' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/coupons/:id/use', async (req, res) => {
+  try { res.json(await mw.coupons.useCoupon(req.params.id, 'nor')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/coupons/:id/revoke', async (req, res) => {
+  try { res.json(await mw.coupons.requestRevocation(req.params.id, 'nor')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
 // ---- 持续通话：网页与 GPD 上当前 Claude Code session 之间的状态桥 ----
 app.get('/api/call/state', (req, res) => res.json(mw.calls.getState({ since: req.query.since || '' })));
 app.get('/api/call/history', (req, res) => res.json(mw.calls.history(Number(req.query.limit) || 50)));
