@@ -803,6 +803,13 @@ try {
     assert.deepEqual(await tool('call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
     calls.action('nor', 'hangup');
     assert.equal(calls.history(1)[0].status, 'ended');
+    const callBubble = calls.history(1)[0];
+    const callMessages = (await import('../lib/muwen/chat.js')).getMessages({ limit: 20 });
+    const savedCall = callMessages.find(m => m.type === 'call' && m.call_id === callBubble.id);
+    assert.ok(savedCall, '通话结束后该写进聊天时间线');
+    assert.equal(savedCall.sender, 'nor', '通话气泡归拨号的人');
+    assert.equal(savedCall.read, true, '通话记录不能再作为新留言触发辞回复');
+    assert.match(savedCall.content, /^通话时长 \d{2}:\d{2}$/);
     const endedPending = calls.pendingForCy().events.find(e => e.type === 'ended');
     assert.ok(endedPending && endedPending.delivered_to_cy === false, '挂断后 ended 仍要交给辞');
     calls.markDelivered([endedPending.id]);
