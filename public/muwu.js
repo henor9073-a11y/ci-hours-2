@@ -1239,7 +1239,7 @@ function wwRender(data, node) {
   } else {
     const fresh = wwDraft.mode === 'fresh';
     h += `<div class="section-title">开下一个窗口</div><div class="card ww-controls">
-      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>最新每日总结 + 前 22 小时完整原话 + 最后 2 小时逐条 JSONL</small></span></label>
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>换窗前 22 小时原始对话 + 最后 2 小时逐条上下文；不附每日总结或 CLAUDE.md</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
       <label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
       <label class="ww-field"><span>思考显示</span><select onchange="wwDraft.thinking_display=this.value">${displays.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.thinking_display ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
