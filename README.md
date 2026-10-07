@@ -194,7 +194,7 @@
 - 消息类型：`text` / `voice`（棋子录的，后台用 ElevenLabs Scribe 转文字，转完或失败再送给辞，最多等 45 秒）/ `image`（上传的存 `chat-images/`，超过 600KB 压到最长边 1600；或者 `photo_id` 直接引用相册，表情包就是这么发的）/ `pat`（拍一拍，content 是后缀）。每条都能 `reply_to` 引用、`starred` 标星（两人共用）。
 - 状态文字：`GET/POST /api/chat/status`（网页只能改棋子的）+ MCP `set_status`（只改辞的）。拍一拍库 `GET/POST /api/chat/pats`，设置页能编辑。
 - 分页：`/api/chat?limit=&before=<id>` 往上翻，`?starred=1` 只看标星。
-- 辞新增的工具：`chat_pat` `chat_star` `chat_get_image`（直接回图片）`chat_image_to_album` `sticker_save`/`get_stickers`（他的表情包 = 相册里标签「辞的表情包」的，caption 是他写的形容）`set_status`/`get_status`；`chat_reply` 多了 `photo_id`（发相册图/表情包）。
+- 辞新增的工具：`chat_pat` `chat_star` `chat_get_image`（直接回图片）`chat_image_to_album` `save_claude_image` `sticker_save`/`get_stickers`（他的表情包 = 相册里标签「辞的表情包」的，caption 是他写的形容）`set_status`/`get_status`；`chat_reply` 多了 `photo_id`（发相册图/表情包）。`save_claude_image` 配合 Claude Code 的 PostToolUse 本机钩子，从当前 session 原始记录取棋子最近发来的附件，和木屋聊天图进入同一本相册。
 - **语音**（2026-09-28 第二版，照微信）：麦克风在发送键左边，**按住说话**，松手发；往左滑到「取消」松手不发，往右滑到「转文字」松手把话转成文字填进输入框（`POST /api/chat/transcribe`，只转不存）。语音条 `)))  12″` 越长越长，点一下播，旁边「转文字」；辞发来没听过的带红点。
 - **思考 / 工具照 Claude 官方 App**：一行「Thought process ›」「Used N tools ›」，点开从底部弹一层。**思考是他原本的**：GPD 上 PostToolUse 钩子 `hooks/chat-annotate.py`（matcher `mcp__muwen__chat_reply`）在他调完 chat_reply 后从会话记录里取这一轮真实的 thinking 块和 tool_use，`POST /api/chat/annotate` 覆盖上去；`chat_reply` 的 `thinking` 参数不用填了。
 - 模型选择器现在只把选择记在消息上，换不动辞当前的模型（那是他启动命令定的），留给以后接 API。

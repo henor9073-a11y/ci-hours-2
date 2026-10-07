@@ -12,6 +12,7 @@
 | `pre-compact-ring.mjs` | `PreCompact` | 压缩前把这个窗口的对话原文自动存进年轮（`add_ring`，`source_type=auto_extract`）。年轮层 auto_extract 类型的来源就是它。 |
 | `user-prompt-recall.ps1` | `UserPromptSubmit` | 自动召回注入：棋子每条消息调木纹 `POST /api/recall`，把匹配到的 3–5 条记忆作为额外 context 注入（`[muwen:recall] …`）。琐碎消息跳过；网络慢/失败静默。 |
 | `chat-annotate.py` | `PostToolUse`（matcher `mcp__muwen__chat_reply`） | 辞回木屋消息之后，从会话记录取这一轮真实的 thinking 和工具调用补到那条消息上（棋子那边显示成 Thought process / Used N tools）。静默失败，不记日志。 |
+| `claude-image-to-album.py` | `PostToolUse`（matcher `mcp__muwen__save_claude_image`） | 辞在 Claude 端决定收藏棋子发来的图片后，从当前 session 的原始记录读取最近一张用户图片，存进与木屋共用的相册；不要求模型复制 base64。 |
 
 ## 木屋实时通话（GPD）
 

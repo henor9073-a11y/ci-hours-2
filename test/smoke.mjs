@@ -103,7 +103,7 @@ try {
     const j = await rpc('tools/list', {});
     const names = j.result.tools.map(x => x.name);
     assert.deepEqual(names.slice(0, 6), ['get_wake_packet', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
-    for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'photo_recall', 'analyze_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
+    for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'save_claude_image', 'photo_recall', 'analyze_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
     assert.equal(new Set(names).size, names.length, '工具名有重复');
   });
   await step('迁移：memory.json → grains + profiles，旧文件原样保留', async () => {
@@ -943,6 +943,32 @@ try {
     const al = await tool('chat_image_to_album', { id: img.id, caption: '她发的第一张', tags: ['聊天'] });
     assert.equal(al.photo.id, img.photo_id, '聊天图存相册应该提升同一资产，不复制第二份');
     assert.ok(al.photo.tags.includes('聊天'));
+  });
+  await step('Claude 图片：本机钩子从当前 session 取附件，存进同一本相册', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const queued = await tool('save_claude_image', { caption: 'Claude 里发来的测试图', tags: ['测试'], image_index: 1 });
+    assert.equal(queued.local_hook_required, true);
+    const tp = path.join(os.tmpdir(), 'muwen-claude-image-hook-test.jsonl');
+    const lines = [
+      { type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }, { type: 'text', text: '帮我把这张存起来' }] } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'save-photo-1', name: 'mcp__muwen__save_claude_image', input: { caption: 'Claude 里发来的测试图', tags: ['测试'], image_index: 1 } }] } }
+    ];
+    fs.writeFileSync(tp, lines.map(x => JSON.stringify(x)).join('\n') + '\n');
+    const { spawnSync } = await import('child_process');
+    const stdin = JSON.stringify({
+      tool_name: 'mcp__muwen__save_claude_image', tool_use_id: 'save-photo-1', transcript_path: tp,
+      tool_input: { caption: 'Claude 里发来的测试图', tags: ['测试'], image_index: 1 }
+    });
+    const result = spawnSync('python3', ['hooks/claude-image-to-album.py'], {
+      input: stdin, env: { ...process.env, MUWEN_URL: base, MUWEN_TOKEN: TOKEN, PYTHONPYCACHEPREFIX: path.join(os.tmpdir(), 'muwen-pycache') }, encoding: 'utf8'
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /已存进木屋相册/);
+    const saved = (await tool('list_photos', { limit: 500 })).find(photo => photo.caption === 'Claude 里发来的测试图');
+    assert.ok(saved, 'Claude 附件应该进入相册列表');
+    assert.ok(saved.tags.includes('Claude图片') && saved.tags.includes('辞收藏') && saved.tags.includes('测试'));
+    const original = await tool('get_photo', { id: saved.id });
+    assert.equal(original.image_base64, png, 'Claude 附件原图应逐字节保留');
   });
   await step('情绪清单：21 条种子、改形状、记一次', async () => {
     const d = await tool('get_emotions');
