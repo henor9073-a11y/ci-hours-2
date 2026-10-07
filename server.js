@@ -34,6 +34,12 @@ import {
   addHealthNote, getHealthNotes, updateHealthNote, removeHealthNote
 } from './lib/health.js';
 import { getWheels, createWheel, updateWheel, removeWheel, spinWheel, getBoardNotes, createBoardNote, updateBoardNote, archiveBoardNote, restoreBoardNote } from './lib/shared-spaces.js';
+import { getLocationState, updateLocation, addLocationPlace, updateLocationPlace, removeLocationPlace } from './lib/location.js';
+import { getWatchHealth, ingestWatchHealth } from './lib/watch-health.js';
+import {
+  getPetHousehold, getPet, careForPet,
+  syncPetNest, pendingPetActions, completePetAction
+} from './lib/pet-nest.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 木纹：启动时把 ci-hours 的 memory.json 迁进 grains/profiles（只跑一次，旧文件原样保留当备份）
@@ -227,6 +233,7 @@ app.get('/api/album/:id/original', (req, res) => {
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
+app.get('/api/kiss-progress', (_, res) => res.json({ ...mw.rings.kissProgress(), days: mw.rings.kissHistory() }));
 app.get('/api/emotions', (req, res) => res.json(mw.emotions.getEmotions({ withHits: req.query.mentions === '1' })));
 app.get('/api/emotions/:id', (req, res) => {
   const e = mw.emotions.getEmotion(req.params.id);
@@ -238,6 +245,53 @@ app.get('/api/songs/:id', (req, res) => {
   const s = mw.songs.getSong(req.params.id);
   if (!s) return res.status(404).json({ error: '没有这首歌' });
   res.json(s);
+});
+
+// ---- 后台低功耗定位：手机上传显著位置变化，后端匹配常用地点并写聊天系统动态 ----
+app.get('/api/location', (_, res) => res.json(getLocationState({ exact: true })));
+app.post('/api/location', async (req, res) => {
+  try { res.json(await updateLocation(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/location/places', (req, res) => {
+  try { res.json(addLocationPlace(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/location/places/:id', (req, res) => {
+  try {
+    const place = updateLocationPlace(req.params.id, req.body || {});
+    if (!place) return res.status(404).json({ error: '找不到这个常用地点' });
+    res.json(place);
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/location/places/:id/remove', (req, res) => {
+  const result = removeLocationPlace(req.params.id);
+  if (!result) return res.status(404).json({ error: '找不到这个常用地点' });
+  res.json(result);
+});
+
+// ---- Apple Watch relay：可由同机 relay 读取，也可由 Mac mini 主动推送一份快照 ----
+app.get('/api/watch-health', async (req, res) => {
+  try { res.json(await getWatchHealth({ refresh: req.query.refresh !== '0' })); }
+  catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
+app.post('/api/watch-health/sync', (req, res) => {
+  try { res.json(ingestWatchHealth(req.body || {}, 'watch_relay_push')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
+// ---- Cove Pet Nest：Mac mini 主动同步 localhost:9480，照料动作由固定用途代理领走执行 ----
+app.get('/api/pet-nest/household', async (_, res) => {
+  try { res.json(await getPetHousehold()); }
+  catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
+app.get('/api/pet-nest/pets/:id', async (req, res) => {
+  try { res.json(await getPet(req.params.id)); }
+  catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
+app.post('/api/pet-nest/pets/:id/care', async (req, res) => {
+  try { res.json(await careForPet(req.params.id, String((req.body || {}).action || ''))); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.post('/api/songs', (req, res) => {
   try { res.json(mw.songs.addSong({ ...(req.body || {}), added_by: (req.body || {}).added_by || '棋子' })); }
@@ -454,6 +508,18 @@ app.post('/api/window-workbench/jobs/:id/cancel', (req, res) => {
 });
 app.post('/api/window-workbench/agent/heartbeat', windowAgent, (req, res) => {
   try { res.json(windowWorkbench.agentHeartbeat(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/pet-nest/agent/actions', windowAgent, (req, res) => {
+  try { res.json({ actions: pendingPetActions(req.query.limit) }); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/pet-nest/agent/sync', windowAgent, (req, res) => {
+  try { res.json(syncPetNest(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/pet-nest/agent/actions/:id/complete', windowAgent, (req, res) => {
+  try { res.json(completePetAction(req.params.id, req.body || {})); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.post('/api/window-workbench/agent/claim', windowAgent, (req, res) => {

@@ -25,7 +25,7 @@ $p = ''
 try { $p = [string](($input | Out-String | ConvertFrom-Json).prompt) } catch { $p = '' }
 if (-not $p) { exit 0 }
 # 木纹自己注入的召回内容（[muwen:...] 开头）和自动唤醒 prompt 不再触发召回，避免套娃
-if ($p.StartsWith('[muwen:') -or $p.StartsWith('苏醒') -or $p -match '^\[(heartbeat|自动唤醒)\]') { exit 0 }
+if ($p.StartsWith('[muwen:') -or $p.StartsWith('苏醒') -or $p -match '^(?:/loop(?:\s|$)|\[自动唤醒\])') { exit 0 }
 
 # 通话轻量模式：普通通话不自动召回；明确问过去才做最多两条的纯关键词轻量召回。
 $inCall = $p.Contains('origin="muwu_call"')

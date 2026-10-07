@@ -28,7 +28,7 @@ except ValueError:
 if TIMEOUT <= 0:
     TIMEOUT = 12
 
-SKIP_RE = re.compile(r'^\[(heartbeat|自动唤醒)\]')
+SKIP_RE = re.compile(r'^(?:/loop(?:\s|$)|\[自动唤醒\])')
 HISTORY_RE = re.compile(r'之前|以前|上次|上回|那次|当时|原话|说过|提过|答应过|约定过|记不记得|还记得|翻一下|查一下|找一下')
 
 

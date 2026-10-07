@@ -14,6 +14,10 @@ assert.equal(first.choices.models[0].id, 'claude-opus-4-6[1m]');
 const job = ww.createJob({ mode: 'handoff', model: 'not-allowed', thinking_display: 'summarized', preview_only: true });
 assert.equal(job.status, 'queued');
 assert.equal(job.model, 'claude-opus-4-6[1m]');
+assert.equal(job.handover_contract.raw_dialogue_hours, 22);
+assert.equal(job.handover_contract.recent_context_json_hours, 2);
+assert.equal(job.handover_contract.include_daily_summary, false);
+assert.equal(job.handover_contract.include_claude_md, false);
 assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 
 const primaryId = '11111111-1111-4111-8111-111111111111';
