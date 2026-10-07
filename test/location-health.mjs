@@ -42,12 +42,14 @@ assert.equal(snapshot.steps, 6543);
 assert.equal(snapshot.sleep.duration_minutes, 431);
 
 petNest.syncPetNest({
-  food: 12,
-  pets: [{ id: 'pet-1', name: '栗子', emoji: '🐿️', happiness: 88 }]
+  grains: 12,
+  pets: [{ id: 'pet-1', name: '栗子', kind: 'cat', satiety: 72, traits: { attachment: 88, energy: 65 } }]
 });
 const household = await petNest.getPetHousehold();
 assert.equal(household.food, 12);
 assert.equal(household.pets[0].name, '栗子');
+assert.equal(household.pets[0].hunger, 28);
+assert.equal(household.pets[0].happiness, 88);
 const care = await petNest.careForPet('pet-1', 'feed');
 assert.equal(care.queued, true);
 const pending = petNest.pendingPetActions();
