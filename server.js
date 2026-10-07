@@ -6,7 +6,7 @@ import cron from 'node-cron';
 import { fileURLToPath } from 'url';
 import {
   getState, updateSettings, getShelf, removeBook,
-  getNotes, getLog, getBookContent
+  getNotes, getLog, getBookContent, setProgress, addNote
 } from './lib/store.js';
 import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js';
 import { planToday } from './lib/ci.js';
@@ -122,10 +122,44 @@ app.delete('/api/book/:id', (req, res) => { removeBook(req.params.id); res.json(
 app.get('/api/book/:id', (req, res) => {
   const c = getBookContent(req.params.id);
   if (!c) return res.status(404).json({ error: '找不到' });
+  // 旧网页没传分页参数时仍只拿目录；原生阅读器按章取正文，避免一次下载整本书。
+  if (req.query.from !== undefined || req.query.count !== undefined) {
+    const from = Math.max(0, Number(req.query.from) || 0);
+    const count = Math.max(1, Math.min(10, Number(req.query.count) || 1));
+    return res.json({
+      id: c.id,
+      title: c.title,
+      from,
+      totalChapters: c.chapters.length,
+      chapters: c.chapters.slice(from, from + count)
+    });
+  }
   res.json({ id: c.id, title: c.title, chapters: c.chapters.map(ch => ch.title) });
 });
+app.post('/api/book/:id/progress', (req, res) => {
+  const book = getShelf().find(x => x.id === req.params.id);
+  if (!book) return res.status(404).json({ error: '找不到这本书' });
+  const progress = Math.max(0, Math.min(book.totalChapters, Number(req.body && req.body.progress) || 0));
+  setProgress(book.id, progress);
+  res.json({ ...book, progress, finished: progress >= book.totalChapters });
+});
 // ---- 记录与日志 ----
-app.get('/api/notes', (_, res) => res.json(getNotes(200)));
+app.get('/api/notes', (req, res) => {
+  let notes = getNotes(Number(req.query.limit) || 200);
+  if (req.query.kind) notes = notes.filter(x => x.kind === req.query.kind);
+  if (req.query.bookId) notes = notes.filter(x => x.bookId === req.query.bookId);
+  res.json(notes);
+});
+app.post('/api/book/:id/notes', (req, res) => {
+  const book = getShelf().find(x => x.id === req.params.id);
+  if (!book) return res.status(404).json({ error: '找不到这本书' });
+  const text = String((req.body && req.body.text) || '').trim();
+  if (!text) return res.status(400).json({ error: '笔记不能为空' });
+  const chapters = Array.isArray(req.body && req.body.chapters)
+    ? req.body.chapters.map(Number).filter(Number.isInteger)
+    : [];
+  res.json(addNote({ kind: 'read', text, bookId: book.id, bookTitle: book.title, chapters, addedBy: '棋子' }));
+});
 app.get('/api/log', (_, res) => res.json(getLog(200)));
 // ---- 木纹：记忆三层 + 档案 + 倒数日 + 心情 + 相册（网页只读，写入走 /mcp）----
 app.get('/api/memory', (_, res) => {

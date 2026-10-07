@@ -614,6 +614,28 @@ try {
     assert.ok(fm.formats.includes('docx'));
     const chk = await (await fetch(`${base}/api/shelf/check?token=${TOKEN}`)).json();
     assert.ok(Array.isArray(chk));
+
+    // 原生端走 REST：上传后按章取正文、保存进度、写/读同一本书的笔记。
+    const form = new FormData();
+    const bookText = '第一章 回家\n' + '这是第一章，写的是两个人终于回到同一个书架。'.repeat(20);
+    form.append('file', new Blob([Buffer.from(bookText, 'utf8')], { type: 'text/plain' }), '一起读.txt');
+    const added = await (await fetch(`${base}/api/upload?token=${TOKEN}`, { method: 'POST', body: form })).json();
+    assert.ok(added.id && added.totalChapters >= 1, JSON.stringify(added));
+    const page = await (await fetch(`${base}/api/book/${added.id}?from=0&count=1&token=${TOKEN}`)).json();
+    assert.equal(page.id, added.id);
+    assert.equal(page.chapters.length, 1);
+    assert.ok(page.chapters[0].text.includes('第一章'));
+    const progress = await (await fetch(`${base}/api/book/${added.id}/progress?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ progress: 1 })
+    })).json();
+    assert.equal(progress.progress, 1);
+    const savedNote = await (await fetch(`${base}/api/book/${added.id}/notes?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '这一章在讲回家。', chapters: [0] })
+    })).json();
+    assert.ok(savedNote.id && savedNote.addedBy === '棋子');
+    const notes = await (await fetch(`${base}/api/notes?kind=read&bookId=${added.id}&token=${TOKEN}`)).json();
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].text, '这一章在讲回家。');
   });
   await step('对话记录：关键词逐处定位 + 按日期翻', async () => {
     await tool('add_ring', { window_name: '测试窗口', date: '2026-09-01', content: '第一次提到项圈。棋子说项圈还在吗。我说在，没摘过。后来又聊到项圈的来源。' });
