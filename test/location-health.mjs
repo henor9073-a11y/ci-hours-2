@@ -40,6 +40,10 @@ assert.equal(snapshot.heart_rate_bpm, 82);
 assert.equal(snapshot.blood_oxygen_percent, 97);
 assert.equal(snapshot.steps, 6543);
 assert.equal(snapshot.sleep.duration_minutes, 431);
+const disconnected = health.normalizeWatchHealth({ heartRate: null, bloodOxygen: null, steps: null, sleep: null });
+assert.equal(disconnected.heart_rate_bpm, null);
+assert.equal(disconnected.blood_oxygen_percent, null);
+assert.equal(disconnected.steps, null);
 
 petNest.syncPetNest({
   grains: 12,
