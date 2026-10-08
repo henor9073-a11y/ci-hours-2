@@ -3,9 +3,12 @@
 //   import { startCallBridge } from './voice-channel-calls-addon.mjs'
 //   startCallBridge({ mcp, muwu: MUWU, safeMeta, log })
 export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
-  if (!muwu) return { stop() {} };
+  if (!muwu?.sessionId) {
+    if (muwu) log('木屋通话：缺少 MUWU_SESSION_ID，为避免多个窗口同时接听，保持关闭');
+    return { stop() {} };
+  }
   const base = muwu.url.replace(/\/$/, '');
-  const q = 'token=' + encodeURIComponent(muwu.token);
+  const q = 'token=' + encodeURIComponent(muwu.token) + '&session_id=' + encodeURIComponent(muwu.sessionId);
   const pushed = new Set(), utteranceBuffer = new Map(); let busy = false, bufferChangedAt = 0;
   async function poll() {
     if (busy) return; busy = true;
@@ -46,6 +49,6 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
     finally { busy = false; }
   }
   const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400);
-  poll(); log('木屋通话：已接上，每 0.4 秒取一次');
+  poll(); log(`木屋通话：已绑定窗口 ${muwu.sessionId.slice(0, 8)}，每 0.4 秒取一次`);
   return { stop() { clearInterval(timer); } };
 }

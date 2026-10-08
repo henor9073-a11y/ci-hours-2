@@ -58,7 +58,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, x-window-agent-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, x-window-agent-key, x-muwu-session-id');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -81,6 +81,20 @@ app.use((req, res, next) => {
   return res.status(401).json({ error: '需要密码' });
 });
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
+
+function deliveryRoute(req) {
+  const sessionId = req.headers['x-muwu-session-id']
+    || req.query.session_id
+    || (req.body && req.body.session_id);
+  return windowWorkbench.deliveryRoute(sessionId);
+}
+
+function blockedDelivery(route, kind) {
+  const base = { blocked: true, reason: route.reason };
+  return kind === 'call'
+    ? { ...base, call: null, events: [] }
+    : { ...base, count: 0, messages: [] };
+}
 // ---- 状态 ----
 app.get('/api/state', (_, res) => {
   const s = getState();
@@ -321,8 +335,13 @@ app.post('/api/chat', async (req, res) => {
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
-app.get('/api/chat/pending', (_, res) => res.json(mw.chat.pendingForCy()));
+app.get('/api/chat/pending', (req, res) => {
+  const route = deliveryRoute(req);
+  res.json(route.allowed ? mw.chat.pendingForCy() : blockedDelivery(route, 'chat'));
+});
 app.post('/api/chat/delivered', (req, res) => {
+  const route = deliveryRoute(req);
+  if (!route.allowed) return res.json({ delivered: 0, blocked: true, reason: route.reason });
   try { res.json(mw.chat.markDelivered((req.body || {}).ids || [])); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
@@ -401,8 +420,16 @@ app.post('/api/call/transcribe', async (req, res) => {
     const event = text ? mw.calls.say('nor', text, 'voice') : null; res.json({ text, event });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
-app.get('/api/call/pending', (_, res) => res.json(mw.calls.pendingForCy()));
-app.post('/api/call/delivered', (req, res) => res.json(mw.calls.markDelivered((req.body || {}).ids || [])));
+app.get('/api/call/pending', (req, res) => {
+  const route = deliveryRoute(req);
+  res.json(route.allowed ? mw.calls.pendingForCy() : blockedDelivery(route, 'call'));
+});
+app.post('/api/call/delivered', (req, res) => {
+  const route = deliveryRoute(req);
+  res.json(route.allowed
+    ? mw.calls.markDelivered((req.body || {}).ids || [])
+    : { ok: false, count: 0, blocked: true, reason: route.reason });
+});
 app.get('/api/call/audio/:eventId', async (req, res) => {
   const e = mw.calls.event(req.params.eventId);
   if (!e || e.type !== 'utterance' || e.by !== 'cy') return res.status(404).json({ error: '找不到这句通话语音' });
@@ -507,7 +534,15 @@ app.post('/api/window-workbench/jobs/:id/cancel', (req, res) => {
   catch (e) { res.status(404).json({ error: String(e.message || e) }); }
 });
 app.post('/api/window-workbench/agent/heartbeat', windowAgent, (req, res) => {
-  try { res.json(windowWorkbench.agentHeartbeat(req.body || {})); }
+  try {
+    const result = windowWorkbench.agentHeartbeat(req.body || {});
+    res.json(result);
+    if (result.context_notice) {
+      const level = Number(result.context_notice.level) || 70;
+      sendPush(`辞的当前窗口已到 ${level}%`, result.context_notice.message, level >= 80 ? 'alarm' : 'bell')
+        .catch(e => console.error('[window-workbench] context Bark 失败：', e.message || e));
+    }
+  }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.get('/api/pet-nest/agent/actions', windowAgent, (req, res) => {
@@ -535,13 +570,15 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
     const job = windowWorkbench.completeJob(req.params.id, req.body || {});
     res.json(job);
     if (job.status !== 'completed') return;
-    const label = job.preview_only ? (job.mode === 'crop' ? '同窗裁剪预览生成好了' : '交接预览生成好了')
+    const label = job.mode === 'set_wake' ? `自主苏醒已${job.wake_enabled ? '打开' : '关闭'}`
+      : job.preview_only ? (job.mode === 'crop' ? '同窗裁剪预览生成好了' : '交接预览生成好了')
       : job.mode === 'crop' ? '辞的当前窗口已安全裁剪'
       : job.mode === 'secondary' ? '并行窗口已经打开'
         : job.mode === 'set_primary' ? '主要窗口已经切换'
           : job.mode === 'stop_window' ? '窗口已经停止'
             : job.mode === 'restore_window' ? '窗口已经恢复' : '辞换窗完成';
-    const detail = job.preview_only ? '可以在木屋的换窗工作台检查内容了。'
+    const detail = job.mode === 'set_wake' ? '设置已由 Mac mini 执行并重新校验。'
+      : job.preview_only ? '可以在木屋的换窗工作台检查内容了。'
       : job.mode === 'crop' ? 'session ID 没有变，原始记录和裁前备份都保留。'
       : job.mode === 'secondary' ? '主要窗口没有变化，可以在工作台打开新窗口。'
         : job.mode === 'set_primary' ? '选中的窗口已经接管主要通道，其他窗口完整保留。'

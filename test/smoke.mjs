@@ -12,6 +12,8 @@ const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'muwen-test-'));
 // 测试进程里也会直接 import lib 模块（语义层那步），让它跟起的服务读同一个数据目录
 process.env.DATA_DIR = DATA;
 const TOKEN = 'testpw';
+const PRIMARY_SESSION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const SECONDARY_SESSION = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const t = new Date().toISOString();
 
 // 旧格式的 memory.json（ci-hours）
@@ -412,20 +414,20 @@ try {
     const g = sa.results.find(r => r.layer === 'grains');
     assert.equal(g.label, '经历');
 
-    // 苏醒状态：三层都在，没 ping 过的如实说未接入
+    // 苏醒状态：三层都在，当前窗口和看门狗只认 Mac mini 执行器的真实回报
     let w = await tool('get_wake_status');
     assert.equal(w.layers.length, 3);
     assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours']);
     assert.equal(w.layers[0].connected, false);
-    assert.ok(w.layers[0].status.includes('未接入'));
+    assert.ok(w.layers[0].status.includes('没有最近报到'));
     assert.equal(w.layers.find(l => l.key === 'ci_hours').connected, true);   // 第三层是服务器自己的，永远看得到
-    // ping 之后就该变成已接入
+    // 旧 wake-ping 只为兼容保留，不能再把已废弃的 Windows ping 冒充当前看门狗
     const pr = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: 'heartbeat', note: '测试' }) });
     assert.ok(pr.ok);
     w = await tool('get_wake_status');
     const hb = w.layers.find(l => l.key === 'heartbeat');
-    assert.equal(hb.connected, true);
-    assert.equal(hb.status, '活跃');
+    assert.equal(hb.connected, false);
+    assert.ok(hb.status.includes('尚未迁移'));
     const bad = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: '瞎写的' }) });
     assert.equal(bad.status, 400);
   });
@@ -494,22 +496,23 @@ try {
     const w = await tool('get_wake_status');
     assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours'], '顺序按一二三层');
     const [l1, l2, l3] = w.layers;
-    assert.equal(l1['权限'], '全部');
-    assert.ok(l1.only.some(x => x.includes('木屋留言')), '第一层要写明留言只有它能碰');
-    assert.ok(l1.only.some(x => x.includes('今日一句')));
+    assert.equal(l1['权限'], '只向主要窗口注入 /loop');
+    assert.ok(l1.only.some(x => x.includes('主要窗口')), '第一层只能叫醒登记的主要窗口');
+    assert.ok(l1.never.some(x => x.includes('不另开 session')));
     assert.equal(l2['权限'], '只有推 Bark');
     assert.ok(l2.never.includes('不读留言') && l2.never.includes('不启动新 session'));
     assert.ok(l3.never.includes('不回留言') && l3.never.some(x => x.includes('辞的语气')));
-    // 看门狗脚本只推 Bark：不许再出现拉起 session 的调用
+    // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
     const fs2 = await import('fs');
-    const hb = fs2.readFileSync(new URL('../hooks/heartbeat.ps1', import.meta.url), 'utf8');
-    const hbCode = hb.replace(/^\s*#.*$/gm, '');   // 注释里会提到"以前用 claude -p"，只看真正的代码
-    assert.ok(!/claude\s+-p/.test(hbCode), '看门狗不该启动新 session');
+    const hbCode = fs2.readFileSync(new URL('../../../remote-fix/wake_watchdog.py', import.meta.url), 'utf8')
+      .replace(/^\s*#.*$/gm, '');
+    assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
     assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
-    assert.ok(hb.includes('last_wakeup.txt') && hb.includes('40'));
-    // 第一层每轮都摸 last_wakeup.txt
-    const ts = fs2.readFileSync(new URL('../hooks/timestamp.ps1', import.meta.url), 'utf8');
-    assert.ok(ts.includes('last_wakeup.txt'));
+    assert.ok(hbCode.includes("mcp_call('send_push'"));
+    // 第一层只往现有主要窗口注入 /loop
+    const wake = fs2.readFileSync(new URL('../../../remote-fix/wakeup.py', import.meta.url), 'utf8');
+    assert.ok(wake.includes('os.write(fd, b"/loop\\n")'));
+    assert.ok(!/claude\s+-p/.test(wake));
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
@@ -823,12 +826,34 @@ try {
     assert.ok(js.includes('cx-voice-text'), '辞的语音要有转文字');
   });
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
+    const heartbeat = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: 'test-mini', current: {
+        session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
+        windows: [
+          { session_id: PRIMARY_SESSION, name: '主要窗口', is_primary: true, state: 'idle' },
+          { session_id: SECONDARY_SESSION, name: '在线副窗口', is_primary: false, state: 'idle' }
+        ]
+      } })
+    });
+    assert.equal(heartbeat.status, 200);
     const calls = await import('../lib/muwen/calls.js');
     let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
     assert.equal(calls.pauseMs(), 800); assert.equal(settings.endPause, 'fast');
     assert.equal(settings.tokenMode, 'economy');
     const c = calls.start('nor'); assert.equal(c.status, 'ringing');
     assert.ok(calls.pendingForCy().events.some(e => e.type === 'ringing'));
+    assert.equal((await rest('/api/call/pending')).blocked, true, '没声明 session 的旧频道必须关闭');
+    assert.equal((await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`)).events.length, 0, '副窗口不能领取来电');
+    const primaryCall = await rest(`/api/call/pending?session_id=${PRIMARY_SESSION}`);
+    const ringing = primaryCall.events.find(e => e.type === 'ringing');
+    assert.ok(ringing, '主要窗口应领取来电');
+    const blockedCallAck = await (await fetch(`${base}/api/call/delivered?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': SECONDARY_SESSION },
+      body: JSON.stringify({ ids: [ringing.id] })
+    })).json();
+    assert.equal(blockedCallAck.blocked, true, '副窗口不能替主要窗口确认来电');
+    assert.ok((await rest(`/api/call/pending?session_id=${PRIMARY_SESSION}`)).events.some(e => e.id === ringing.id), '副窗口确认不能吞掉主要窗口来电');
     calls.action('cy', 'accept');
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
@@ -858,19 +883,23 @@ try {
     const q = await tool('chat_reply', { content: '被引用的那句' });
     const m = await post({ type: 'text', content: '回你这句', reply_to: q.id });
     assert.equal(m.quote.text, '被引用的那句');
-    let p = await rest('/api/chat/pending');
+    assert.equal((await rest('/api/chat/pending')).blocked, true, '没声明 session 的旧频道必须关闭');
+    assert.equal((await rest(`/api/chat/pending?session_id=${SECONDARY_SESSION}`)).messages.length, 0, '副窗口不能领取聊天消息');
+    let p = await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`);
     const mine = p.messages.find(x => x.id === m.id);
     assert.ok(mine, '新消息该在待送里');
     assert.ok(mine.text_for_cy.includes('引用你那句') && mine.text_for_cy.includes('回你这句'), mine.text_for_cy);
-    const d = await (await fetch(`${base}/api/chat/delivered?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: p.messages.map(x => x.id) }) })).json();
+    const blockedAck = await (await fetch(`${base}/api/chat/delivered?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': SECONDARY_SESSION }, body: JSON.stringify({ ids: p.messages.map(x => x.id) }) })).json();
+    assert.equal(blockedAck.blocked, true, '副窗口不能替主要窗口确认送达');
+    const d = await (await fetch(`${base}/api/chat/delivered?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': PRIMARY_SESSION }, body: JSON.stringify({ ids: p.messages.map(x => x.id) }) })).json();
     assert.ok(d.delivered >= 1);
-    assert.ok(!(await rest('/api/chat/pending')).messages.some(x => x.id === m.id), '送过的不再送');
+    assert.ok(!(await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`)).messages.some(x => x.id === m.id), '送过的不再送');
     const back = (await rest('/api/chat?limit=5')).find(x => x.id === m.id);
     assert.equal(back.read, true, '送进窗口就是已读（两个勾）');
     // 语音：没配 key 转文字会失败，失败了也照样送，并且告诉辞听不到内容
     const v = await post({ type: 'voice', voice_base64: Buffer.from('fake-audio').toString('base64'), voice_mime: 'audio/webm', duration: 3 });
     let pv = null;
-    for (let i = 0; i < 30 && !pv; i++) { pv = (await rest('/api/chat/pending')).messages.find(x => x.id === v.id); if (!pv) await new Promise(r => setTimeout(r, 100)); }
+    for (let i = 0; i < 30 && !pv; i++) { pv = (await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`)).messages.find(x => x.id === v.id); if (!pv) await new Promise(r => setTimeout(r, 100)); }
     assert.ok(pv, '转文字失败的语音也要送');
     assert.ok(pv.text_for_cy.includes('语音') && pv.text_for_cy.includes('转文字失败'), pv.text_for_cy);
   });
@@ -920,7 +949,7 @@ try {
     const post = (p, b) => fetch(`${base}${p}?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then(r => r.json());
     const pat = await post('/api/chat', { type: 'pat', content: '的脑袋' });
     assert.equal(pat.type, 'pat');
-    const pend = (await rest('/api/chat/pending')).messages.find(x => x.id === pat.id);
+    const pend = (await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`)).messages.find(x => x.id === pat.id);
     assert.equal(pend.text_for_cy, '棋子 拍了拍 你的脑袋');
     const back = await tool('chat_pat', { content: '说乖' });
     assert.equal(back.sender, 'cy');

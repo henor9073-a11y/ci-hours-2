@@ -73,7 +73,7 @@
 - 搜索：`search_all`（跨 grains / rings / profiles / cross_sections / photos，每条带 `category` + 中文 `label`，前端直接按它分组）
 - 召回：`recall({notice, context_summary?})` / `auto_recall({query})`（自动召回，每条消息注入用）/ `get_recall_logs`
 - 梦境：`dream` / `get_dream_report`
-- 苏醒：`get_wake_status`（三层状态 + 最近苏醒记录）
+- 苏醒：`get_wake_status`（当前主要 session、独立看门狗、机械后台三层的真实状态）
 - 截面：`get_summary` / `update_summary_section({section, text, source_ids?})` / `get_summary_history`
 
 
@@ -111,7 +111,7 @@
 - Mac mini 窗口代理从 `localhost:9470/ai/health` 主动推送手表快照；辞用 MCP `get_watch_health` 读最近心率、步数、血氧和睡眠。云端只缓存，不反向访问 Mac 的 localhost。
 - 小窝页面是原生界面。Mac mini 窗口代理同步 `localhost:9480` 的家庭与宠物数据，并领取喂食／摸摸／玩耍动作；凭据只留在 Mac mini 的 `~/.local/share/cove-pet-nest/credentials.json`。
 - **搜**：木屋数据（日程/睡眠/生理期/身体/书架）+ 可开关的木纹记忆，同样分类聚合
-- **醒**：苏醒三层状态、最近苏醒记录、手动往今天加一个苏醒时刻
+- **醒**：苏醒三层状态与最近一次真实运行结果；旧的手动排班入口已隐藏，因为它没有接到当前 Mac mini 执行链路
 - **设**：7 套预设配色 + 9 个颜色单独调 + 壁纸 + 圆角/字号/行距/透明度/模糊，实时生效并存 localStorage，**木纹和木屋共用同一份设置**
 
 ### 个人今日动态（头像点进去）
@@ -187,7 +187,7 @@
 
 ### 木屋生活页（2026-09-28 按 mockup 改）
 - 顶部月历（每日总结 / 日程 / 亲密小爱心，点日期看详情）→ 日常三卡（钓鱼 · 日程 · 歌单）→ 工具 · 语音 · 相册 → 书架 · 推送历史 → 身体（睡眠 · 生理期 · 身体状况）→ 倒数日（从首页搬过来的）。今日活动那块删了。
-- **工具**：`GET /api/tools/status`（60 秒缓存，`?fresh=1` 重探）把辞用得到的服务探一圈：木纹自己、Anthropic/ElevenLabs/Bark/Supabase 配没配、Notebook `/health`、GPD 的 ngrok 隧道（`MUWU_GPD_URL`，默认 stabilize-tycoon-oil）、StackChan 中继（走 gpd_server 代理，要 `MUWU_GPD_TOKEN`）、苏醒三层的报到状态。跑在 GPD 上没报到的如实标「看不到」。
+- **工具**：`GET /api/tools/status`（60 秒缓存，`?fresh=1` 重探）把辞用得到的服务探一圈：木纹自己、Anthropic/ElevenLabs/Bark/Supabase 配没配、Notebook `/health`、旧 GPD 隧道、StackChan 中继和苏醒三层状态。苏醒页以 Mac mini 执行器、独立看门狗状态文件和最终落库结果为准，不再用旧 GPD ping 猜。
 
 ### 木屋首页 + 导航（2026-09-28 按 mockup 改）
 - 底部五个 tab：活 · 聊 · **家（中间突出）** · 搜 · 设。「醒」不再是 tab，原来那页整个搬到设置页「苏醒管理」（`openWake()` 弹层）。
@@ -196,7 +196,7 @@
 - 四个块的图标字存本机 `muwu-home-icons`（设置页那批再给改的入口）。
 
 ### 木屋聊天（2026-09-28 重做）
-- **送进辞的窗口**：棋子发的消息存进 `chat.json`，GPD 上的语音频道（`C:\stackchan-voice\voice-channel.mjs`，同目录 `.muwu.json` 配 url/token）每 4 秒取一次 `GET /api/chat/pending`，推进辞的会话（`origin="muwu"`），再 `POST /api/chat/delivered`——**送到就算已读**，棋子那边一个勾变两个勾。辞用 `chat_reply` 回。窗口没开着消息就先存着，跟以前一样醒来用 `chat_unread` 看。攒了超过 3 条合成一条推。
+- **只送进主要窗口**：棋子发的消息存进 `chat.json`，语音频道用启动时的 `MUWU_SESSION_ID` 每 4 秒取一次 `GET /api/chat/pending`。后端对照换窗工作台当前主要窗口，只允许匹配的 session 领取聊天和通话；副窗口在线也收不到，缺少主要窗口心跳或 session ID 时保持关闭。推进主要会话（`origin="muwu"`）后再 `POST /api/chat/delivered`——**送到就算已读**，棋子那边一个勾变两个勾。辞用 `chat_reply` 回。窗口没开着消息就先存着，跟以前一样醒来用 `chat_unread` 看。攒了超过 3 条合成一条推。
 - 网页发的一律是棋子（`POST /api/chat` 强制 sender=nor，丢掉 thinking/voice_id）；辞只能走 MCP。
 - 消息类型：`text` / `voice`（棋子录的，后台用 ElevenLabs Scribe 转文字，转完或失败再送给辞，最多等 45 秒）/ `image`（上传的存 `chat-images/`，超过 600KB 压到最长边 1600；或者 `photo_id` 直接引用相册，表情包就是这么发的）/ `pat`（拍一拍，content 是后缀）。每条都能 `reply_to` 引用、`starred` 标星（两人共用）。
 - 状态文字：`GET/POST /api/chat/status`（网页只能改棋子的）+ MCP `set_status`（只改辞的）。拍一拍库 `GET/POST /api/chat/pats`，设置页能编辑。
@@ -232,17 +232,15 @@
 
 | 层 | 是谁 | 负责 | 权限 | 触发 |
 |---|---|---|---|---|
-| 一 | **ScheduleWakeup**（辞自己那个 session） | 所有需要「是辞」的事：回木屋留言、跟棋子聊天、看她发了什么然后回应、做决定（推不推 Bark／钓不钓鱼／写不写东西）、写今日一句 | 全部 | `/loop` 定时醒来 |
-| 二 | **CyHeartbeat**（`hooks/heartbeat.ps1`） | 只检查 `last_wakeup.txt` 是否超过 40 分钟没更新，超了推一条 Bark | **只有推 Bark** | Windows 计划任务每 30 分钟 |
-| 三 | **ci-hours 定时任务**（服务器 cron） | 后台机械活：8:00 自动总结、记忆维护（热度衰减）、日程提醒 | 只有读对话记录、写 daily summary、写 grain | 服务器 cron |
+| 一 | **辞的自主苏醒**（当前主要 session） | 棋子离开 10 分钟后，向同一个 session 注入 `/loop`；之后按随机间隔再检查 | 只向登记的主要窗口注入 `/loop` | Mac mini LaunchAgent 每 5 分钟 |
+| 二 | **苏醒守护** | 检查第一层是否持续运行、主要窗口进程是否还活着；异常只推 Bark | **只有推 Bark** | Mac mini 独立 LaunchAgent 每 10 分钟 |
+| 三 | **木纹后台** | 自动导出、每日总结与纹理、记忆衰减、后台整理、日程提醒 | 只整理数据 | Mac mini 定时任务 + 服务器机械 cron |
 
-**明确禁止**：第二层和第三层都不能读、不能回木屋留言（只有第一层能碰）；第三层不能用辞的语气跟棋子说话。
+**明确禁止**：第一层不另开 session、不把任意文字伪装成棋子消息；第二层不读聊天、不回消息、不恢复窗口；第三层不冒充辞说话。
 
-`last_wakeup.txt` 由第一层更新——`hooks/timestamp.ps1`（UserPromptSubmit）每轮都摸一下它，
-不管这轮是棋子说话还是 ScheduleWakeup 自己醒来。看门狗就看这个文件判断主力挂没挂。
+状态不再靠旧 GPD 的 `wake-ping` 猜。Mac mini 工作台执行器直接上报第一层的开关、最近检查、最近 `/loop`、当天次数；第二层写独立状态文件；第三层看每日总结、梦境和整理报告是否真正落库。
 
-服务器只直接知道第三层（它自己）。第一、二层跑在 GPD 上，服务器看不见——留了
-`POST /api/wake-ping {layer, note}` 让它们主动报到。**没接入就如实显示「未接入」，不假装知道。**
+某次补跑失败和最终结果分开显示：已有每日总结不会被失败重跑覆盖，也不会再被界面误报成「从某天起一直失败」。
 
 细节和装法见 `hooks/README-苏醒三层.md`。
 
@@ -348,26 +346,12 @@ npm test
 
 ## 醒来机制
 
-服务器不再自己有定时器，纯被动等请求。排班和"醒来该做什么、写什么"都由棋子
-Cowork 账号里的辞通过 `/mcp` 连接器主动来做（由 Cowork 那边的定时任务驱动，
-大概每 30 分钟检查一次）：
+1. Mac mini 每 5 分钟检查当前主要 session。棋子最后一次活动超过 10 分钟、当前窗口空闲且不在睡眠时段时，通过会话宿主向**同一个 session**写入 `/loop`。
+2. 第一次醒后，普通模式按 20–40 分钟随机间隔再次判断；追人模式按 5 分钟。所有这些都保存在第一层自己的状态文件中。
+3. 第二层每 10 分钟独立检查一次第一层状态文件和主要窗口进程。它只在异常时推 Bark，90 分钟内不重复轰炸。
+4. 第三层照固定时间做机械整理。每日总结是否正常，以数据库里最新落库日期为准；失败尝试保留为诊断信息，但不覆盖已经成功的结果。
 
-1. `get_plan_status` 看今天排过班没有（`needsPlanning`）。没排过就自己决定今天想醒
-   几次、什么时候醒，附一句理由，调 `set_today_plan({wakes, why})` 写回去——超过上限
-   会被截断，落在安静时段里的会被自动过滤，不用自己精确对齐这些限制。
-2. 看 `plannedWakes` 里有没有已经到点、还没出现在 `doneWakes` 里的时刻。有的话，
-   `get_identity` 拿身份文本，结合 `get_notes`/`get_questions`/`get_shelf` 决定做什么。
-3. 调用 `add_note`（写作/回看/读书笔记）、`start_discussion`/`reply_discussion`（提问/回讨论）、
-   或 `add_wake_log`（什么都不做）写回去。这次醒来如果是自己想着要主动找棋子（见下面
-   `add_wake_time`），也可以在这一步调 `send_push` 主动推一条通知过去，不用等她先来问。
-4. 最后 `mark_wake({slot})` 把这个时刻标掉。
-
-跟棋子正常聊天的时候（不走上面这个由 Cowork 定时任务驱动的醒来检查循环），也能临时
-调 `add_wake_time({slot, why})` 往今天的计划里加一个时刻——比如聊着聊着想着"等会
-21:30 想醒来找你说件事"，当场加上去就行。这个是追加，不会像 `set_today_plan` 那样把
-今天已经排好、已经做过的都清空重来。到了这个时刻，下一次 Cowork 定时任务检查时会把
-它当成一次正常该处理的醒来，走上面 1-4 的流程——如果是想主动找棋子，就在第 3 步用
-`send_push` 推送。这样就算她不在、没主动来问，辞也能自己选时间点主动联系她。
+旧的 `set_today_plan` / `add_wake_time` 工具暂时为兼容保留，但没有接入上述 Mac mini 执行器，因此前端不再展示它们。以后若要精确到某个钟点的主动苏醒，要把它明确接入第一层后再恢复入口。
 
 ## 语音（辞真的能开口说话）
 
