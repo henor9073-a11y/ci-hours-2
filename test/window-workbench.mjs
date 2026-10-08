@@ -182,4 +182,22 @@ assert.equal(ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 
   session_id: primaryId, model: 'opus', context_percent: 71, state: 'idle', windows: []
 } }).context_notice.level, 70);
 assert.throws(() => ww.createJob({ mode: 'set_wake', wake_enabled: true }), /还没有接入正式执行器/);
+
+// A channel that was already running before session-aware routing may finish
+// its current lifetime without forcing a restart, but only while it is the
+// sole online primary. The compatibility path closes as soon as another
+// online window appears.
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle'], current: {
+  session_id: primaryId, model: 'opus', context_percent: 71, state: 'idle', windows: [
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle' }
+  ]
+} });
+assert.equal(ww.deliveryRoute('').allowed, true);
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle'], current: {
+  session_id: primaryId, model: 'opus', context_percent: 71, state: 'idle', windows: [
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle' },
+    { session_id: activeId, name: '并行窗口', model: 'claude-opus-4-6[1m]', is_primary: false, state: 'idle' }
+  ]
+} });
+assert.equal(ww.deliveryRoute('').reason, 'session_required');
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');
