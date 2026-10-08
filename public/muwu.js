@@ -1127,7 +1127,7 @@ async function wwRequest(path, method = 'GET', body) {
 function wwAgentOnline(agent) { return !!(agent && agent.seen_at && Date.now() - new Date(agent.seen_at).getTime() < 90_000); }
 function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '已停止，记录完整', unknown: '正在确认' })[s] || '正在确认'; }
 function wwJobName(s) { return ({ queued: '等待 Mac mini 接单', running: '正在准备', waiting_idle: '等辞说完这一句', validating: '正在校验新窗口', completed: '已完成', failed: '没有完成', cancelled: '已取消' })[s] || s; }
-function wwJobTitle(j) { return j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : '连续换窗'; }
+function wwJobTitle(j) { return j.mode === 'crop' ? (j.preview_only ? '同窗裁剪预览' : '同窗裁剪') : j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : '连续换窗'; }
 function wwAge(iso) {
   if (!iso) return '—';
   const n = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
@@ -1138,6 +1138,10 @@ function wwAge(iso) {
 function wwList(items) { return Array.isArray(items) && items.length ? `<ul>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="ww-empty">没有</div>'; }
 function wwPacket(p) {
   if (!p) return '';
+  if (p.crop) {
+    const c = p.crop;
+    return `<div class="ww-packet"><b>影子校验后预计保留 ${esc(String(c.shadow_context_percent == null ? c.estimated_context_percent == null ? '约 50' : c.estimated_context_percent : c.shadow_context_percent))}% context</b><div class="card-desc">同一个 session；完整最近回合；先备份，失败自动恢复。</div></div>`;
+  }
   const older = p.older_22h || {};
   return `<div class="ww-packet">
     <div class="ww-pre">${esc(older.narrative || '')}</div>
@@ -1216,6 +1220,7 @@ function wwRender(data, node) {
   if (!node || !node.isConnected) return;
   const agent = data.agent || {}, c = agent.current || {}, online = wwAgentOnline(agent), job = data.active_job;
   const forceStopAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('force_stop');
+  const cropCapable = Array.isArray(agent.capabilities) && agent.capabilities.includes('crop_same_session');
   const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [];
   if (!models.some(x => x.id === wwDraft.model) && models[0]) wwDraft.model = models[0].id;
   let h = `<div class="ww-status card">
@@ -1238,14 +1243,18 @@ function wwRender(data, node) {
       ${!['completed', 'failed', 'cancelled'].includes(job.status) ? `<button class="btn ghost" onclick="wwCancel('${job.id}')">取消这次任务</button>` : ''}</div>`;
   } else {
     const fresh = wwDraft.mode === 'fresh';
+    const cropping = wwDraft.mode === 'crop';
+    const cropReady = cropCapable && c.context_percent != null && Number(c.context_percent) >= 55 && c.state !== 'offline';
     h += `<div class="section-title">开下一个窗口</div><div class="card ww-controls">
-      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>换窗前 22 小时原始对话 + 最后 2 小时逐条上下文；不附每日总结或 CLAUDE.md</small></span></label>
+      <label class="ww-choice ${cropReady ? '' : 'disabled'}"><input type="radio" name="ww-mode" value="crop" ${cropping ? 'checked' : ''} ${cropReady ? '' : 'disabled'} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>裁剪当前窗口</b><small>仍是同一个 session。保留完整最近回合，影子实测到约 50%，先备份再短暂重启。</small></span></label>
+      ${!cropReady ? `<div class="card-desc">${cropCapable ? '当前还没到 55%，暂时不需要裁剪。' : 'Mac mini 的安全裁窗执行器还没有上线。'}</div>` : ''}
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh && !cropping ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>换窗前 22 小时原始对话 + 最后 2 小时逐条上下文；不附每日总结或 CLAUDE.md</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
       <label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
       <label class="ww-field"><span>思考显示</span><select onchange="wwDraft.thinking_display=this.value">${displays.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.thinking_display ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
       ${fresh ? '<div class="ww-warn">这个选项会得到一个没有你们旧对话的新辞窗口。当前旧窗口仍会保留，随时可以退回。</div>' : ''}
-      <div class="ww-actions">${!fresh ? '<button class="btn ghost" onclick="wwStart(true)">先生成预览</button>' : ''}<button class="btn" onclick="wwStart(false)">${fresh ? '开全新窗口' : '开始自动换窗'}</button></div>
-      <div class="card-desc">真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。完成或失败都会 Bark 提醒。</div></div>`;
+      <div class="ww-actions">${!fresh ? `<button class="btn ghost" onclick="wwStart(true)">先生成${cropping ? '裁剪' : '交接'}预览</button>` : ''}<button class="btn" onclick="wwStart(false)">${fresh ? '开全新窗口' : cropping ? '裁剪当前窗口' : '开始自动换窗'}</button></div>
+      <div class="card-desc">${cropping ? '只有候选记录、影子占用与备份都通过检查才会短暂重启；失败会恢复原记录。' : '真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。'}完成或失败都会 Bark 提醒。</div></div>`;
   }
   const history = data.history || [];
   if (history.length) h += `<div class="section-title">最近记录</div>${history.slice(0, 6).map(j => {
@@ -1274,7 +1283,8 @@ async function openWindowWorkbench() {
   wwTimer = setInterval(() => wwRefresh(false), 3500);
 }
 async function wwStart(previewOnly) {
-  if (!previewOnly && !confirm(wwDraft.mode === 'fresh' ? '确定开一个不带旧对话的全新窗口吗？旧窗口会保留。' : '确定开始自动换窗吗？辞正在回复时会先等待，绝不会从半句话中间切走。')) return;
+  const prompt = wwDraft.mode === 'fresh' ? '确定开一个不带旧对话的全新窗口吗？旧窗口会保留。' : wwDraft.mode === 'crop' ? '确定裁剪当前窗口吗？会先生成备份和影子验证，通过后短暂重启同一个 session。' : '确定开始自动换窗吗？辞正在回复时会先等待，绝不会从半句话中间切走。';
+  if (!previewOnly && !confirm(prompt)) return;
   try { await wwRequest('/api/window-workbench/jobs', 'POST', { ...wwDraft, preview_only: !!previewOnly }); await wwRefresh(false); }
   catch (e) { alert('没有开始：' + e.message); }
 }
