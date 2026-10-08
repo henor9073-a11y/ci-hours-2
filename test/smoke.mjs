@@ -466,6 +466,16 @@ try {
     const bad = await fetch(`${base}/api/prefs?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: '乱写的', value: 'x' }) });
     assert.equal(bad.status, 400);
   });
+  await step('美化设置存服务器（网页和 Sigh App 共用一份），只收 JSON、不收大图', async () => {
+    const post = (key, value) => fetch(`${base}/api/prefs?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value, by: '棋子' }) });
+    const look = JSON.stringify({ preset: 'sakura', custom: {}, ui: { radius: 16 } });
+    assert.ok((await post('look_theme', look)).ok);
+    const got = await (await fetch(`${base}/api/prefs?token=${TOKEN}`)).json();
+    assert.equal(got.look_theme, look);
+    assert.equal(got.look_chat, '');
+    assert.equal((await post('look_chat', '不是 JSON')).status, 400);
+    assert.equal((await post('look_home', JSON.stringify({ x: 'a'.repeat(30000) }))).status, 400, '图片塞进来要被拒');
+  });
   await step('今日一句只能第一层自己写，服务器不代笔', async () => {
     // 不给 text 就该被拒——服务器（第三层）不能用辞的语气说话
     await assert.rejects(tool('write_daily_quote', {}), /自己写|text/);

@@ -113,5 +113,83 @@
     return j;
   }
 
+  // ---- 美化同步：配色 / 聊天外观 / 首页图标存一份在服务器（/api/prefs 的 look_*），网页和 Sigh App 共用 ----
+  // 图片（壁纸照片、聊天背景图、换过的图标图）太大，各设备自己留，不同步。
+  // 打开页面先用本机的（不闪），再看服务器上的：不一样就以服务器为准，刷新一次页面。
+  // 之后本机改了什么，几秒内推上去。
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  };
+  const isGradient = w => /^(linear|radial|conic)-gradient/.test(w || '');
+  const LOOK = {
+    look_theme: {
+      // 只比网页认识的三样；App 多存的（比如夜间自动换）不算
+      norm(v) { const ui = Object.assign({}, v.ui || {}); if (!isGradient(ui.wallpaper)) ui.wallpaper = ''; return { preset: v.preset || 'current', custom: v.custom || {}, ui }; },
+      read() { const t = LS.get('muwen-theme', {}); const ui = Object.assign({}, t.ui || {}); if (!isGradient(ui.wallpaper)) ui.wallpaper = ''; return { preset: t.preset || 'current', custom: t.custom || {}, ui }; },
+      write(v) {
+        const cur = LS.get('muwen-theme', {});
+        const ui = Object.assign({}, v.ui || {});
+        // 服务器上没有壁纸、本机却是自己的照片：留着本机的
+        if (!ui.wallpaper && cur.ui && cur.ui.wallpaper && !isGradient(cur.ui.wallpaper)) ui.wallpaper = cur.ui.wallpaper;
+        LS.set('muwen-theme', Object.assign({}, cur, { preset: v.preset, custom: v.custom || {}, ui }));
+      }
+    },
+    look_chat: {
+      norm(v) { const c = Object.assign({}, v); c.bg = ''; return c; },
+      read() { const c = Object.assign({}, LS.get('muwen-chat-cfg', {})); c.bg = ''; return c; },
+      write(v) { const cur = LS.get('muwen-chat-cfg', {}); LS.set('muwen-chat-cfg', Object.assign({}, cur, v, { bg: cur.bg || '' })); }
+    },
+    look_home: {
+      norm(v) { return { homeOrder: v.homeOrder || [], homeHidden: v.homeHidden || [], homeShortcuts: v.homeShortcuts || [], labels: v.labels || {} }; },
+      read() {
+        const icons = LS.get('muwu-icons', {}); const labels = {};
+        for (const k in icons) if (icons[k] && icons[k].text) labels[k] = icons[k].text;
+        return { homeOrder: LS.get('muwu-home-order', []), homeHidden: LS.get('muwu-home-hidden', []), homeShortcuts: LS.get('muwu-home-shortcuts', []), labels };
+      },
+      write(v) {
+        LS.set('muwu-home-order', v.homeOrder || []); LS.set('muwu-home-hidden', v.homeHidden || []); LS.set('muwu-home-shortcuts', v.homeShortcuts || []);
+        const icons = LS.get('muwu-icons', {}); const out = {};
+        for (const k in icons) if (icons[k] && icons[k].img) out[k] = icons[k];   // 本机换的图片留着
+        for (const k in (v.labels || {})) if (!out[k] && v.labels[k]) out[k] = { text: v.labels[k] };
+        LS.set('muwu-icons', out);
+      }
+    }
+  };
+  // 键按字母排好再比，App 和网页写出来的顺序不一样也不算改过
+  const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+    : v && typeof v === 'object' ? '{' + Object.keys(v).sort().filter(k => v[k] !== undefined && v[k] !== null).map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
+    : JSON.stringify(v === undefined ? null : v);
+  const lookPushed = {};
+  async function pushLook(key, text) {
+    try {
+      const r = await fetch(url('/api/prefs'), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN }, body: JSON.stringify({ key, value: text, by: '棋子·网页' }) });
+      if (r.ok) lookPushed[key] = text;
+    } catch {}
+  }
+  async function syncLook() {
+    if (!TOKEN && !API) return;
+    let server = {};
+    try { server = await rest('/api/prefs'); } catch { return; }
+    let changed = false;
+    for (const key in LOOK) {
+      const local = canon(LOOK[key].read());
+      const remote = server[key] || '';
+      if (!remote) { await pushLook(key, local); continue; }   // 服务器上还没有：把本机的传上去
+      let parsed; try { parsed = JSON.parse(remote); } catch { continue; }
+      if (canon(LOOK[key].norm(parsed)) !== local) { LOOK[key].write(parsed); changed = true; }
+      lookPushed[key] = canon(LOOK[key].read());
+    }
+    // 拉下来的不一样：刷新一次让整页用上（同一次打开只刷一次，免得来回刷）
+    if (changed && !sessionStorage.getItem('mw-look-synced')) { sessionStorage.setItem('mw-look-synced', '1'); location.reload(); return; }
+    setInterval(() => {
+      for (const key in LOOK) {
+        const now = canon(LOOK[key].read());
+        if (lookPushed[key] !== undefined && now !== lookPushed[key]) pushLook(key, now);
+      }
+    }, 3000);
+  }
+  setTimeout(syncLook, 300);
+
   global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64, audioUrl, apiUrl };
 })(window);
