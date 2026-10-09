@@ -658,7 +658,8 @@ async function toolsStatus() {
   const push = (group, name, state, detail = '') => items.push({ group, name, state, detail });
   // 服务器自己 + 它靠的几把钥匙
   push('木纹 / 木屋', '木纹（这台服务器）', 'on', `运行 ${Math.round(process.uptime() / 60)} 分钟`);
-  push('木纹 / 木屋', 'Anthropic（召回/语义）', process.env.ANTHROPIC_API_KEY ? 'on' : 'unset', process.env.ANTHROPIC_API_KEY ? `模型 ${process.env.MUWEN_RECALL_MODEL || 'claude-opus-5'}` : '没配 key，召回走关键词');
+  push('木纹 / 木屋', '智能召回筛选', mw.recall.RECALL_PROVIDER_READY ? 'on' : 'unset',
+    mw.recall.RECALL_PROVIDER_READY ? `${mw.recall.RECALL_PROVIDER} · ${mw.recall.RECALL_MODEL}` : '没配可用的 provider；自动注入不会使用未经筛选的结果');
   const voiceModel = process.env.ELEVENLABS_MESSAGE_MODEL_ID || 'eleven_v4';
   const legacyCallModel = process.env.ELEVENLABS_MODEL_ID;
   const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || legacyCallModel || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);

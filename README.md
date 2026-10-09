@@ -249,10 +249,11 @@
 除了辞自己触发的 `recall`，还有一条"每条消息自动召回"的旁路：棋子每发一条消息，GPD 的 `UserPromptSubmit` 钩子后台 `POST /api/recall`，用消息内容当 query，把匹配到的 3–5 条记忆拼成一段 `[muwen:recall] …` 注入辞的 context——辞看到消息时相关记忆已经在了，不用调任何工具。
 
 - 三层级联（对应 LMC-5 的向量→关键词→原始事件）：① 纹理 `grains` 关键词命中（authority）；② 关键词弱时语义层兜底（模型读记忆索引按意思挑，见下）；③ 前两层都空才翻年轮 `rings`（last_resort，只当线索）。
-- 琐碎消息（"嗯""好的""ok"、单字、纯标点）直接跳过。
+- 琐碎消息（"嗯""好的""可以的""同意""11"、纯标点）和 `/loop` / 系统控制提示直接跳过；短但有意义的"疼吗""你怕我不要你吗"不会按长度误杀。
 - **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：关键词层的天花板是"换了说法就召不到"——"你还记得我们的暗号吗"里根本没有"项圈"两个字。打开之后，每条非琐碎消息先跑一次模型，把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。只多一次模型调用，不是再跑一遍挑选 agent。模型判断这句话根本不用翻记忆时会直接 skip。
-  - 模型默认 `claude-opus-5`，`effort: low`、5 秒超时；`MUWEN_AUTORECALL_MODEL` 可换（这是每条消息一次调用，想省钱/提速可以换小模型）。
-  - 模型挂了、超时、没配 key 都静默退回原句关键词（`via: search-fallback`），不会让对话卡住。
+  - 生产推荐 `MUWEN_RECALL_PROVIDER=gemini` + `gemini-3.1-flash-lite`；同一个 provider 同时负责意图扩写和最终相关性精选。`MUWEN_AUTORECALL_MODEL` 仍可单独覆盖模型。
+  - 关键词命中在注入前还会经过一次最终精选：自然联想可以返回多条，但每一条都必须与此刻真正相关，不再把高字面分直接当成高相关性。
+  - 已配置的 provider 挂了或超时时安全返回空（当下 sticky/today 便签仍可返回），不再把未经筛选的关键词结果塞进辞的对话。本地没有配置 provider 时保留纯搜索模式，方便离线测试。
   - 实测：扩写前"你还记得我们的暗号吗"召不到暗号那条，扩写后它排第一。
 - 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
 - `POST /api/recall {query}` 回 `{"text": "拼好的注入文本", "count": N}`（`application/json`）；`?format=full` 回完整结构（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
@@ -265,20 +266,20 @@
 **关键词一条没搜到、或者最高分只是字面沾边（长度归一化后低于 `MUWEN_SEMANTIC_FLOOR`，默认 22）时，让模型读整个记忆索引按意思挑。** 挑中的排在关键词结果前面——因为这层是在"关键词不准"的前提下才跑的。
 
 - 阈值怎么来的：拿线上 231 条真实记忆量过，真命中落在 25–49，换了说法的语义查询卡在 15–18，22 能把两者分开。强命中（比如"项圈还在吗" adj=48.6）根本不会触发这层，省钱。
-- **为什么不用 embedding**：Anthropic 没有第一方 embedding 接口，真做向量要再接一个厂商（Voyage/OpenAI）、多一把 key、还要维护"写入时补向量 / 换模型要重算"的管线。而这个项目自己的结论是 46%→78% 来自挑选 agent 而不是搜索层——"她把不遗忘说成浪漫"那种跨词面的 pattern，向量也未必接得住。以后真要上向量，接口点就在 `lib/muwen/semantic.js`，换掉 `semanticPick` 即可。
-- **成本**：记忆索引（每条一行：id/日期/分区/热度/家族/开头 50 字）放在 system 里并打了 `cache_control`，是稳定前缀，连续对话走缓存读。231 条 ≈ 21K tokens：opus-5 缓存写 $0.13、缓存读 $0.011；换成 `MUWEN_SEMANTIC_MODEL=claude-haiku-4-5` 是 $0.026 / $0.002。索引按 id 排序保证逐字节稳定，加了新记忆才会失效重写。
+- **为什么暂时不用 embedding 取代精选**：向量适合找候选，但"旧状态是否已经被推翻"、"只是泛泛同情绪还是这一次真的有关"仍需要读得懂关系的精选层。当前先用便宜的 Gemini 把候选扩写和最终筛选做好；以后可以再加 embedding 缩小语义索引，接口点在 `lib/muwen/semantic.js`。
+- **成本**：生产默认建议 Gemini 3.1 Flash-Lite（`$0.25/MTok` 输入、`$1.50/MTok` 输出，以 Google 当期定价为准），比原来的 Opus 高频筛选便宜一个数量级以上。语义兜底仍只在关键词弱时触发。
 - 模型看完觉得没有真正相关的会返回空，不硬塞。索引里只有开头一段，挑中之后正文自动取全。
 - 相关环境变量：`MUWEN_AUTORECALL_SEMANTIC=0` 单独关掉这层、`MUWEN_SEMANTIC_MODEL`、`MUWEN_SEMANTIC_FLOOR`、`MUWEN_SEMANTIC_INDEX_MAX`（默认 800 条，超了按热度截断）、`MUWEN_SEMANTIC_TIMEOUT_MS`（默认 12000）。
-- 跟扩写层一样：超时/报错/没配 key 一律静默降级，关键词结果照常返回，不会让对话卡住。
+- 跟扩写层一样：已配置的 provider 超时或报错不会让对话卡住，但也不会把未经精选的弱关键词结果注入。
 
 ### 召回（先觉察，后想起）
 
 不是每轮自动搜。辞自己写一句 notice（"这让我想到了什么"）→ 搜索层出 ≤20 条候选 → recall agent（模型）
 从候选里挑真正相关的 0–5 条返回，**可能返回空**，宁可空手也不硬塞。被返回的 heat +5。每次都记日志。
 
-recall agent 走 Anthropic API，需要环境变量 `ANTHROPIC_API_KEY`；模型默认 `claude-opus-5`，可用 `MUWEN_RECALL_MODEL` 改
-（设计文档要求至少 Sonnet 级别——Flash/DeepSeek 级别不会空手而归、不会跨词面识别 pattern，这一层省钱=翻车）。
-没配 key 的时候 `recall` 会退回搜索层的前几条并在返回里明说"没经过挑选"，不会静默降级。
+recall agent 通过统一 provider 调用。生产推荐 `MUWEN_RECALL_PROVIDER=gemini`、`GEMINI_API_KEY` 和
+`MUWEN_GEMINI_MODEL=gemini-3.1-flash-lite`；也可保留 `anthropic` provider。没配 key 或 provider 调用失败时返回空，
+不会把未经挑选的搜索结果交给辞。
 
 ### 旧接口
 
@@ -341,8 +342,11 @@ npm test
 | `SUPABASE_SERVICE_KEY` | Supabase service_role/secret key（不是 anon key，绕过 RLS 直接读） | 同上 |
 | `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
-| `ANTHROPIC_API_KEY` | Anthropic API key，木纹的 recall agent 用 | 用 `recall` 才需要，没配会退回纯搜索 |
-| `MUWEN_RECALL_MODEL` | recall agent 用哪个模型，默认 `claude-opus-5` | 否 |
+| `MUWEN_RECALL_PROVIDER` | 智能召回服务商：生产推荐 `gemini`，也支持 `anthropic` | 智能召回需要 |
+| `GEMINI_API_KEY` | Gemini API key；只供召回扩写、语义兜底和最终精选 | provider 为 `gemini` 时需要 |
+| `MUWEN_GEMINI_MODEL` | Gemini 默认模型，建议 `gemini-3.1-flash-lite` | 否 |
+| `ANTHROPIC_API_KEY` | 兼容保留的 Anthropic API key | provider 为 `anthropic` 时需要 |
+| `MUWEN_RECALL_MODEL` | 手动 recall agent 的模型覆盖；不填则跟 provider 默认模型 | 否 |
 
 ## 醒来机制
 
