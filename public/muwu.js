@@ -1094,7 +1094,10 @@ async function openWake() {
 
 // ================= 换窗工作台 =================
 let wwTimer = null;
-let wwDraft = { mode: 'handoff', model: 'claude-opus-4-6[1m]', thinking_display: 'summarized', crop_profile: 'normal' };
+let wwDraft = {
+  mode: 'handoff', model: 'claude-opus-4-6[1m]', thinking_display: 'summarized',
+  crop_profile: 'normal', brief_mode: 'latest', brief_id: '', older_22h_source: 'main_window'
+};
 let wwView = 'windows';
 const wwOpenHistory = new Set();
 const wwSectionOpen = new Map([
@@ -1117,7 +1120,7 @@ async function wwRequest(path, method = 'GET', body) {
 function wwAgentOnline(agent) { return !!(agent && agent.seen_at && Date.now() - new Date(agent.seen_at).getTime() < 90_000); }
 function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '已停止，记录完整', unknown: '正在确认' })[s] || '正在确认'; }
 function wwJobName(s) { return ({ queued: '等待 Mac mini 接单', running: '正在准备', waiting_idle: '等辞说完这一句', validating: '正在校验新窗口', completed: '已完成', failed: '没有完成', cancelled: '已取消' })[s] || s; }
-function wwJobTitle(j) { return j.mode === 'set_wake' ? `${j.wake_enabled ? '打开' : '关闭'}自主苏醒` : j.mode === 'crop' ? (j.preview_only ? '同窗裁剪预览' : '同窗裁剪') : j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : '连续换窗'; }
+function wwJobTitle(j) { return j.mode === 'set_wake' ? `${j.wake_enabled ? '打开' : '关闭'}自主苏醒` : j.mode === 'crop' ? (j.preview_only ? '同窗裁剪预览' : '同窗裁剪') : j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : j.mode === 'resume_window' ? '重连窗口' : j.mode === 'interrupt_window' ? '打断主要窗口' : j.mode === 'mcp_reconnect' ? '重连 MCP' : j.mode === 'mcp_reconnect_all' ? '重连全部异常 MCP' : '连续换窗'; }
 function wwAge(iso) {
   if (!iso) return '—';
   const n = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
@@ -1150,7 +1153,7 @@ function wwPacket(p) {
   return `<div class="ww-packet">
     <div class="ww-packet-title">换窗简报</div>
     <div class="ww-packet-sec"><b>${esc(daily.date || '日期待确认')} · 每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '这一天没有正式每日总结')}</div></div>
-    <div class="ww-packet-sec"><b>前 22 小时原始对话</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
+    <div class="ww-packet-sec"><b>前 22 小时原始对话</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><span>来源：${older.source === 'daily_export' ? '每日导出' : '主要窗口'}${older.coverage_hours != null ? ` · 覆盖 ${Number(older.coverage_hours).toFixed(1)} 小时` : ''}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
     <div class="ww-packet-sec"><b>最后 2 小时 JSONL</b><span>${Number(recent.records || 0)} 条完整记录 · ${esc(fmtTime(recent.from || ''))} — ${esc(fmtTime(recent.to || ''))}</span></div>
   </div>`;
 }
@@ -1184,8 +1187,12 @@ function wwMcpSummary(w) {
 function wwMcpPanel(w, open) {
   const servers = Array.isArray(w.mcp_servers) ? w.mcp_servers : [];
   const checked = w.mcp_checked_at ? `上次检查：${wwAge(w.mcp_checked_at)}` : (w.mcp_checking ? '正在进行第一次检查' : '尚未检查');
+  const abnormal = servers.filter(server => server.status !== 'connected');
+  const controlReady = w.control_available === true;
+  const controlHint = controlReady ? '' : ' title="安全重连会在这个窗口下次自然恢复后启用"';
   return `<details class="ww-mcp-panel" ${open ? 'open' : ''}><summary><span><b>${esc(w.name || '未命名窗口')}</b><small>${esc(checked)}</small></span><span class="ww-mcp-summary">${wwMcpSummary(w)}</span></summary>
-    <div class="ww-mcp-list">${servers.length ? servers.map(server => `<div class="ww-mcp-row"><span class="tool-dot ${server.status === 'connected' ? 'on' : server.status === 'offline' ? 'off' : 'wait'}"></span><div><b>${esc(server.name)}</b><small>${esc(server.kind === 'connector' ? 'Claude 连接器' : server.kind === 'plugin' ? '插件通道' : server.kind === 'stdio' ? '本机 MCP' : server.kind === 'http' ? '网络 MCP' : 'MCP')} · ${esc(server.detail || wwMcpStatusName(server.status))}</small></div><span class="ww-mcp-state ${server.status}">${esc(wwMcpStatusName(server.status))}</span></div>`).join('') : `<div class="ww-dialog-empty">${esc(w.mcp_error || (w.state === 'offline' ? '窗口已停止，无法检测 MCP。' : '这个窗口没有启用 MCP。'))}</div>`}</div>
+    ${abnormal.length ? `<div class="ww-mcp-tools"><button class="btn ghost" ${controlReady ? '' : 'disabled'}${controlHint} onclick="event.preventDefault();wwMcpAction('${w.session_id}','',true)">重连全部异常 MCP</button>${controlReady ? '' : '<small>安全重连会在窗口下次自然恢复后启用</small>'}</div>` : ''}
+    <div class="ww-mcp-list">${servers.length ? servers.map(server => `<div class="ww-mcp-row"><span class="tool-dot ${server.status === 'connected' ? 'on' : server.status === 'offline' ? 'off' : 'wait'}"></span><div><b>${esc(server.name)}</b><small>${esc(server.kind === 'connector' ? 'Claude 连接器' : server.kind === 'plugin' ? '插件通道' : server.kind === 'stdio' ? '本机 MCP' : server.kind === 'http' ? '网络 MCP' : 'MCP')} · ${esc(server.detail || wwMcpStatusName(server.status))}</small></div><span class="ww-mcp-state ${server.status}">${esc(wwMcpStatusName(server.status))}</span>${server.status !== 'connected' ? `<button class="btn ghost ww-mcp-reconnect" ${controlReady ? '' : 'disabled'}${controlHint} onclick="event.preventDefault();wwMcpAction('${w.session_id}','${encodeURIComponent(server.name)}',false)">${server.status === 'auth' ? '重新授权' : '重连'}</button>` : ''}</div>`).join('') : `<div class="ww-dialog-empty">${esc(w.mcp_error || (w.state === 'offline' ? '窗口已停止，无法检测 MCP。' : '这个窗口没有启用 MCP。'))}</div>`}</div>
   </details>`;
 }
 function wwDetailHtml(w) {
@@ -1213,20 +1220,24 @@ function wwConfirmHtml(w, mode) {
 function wwWindowCard(w, locked, historical, forceStopAvailable) {
   const pct = w.context_percent == null ? null : Math.max(0, Math.min(100, Number(w.context_percent)));
   const source = w.source_session_id ? `来源：${esc(w.source_session_id.slice(0, 8))}…` : '原始窗口';
+  const controlReady = w.control_available === true;
+  const onlineControlDisabled = locked || !controlReady;
+  const controlTitle = controlReady ? '' : ' title="安全控制会在这个窗口下次自然恢复后启用"';
   let actions = w.remote_url ? `<a class="ww-open" href="${esc(w.remote_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">打开客户端记录 ›</a>` : '<span class="card-desc">客户端入口暂未取回</span>';
   if (historical) {
-    actions += `<button class="btn" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('restore_window','${w.session_id}')">恢复窗口</button>`;
+    actions += `<button class="btn" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSimpleWindowAction('resume_window','${w.session_id}')">Resume / 重连</button>`;
   } else if (w.is_primary) {
-    actions += '<span class="ww-protected">主要窗口不可停止</span>';
+    actions += `<button class="btn ghost" ${onlineControlDisabled || w.state === 'busy' ? 'disabled' : ''}${controlTitle} onclick="event.stopPropagation();wwSimpleWindowAction('resume_window','${w.session_id}')">重连客户端</button>${w.state === 'busy' ? `<button class="btn ghost ww-stop" ${onlineControlDisabled ? 'disabled' : ''}${controlTitle} onclick="event.stopPropagation();wwSimpleWindowAction('interrupt_window','${w.session_id}')">打断 / 暂停</button>` : ''}<span class="ww-protected">${controlReady ? '主要窗口不可停止' : '下次自然恢复后启用安全控制'}</span>`;
   } else {
-    actions += `<button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSetPrimary('${w.session_id}')">设为主要</button><button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('stop_window','${w.session_id}')">停止</button>${forceStopAvailable ? `<button class="btn ghost ww-stop" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('force_stop_window','${w.session_id}')">强行停止</button>` : ''}`;
+    actions += `<button class="btn ghost" ${onlineControlDisabled || w.state === 'busy' ? 'disabled' : ''}${controlTitle} onclick="event.stopPropagation();wwSimpleWindowAction('resume_window','${w.session_id}')">重连客户端</button><button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwSetPrimary('${w.session_id}')">设为主要</button><button class="btn ghost" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('stop_window','${w.session_id}')">停止</button>${forceStopAvailable ? `<button class="btn ghost ww-stop" ${locked ? 'disabled' : ''} onclick="event.stopPropagation();wwConfirmWindow('force_stop_window','${w.session_id}')">强行停止</button>` : ''}`;
   }
   return `<div class="card ww-window ${w.is_primary ? 'primary' : ''}" role="button" tabindex="0" onclick="wwOpenDetails('${w.session_id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();wwOpenDetails('${w.session_id}')}">
     <div class="ww-head"><div><span class="tool-dot ${w.state === 'offline' ? 'off' : 'on'}"></span><b>${esc(w.name || '未命名窗口')}</b>${w.is_primary ? '<span class="tag">主要</span>' : ''}${Number(w.crop_generation || 0) ? `<span class="tag plain">裁过 ${Number(w.crop_generation)} 次</span>` : ''}</div><span class="tag plain">${esc(wwStateName(w.state))}</span></div>
     <div class="ww-window-model">${esc(w.model || '模型未知')} · ${w.thinking_display === 'none' ? '不显示思考' : '思考摘要'}</div>
     <div class="ww-window-context"><span>context ${pct == null ? '—' : Math.round(pct) + '%'}</span><div class="ww-meter"><i style="width:${pct || 0}%"></i></div></div>
     <div class="ww-mcp-inline">${wwMcpSummary(w)}</div>
-    <div class="ww-meta"><span>会话：${esc(w.session_id.slice(0, 8))}…</span><span>${source}</span><span>创建：${esc(fmtTime(w.created_at || ''))}</span><span>最近活动：${wwAge(w.last_activity_at)}</span><span>消息：${w.message_count == null ? '—' : Number(w.message_count)}</span><span>记录：${w.transcript_bytes == null ? '—' : Math.max(1, Math.round(Number(w.transcript_bytes) / 1024)) + ' KB'}</span></div>
+    <div class="ww-session-id"><span>会话：${esc(w.session_id)}</span><button type="button" onclick="event.stopPropagation();wwCopySession('${w.session_id}',this)">复制</button></div>
+    <div class="ww-meta"><span>${source}</span><span>创建：${esc(fmtTime(w.created_at || ''))}</span><span>最近活动：${wwAge(w.last_activity_at)}</span><span>消息：${w.message_count == null ? '—' : Number(w.message_count)}</span><span>记录：${w.transcript_bytes == null ? '—' : Math.max(1, Math.round(Number(w.transcript_bytes) / 1024)) + ' KB'}</span></div>
     <div class="ww-window-hint">点开查看最近 10 条对话 ›</div>
     <div class="ww-window-actions" onclick="event.stopPropagation()">${actions}</div>
   </div>`;
@@ -1277,7 +1288,7 @@ function wwRender(data, node) {
   const agent = data.agent || {}, c = agent.current || {}, online = wwAgentOnline(agent), job = data.active_job;
   const forceStopAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('force_stop');
   const wakeToggleAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('wake_toggle');
-  const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [], cropProfiles = (data.choices && data.choices.crop_profiles) || [];
+  const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [], cropProfiles = (data.choices && data.choices.crop_profiles) || [], briefs = (data.choices && data.choices.briefs) || [];
   if (!models.some(x => x.id === wwDraft.model) && models[0]) wwDraft.model = models[0].id;
   if (!cropProfiles.some(x => x.id === wwDraft.crop_profile) && cropProfiles[0]) wwDraft.crop_profile = cropProfiles[0].id;
   const status = `<div class="ww-status card">
@@ -1305,11 +1316,20 @@ function wwRender(data, node) {
     const cropping = wwDraft.mode === 'crop';
     const cropCapable = Array.isArray(agent.capabilities) && agent.capabilities.includes('crop_same_session');
     const cropReady = cropCapable && c.context_percent != null && Number(c.context_percent) >= 55 && c.state !== 'offline';
+    if (wwDraft.brief_mode === 'custom' && !briefs.some(item => item.id === wwDraft.brief_id)) wwDraft.brief_id = briefs[0] ? briefs[0].id : '';
+    const handoffOptions = !fresh && !cropping ? `<div class="ww-handoff-options">
+      <div class="ww-option-title">换窗简报</div>
+      <label class="ww-choice"><input type="radio" name="ww-brief-mode" value="latest" ${wwDraft.brief_mode !== 'custom' ? 'checked' : ''} onchange="wwDraft.brief_mode='latest';wwRerenderLocal()"><span><b>用当下最新换窗简报</b><small>现在重新生成前 22 小时和最后 2 小时。</small></span></label>
+      <label class="ww-choice ${briefs.length ? '' : 'disabled'}"><input type="radio" name="ww-brief-mode" value="custom" ${wwDraft.brief_mode === 'custom' ? 'checked' : ''} ${briefs.length ? '' : 'disabled'} onchange="wwDraft.brief_mode='custom';wwRerenderLocal()"><span><b>自选历史换窗简报</b><small>从最近一周去重后的简报中选；最后 2 小时仍取当前窗口。</small></span></label>
+      ${wwDraft.brief_mode === 'custom' && briefs.length ? `<label class="ww-field"><span>历史简报</span><select onchange="wwDraft.brief_id=this.value;wwRerenderLocal()">${briefs.map(item => `<option value="${esc(item.id)}" ${item.id === wwDraft.brief_id ? 'selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label><button class="link ww-brief-preview" onclick="wwPreviewBrief('${esc(wwDraft.brief_id)}')">查看这份完整简报 ›</button>` : ''}
+      ${wwDraft.brief_mode !== 'custom' ? `<div class="ww-option-title">前 22 小时聊天记录来源</div><label class="ww-choice"><input type="radio" name="ww-older-source" value="main_window" ${wwDraft.older_22h_source !== 'daily_export' ? 'checked' : ''} onchange="wwDraft.older_22h_source='main_window';wwRerenderLocal()"><span><b>从主要窗口里拿</b><small>适合这个窗口已经连续聊够约 24 小时。</small></span></label><label class="ww-choice"><input type="radio" name="ww-older-source" value="daily_export" ${wwDraft.older_22h_source === 'daily_export' ? 'checked' : ''} onchange="wwDraft.older_22h_source='daily_export';wwRerenderLocal()"><span><b>从每日导出的记录里拿</b><small>适合主窗口不足 24 小时；缺少导出时会明确报错，不会偷偷换来源。</small></span></label>${c.created_at && Date.now() - new Date(c.created_at).getTime() < 24 * 60 * 60_000 ? '<div class="ww-choice-note">当前主要窗口不足 24 小时，建议选“每日导出的记录”。</div>' : ''}` : ''}
+    </div>` : '';
     const action = `<div class="card ww-controls">
       <label class="ww-choice ${cropReady ? '' : 'disabled'}"><input type="radio" name="ww-mode" value="crop" ${cropping ? 'checked' : ''} ${cropReady ? '' : 'disabled'} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>裁剪当前窗口</b><small>仍是同一个 session。保留完整最近回合，影子实测到 50–55%，先备份再短暂重启。</small></span></label>
       ${!cropReady ? `<div class="ww-choice-note">${cropCapable ? '当前还没到 55%，暂时不需要裁剪。' : 'Mac mini 的裁窗执行器还没有开放。'}</div>` : ''}
       <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh && !cropping ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>准确日期的每日总结 + 前 22 小时原始对话 + 最后 2 小时 JSONL；不附 CLAUDE.md。</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
+      ${handoffOptions}
       ${cropping ? `<div class="ww-crop-profiles"><div class="ww-choice-note">选择裁剪强度；三档都会先保存完整原件，并沿用当前模型和 thinking display。</div>${cropProfiles.map(profile => `<label class="ww-choice"><input type="radio" name="ww-crop-profile" value="${esc(profile.id)}" ${profile.id === wwDraft.crop_profile ? 'checked' : ''} onchange="wwDraft.crop_profile=this.value;wwRerenderLocal()"><span><b>${esc(profile.label)}</b><small>${esc(profile.detail || '')}</small></span></label>`).join('')}</div>` : `<label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label><label class="ww-setting-line"><span><b>Thinking display</b><small>${wwDraft.thinking_display === 'none' ? '不显示思考过程' : '显示思考摘要'}</small></span><span class="ww-switch"><input type="checkbox" ${wwDraft.thinking_display === 'summarized' ? 'checked' : ''} onchange="wwDraft.thinking_display=this.checked?'summarized':'none';wwRerenderLocal()"><i></i></span></label>`}
       ${fresh ? '<div class="ww-warn">这个选项会得到一个没有你们旧对话的新辞窗口。当前旧窗口仍会保留，随时可以退回。</div>' : ''}
       <div class="ww-actions">${!fresh ? `<button class="btn ghost" ${cropping && !cropReady ? 'disabled' : ''} onclick="wwStart(true)">先生成${cropping ? '裁剪' : '交接'}预览</button>` : ''}<button class="btn" ${cropping && !cropReady ? 'disabled' : ''} onclick="wwStart(false)">${fresh ? '开全新窗口' : cropping ? '裁剪当前窗口' : '开始自动换窗'}</button></div>
@@ -1374,6 +1394,40 @@ async function wwSetPrimary(sessionId) {
   if (!confirm('把这个窗口设为主要窗口吗？\n\n它会先通过启动检查，再接管 Telegram、语音、木屋和自动苏醒；现在的主要窗口会完整保留。')) return;
   try { await wwRequest('/api/window-workbench/jobs', 'POST', { mode: 'set_primary', target_session_id: sessionId }); await wwRefresh(false); }
   catch (e) { alert('没有切换：' + e.message); }
+}
+async function wwCopySession(sessionId, button) {
+  try {
+    await navigator.clipboard.writeText(sessionId);
+    if (button) { const before = button.textContent; button.textContent = '已复制'; setTimeout(() => { button.textContent = before; }, 1200); }
+  } catch (_) { prompt('复制这个完整窗口编号：', sessionId); }
+}
+async function wwSimpleWindowAction(mode, sessionId) {
+  const labels = { resume_window: '重连同一个 session', interrupt_window: '打断主要窗口当前任务' };
+  if (!confirm(`确定${labels[mode] || '执行这个操作'}吗？\n\n不会复制 session，也不会关闭其他窗口。`)) return;
+  try {
+    await wwRequest('/api/window-workbench/jobs', 'POST', { mode, target_session_id: sessionId });
+    await wwRefresh(false);
+  } catch (e) { alert('没有执行：' + e.message); await wwRefresh(false); }
+}
+async function wwMcpAction(sessionId, encodedName, all) {
+  const name = encodedName ? decodeURIComponent(encodedName) : '';
+  const promptText = all ? '重连这个窗口里全部异常 MCP' : `${name} 当前异常。发送重连${name ? `（${name}）` : ''}`;
+  if (!confirm(`${promptText}吗？\n\n只会向这个窗口发送 Claude 官方 MCP 重连指令，不会重启主要窗口。`)) return;
+  try {
+    await wwRequest('/api/window-workbench/jobs', 'POST', {
+      mode: all ? 'mcp_reconnect_all' : 'mcp_reconnect',
+      target_session_id: sessionId,
+      target_mcp_name: name || undefined
+    });
+    wwDetailSessionId = null;
+    await wwRefresh(false);
+  } catch (e) { alert('没有开始重连：' + e.message); await wwRefresh(false); }
+}
+function wwPreviewBrief(id) {
+  if (!id) return;
+  wwOpenHistory.add(id);
+  wwView = 'history';
+  wwRerenderLocal();
 }
 function wwRerenderLocal() {
   const layer = sheetStack[sheetStack.length - 1], node = layer && layer.node;

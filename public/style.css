@@ -669,3 +669,12 @@ body.chat-open > .header { display: none; }
 .ww-confirm > div { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:19px; }
 .ww-confirm .btn { margin:0; }
 @media (max-width:370px) { .ww-packet-grid { grid-template-columns:1fr; } .ww-meta { grid-template-columns:1fr; } }
+.ww-session-id { display:flex; align-items:flex-start; gap:8px; margin-top:12px; padding:8px 9px; border-radius:10px; background:color-mix(in srgb,var(--primary-light) 50%,transparent); color:var(--text-secondary); font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+.ww-session-id span { flex:1; min-width:0; }
+.ww-session-id button { flex:0 0 auto; border:0; border-radius:8px; padding:4px 7px; background:var(--card); color:var(--accent); font:11px/1.2 inherit; }
+.ww-mcp-tools { display:flex; justify-content:flex-end; padding:9px 13px; border-top:1px solid color-mix(in srgb,var(--border) 56%,transparent); }
+.ww-mcp-tools .btn,.ww-mcp-reconnect { width:auto; min-height:30px; margin:0; padding:5px 9px; font-size:10px; }
+.ww-mcp-row { grid-template-columns:9px minmax(0,1fr) auto auto; }
+.ww-handoff-options { display:flex; flex-direction:column; gap:10px; margin:2px 0; padding:13px; border:1px solid color-mix(in srgb,var(--border) 76%,transparent); border-radius:15px; background:color-mix(in srgb,var(--primary-light) 28%,transparent); }
+.ww-option-title { color:var(--text-secondary); font-size:12px; font-weight:700; }
+.ww-brief-preview { align-self:flex-start; margin:0 0 3px 102px; }
