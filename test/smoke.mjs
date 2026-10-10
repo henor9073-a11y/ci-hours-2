@@ -1182,7 +1182,9 @@ try {
     assert.ok(call.includes('needsAudioUnlock') && call.includes("addEventListener('pointerdown'") && call.includes("addEventListener('touchstart'") && call.includes('>开启声音</button>'), 'iPhone 拦截播放后必须用稳定外层接住触摸并持久显示按钮');
     assert.ok(call.includes('提前开启声音') && call.includes('声音已开启') && call.includes('CALL.enableSound()'), '辞说话前要能主动开启通话声音');
     assert.ok(call.includes('playKeeper') && call.includes('decodeAudioData') && call.includes('createBufferSource'), '手机只授权一次，后续每句话复用常驻 Web Audio 通道');
-    assert.ok(call.includes('callAudioQueue') && call.includes('queuePlay(e.id)') && call.includes('now - loudSince < 600'), '通话语音要排队播放，短促扬声器回声不能掐掉辞');
+    assert.ok(call.includes('callAudioQueue') && call.includes('queuePlay(e.id)') && call.includes('now - loudSince < 450'), '通话语音要排队播放，短促扬声器回声不能误判成棋子开口');
+    assert.ok(call.includes('setVoiceDucked(true)') && call.includes('DUCK_VOLUME = .22') && !call.includes('voiceSource.stop()'), '棋子开口时只能压低辞的声音，不能截断当前或后续语音');
+    assert.ok(call.includes('transcriptionQueue = transcriptionQueue.then(() => sendRecording(parts, mime))'), '连续检测到的录音必须依次转写，不能并发导致话序颠倒');
     assert.ok(chat.includes('playPending') && chat.includes("e.name === 'AbortError'"), '留言流式语音加载中不能被重复点按 abort，也不能把取消误报成损坏');
     assert.ok(chat.includes("m.voice_id ? MW.audioUrl(m.voice_id)") && chat.includes("'准备中'") && chat.includes("m.voice_stream && !m.voice_id"), '辞的语音应后台缓存，准备好后恢复时长并直接播放完整文件');
     const chatBackend = fs.readFileSync(path.join(process.cwd(), 'lib/muwen/chat.js'), 'utf8');
@@ -1192,7 +1194,7 @@ try {
     assert.ok(voiceBackend.includes("startsWith('eleven_v4')") && !voiceBackend.includes('const VOICE_SETTINGS'), 'v4 不能继续发送旧版 style/speed 设置');
     assert.ok(voiceBackend.includes("return latin ? undefined : 'ja'") && voiceBackend.includes("return latin ? undefined : 'zh'") && voiceBackend.includes("return 'en'"), '中英日混说要交给 v4 自动判断，单语短句才锁语言');
     assert.ok(call.includes('getUserMedia') && call.includes('echoCancellation') && call.includes('noiseSuppression'), '通话要持续收音并启用回声消除/降噪');
-    assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? .045 : .018"), '通话应提前录音保住句首，并照顾轻声慢说');
+    assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? (speaking ? .02 : .035) : .018"), '通话应提前录音保住句首，并在辞播放时继续接住棋子的轻声续话');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
     assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
     const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');

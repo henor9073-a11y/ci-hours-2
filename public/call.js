@@ -12,7 +12,8 @@
   let stream = null, ctx = null, analyser = null, detector = null, recorder = null, speechAt = 0, captureStartedAt = 0, micStopping = false, loudSince = 0;
   let audio = new Audio(), subtitle = [], needsAudioUnlock = false;
   let playCtx = null, playGain = null, playKeeper = null, voiceSource = null;
-  let voicePlaying = false, callAudioQueue = Promise.resolve();
+  let voicePlaying = false, voiceDucked = false, callAudioQueue = Promise.resolve(), transcriptionQueue = Promise.resolve();
+  const DUCK_VOLUME = .22;
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
   let audioUnlocked = false;
@@ -98,25 +99,37 @@
   function queuePlay(id) {
     callAudioQueue = callAudioQueue.then(() => play(id)).catch(() => {});
   }
+  function setVoiceDucked(ducked) {
+    if (voiceDucked === ducked) return;
+    voiceDucked = ducked;
+    const target = ducked ? DUCK_VOLUME : 1;
+    if (playGain && playCtx) {
+      const at = playCtx.currentTime;
+      playGain.gain.cancelScheduledValues(at);
+      playGain.gain.setValueAtTime(playGain.gain.value, at);
+      playGain.gain.linearRampToValueAtTime(target, at + .14);
+    }
+    audio.volume = target;
+  }
   async function play(id) {
     if (audioUnlocked && playCtx) {
       try {
         if (playCtx.state !== 'running') await playCtx.resume();
         const r = await fetch(apiUrl('/api/call/audio/' + id)); if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const decoded = await playCtx.decodeAudioData(await r.arrayBuffer());
-        voiceSource = playCtx.createBufferSource(); voiceSource.buffer = decoded; voiceSource.connect(playGain); voiceSource.start();
+        voiceSource = playCtx.createBufferSource(); voiceSource.buffer = decoded; voiceSource.connect(playGain); setVoiceDucked(false); voiceSource.start();
         voicePlaying = true; needsAudioUnlock = false; paint();
-        await new Promise(resolve => { voiceSource.onended = resolve; }); voicePlaying = false; return;
+        await new Promise(resolve => { voiceSource.onended = resolve; }); voicePlaying = false; setVoiceDucked(false); return;
       } catch (e) {
         if (playCtx.state === 'suspended') { audioUnlocked = false; needsAudioUnlock = true; paint(); return; }
         subtitle.push('这一句声音生成失败'); paint(); return;
       }
     }
-    audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto';
+    audio.pause(); audio.src = apiUrl('/api/call/audio/' + id); audio.preload = 'auto'; setVoiceDucked(false);
     try {
       await audio.play(); voicePlaying = true; needsAudioUnlock = false; paint();
       await new Promise(resolve => { const done=()=>{audio.removeEventListener('ended',done);audio.removeEventListener('error',done);audio.removeEventListener('pause',done);resolve()}; audio.addEventListener('ended',done);audio.addEventListener('error',done);audio.addEventListener('pause',done); });
-      voicePlaying = false;
+      voicePlaying = false; setVoiceDucked(false);
     }
     catch {
       needsAudioUnlock = true;
@@ -135,15 +148,15 @@
         if (muted || !state || !state.call || state.call.status !== 'active') return;
         analyser.getByteTimeDomainData(data); let sum = 0; for (const v of data) { const x = (v - 128) / 128; sum += x * x; }
         const level = Math.sqrt(sum / data.length), now = Date.now();
-        const loud = level > (voicePlaying ? .045 : .018);
+        const loud = level > (voicePlaying ? (speaking ? .02 : .035) : .018);
         if (loud) {
           if (!loudSince) loudSince = now;
-          // 辞播放时要持续较响 0.6 秒才算真的插话，短促回声不再掐掉他的声音。
-          if (voicePlaying && (state.settings.interrupt === false || now - loudSince < 600)) return;
+          // 辞播放时先排除短促回声；确认是棋子说话后只压低声音，不截断辞当前和后续语音。
+          if (voicePlaying && now - loudSince < 450) return;
           speechAt = now;
-          if (!speaking && recorder && recorder.state === 'recording') { speaking = true; audio.pause(); if (voiceSource) try { voiceSource.stop(); } catch {} }
+          if (!speaking && recorder && recorder.state === 'recording') { speaking = true; if (voicePlaying && state.settings.interrupt !== false) setVoiceDucked(true); }
         } else loudSince = 0;
-        if (speaking && !loud && now - speechAt >= (state.pause_ms || 1500)) { speaking = false; if (recorder && recorder.state === 'recording') { recorder._send = true; recorder.stop(); } }
+        if (speaking && !loud && now - speechAt >= (state.pause_ms || 1500)) { speaking = false; setVoiceDucked(false); if (recorder && recorder.state === 'recording') { recorder._send = true; recorder.stop(); } }
         // 空闲时每四秒换一段，始终保留本轮开口前最多四秒，避免吞掉句首又不无限积累静音。
         if (!speaking && !loud && recorder && recorder.state === 'recording' && now - captureStartedAt > 4000) { recorder._send = false; recorder.stop(); }
       }, 80);
@@ -153,10 +166,13 @@
     if (micStopping || !stream || !state || !state.call || state.call.status !== 'active') return;
     const rec = new MediaRecorder(stream), parts = []; rec._send = false;
     rec.ondataavailable = e => { if (e.data.size) parts.push(e.data); };
-    rec.onstop = () => { if (rec._send) sendRecording(parts, rec.mimeType); if (!micStopping) beginCapture(); };
+    rec.onstop = () => { if (rec._send) enqueueRecording(parts, rec.mimeType); if (!micStopping) beginCapture(); };
     recorder = rec; captureStartedAt = Date.now(); rec.start(200);
   }
-  function stopMic() { micStopping = true; if (detector) clearInterval(detector); detector = null; if (recorder && recorder.state !== 'inactive') try { recorder._send = false; recorder.stop(); } catch {} recorder = null; if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (ctx) ctx.close().catch(() => {}); ctx = null; }
+  function stopMic() { micStopping = true; setVoiceDucked(false); if (detector) clearInterval(detector); detector = null; if (recorder && recorder.state !== 'inactive') try { recorder._send = false; recorder.stop(); } catch {} recorder = null; if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; if (ctx) ctx.close().catch(() => {}); ctx = null; }
+  function enqueueRecording(parts, mime) {
+    transcriptionQueue = transcriptionQueue.then(() => sendRecording(parts, mime)).catch(() => {});
+  }
   async function sendRecording(parts, mime) {
     const blob = new Blob(parts, { type: mime || 'audio/webm' }); if (blob.size < 1000) return;
     const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(blob); });
@@ -166,7 +182,7 @@
   async function renderSettings(id, compact) {
     const el = document.getElementById(id); if (!el) return; const s = state && state.settings || await rest('/api/call/settings').catch(() => ({}));
     const row = (label, k) => `<div class="cx-set-row" style="font-size:${compact ? 12 : 14}px"><span>${label}</span><button class="cx-tg${s[k] ? ' on' : ''}" onclick="CALL.setting('${k}',${!s[k]})"><i></i></button></div>`;
-    el.innerHTML = `${row('允许辞来电','allowIncoming')}${row('安静时间','quietEnabled')}${row('普通留言推送','messagePush')}${row('来电推送','callPush')}${row('辞的滚动字幕','subtitles')}${row('允许插话打断','interrupt')}${row('断线自动重连','reconnect')}
+    el.innerHTML = `${row('允许辞来电','allowIncoming')}${row('安静时间','quietEnabled')}${row('普通留言推送','messagePush')}${row('来电推送','callPush')}${row('辞的滚动字幕','subtitles')}${row('我说话时压低辞的声音','interrupt')}${row('断线自动重连','reconnect')}
       <div class="call-setting-line"><label>安静时段 <input type="time" value="${s.quietStart || '23:30'}" onchange="CALL.setting('quietStart',this.value)">—<input type="time" value="${s.quietEnd || '08:00'}" onchange="CALL.setting('quietEnd',this.value)"></label></div>
       <div class="call-setting-line"><label>判断我说完 <select onchange="CALL.setting('endPause',this.value)"><option value="fast"${s.endPause==='fast'?' selected':''}>快 · 0.8 秒</option><option value="standard"${s.endPause==='standard'?' selected':''}>标准 · 1.5 秒</option><option value="slow"${s.endPause==='slow'?' selected':''}>慢 · 2.5 秒</option><option value="very_slow"${s.endPause==='very_slow'?' selected':''}>很慢 · 4 秒</option></select></label></div>
       <div class="call-setting-line"><label>通话用量 <select onchange="CALL.setting('tokenMode',this.value)"><option value="economy"${s.tokenMode==='economy'?' selected':''}>省 token · 合并短句</option><option value="balanced"${s.tokenMode==='balanced'?' selected':''}>平衡</option><option value="low_latency"${s.tokenMode==='low_latency'?' selected':''}>低延迟</option></select></label></div>
