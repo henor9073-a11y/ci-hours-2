@@ -499,7 +499,7 @@ try {
     assert.equal(l1['权限'], '只向主要窗口注入 /loop');
     assert.ok(l1.only.some(x => x.includes('主要窗口')), '第一层只能叫醒登记的主要窗口');
     assert.ok(l1.never.some(x => x.includes('不另开 session')));
-    assert.equal(l2['权限'], '只有推 Bark');
+    assert.equal(l2['权限'], '只能发手机通知');
     assert.ok(l2.never.includes('不读留言') && l2.never.includes('不启动新 session'));
     assert.ok(l3.never.includes('不回留言') && l3.never.some(x => x.includes('辞的语气')));
     // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
@@ -1120,6 +1120,13 @@ try {
     assert.ok(hist[0].at && hist[0].date);
     const viaRest = await (await fetch(`${base}/api/push-history?token=${TOKEN}`)).json();
     assert.equal(viaRest[0].title, '测试');
+    const pushConfig = await rest('/api/push/config');
+    assert.equal(pushConfig.native_enabled, false);
+    assert.equal(pushConfig.provider, 'none');
+    const badDevice = await fetch(`${base}/api/push/devices?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'bad' })
+    });
+    assert.equal(badDevice.status, 400);
   });
   await step('前端该有的都在（动态页/日历/时间线/进度条/图鉴）', async () => {
     const muwu = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();

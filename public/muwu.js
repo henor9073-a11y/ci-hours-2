@@ -860,7 +860,7 @@ function muwuIntimateFold(x) {
   </div></details>`;
 }
 
-// ---- Bark 推送历史 ----
+// ---- 手机通知历史 ----
 async function openPushHistory() {
   sheetLoading('推送历史');
   try {
@@ -1292,7 +1292,7 @@ function wwRender(data, node) {
       ${cropping ? `<div class="ww-crop-profiles"><div class="ww-choice-note">选择裁剪强度；三档都会先保存完整原件，并沿用当前模型和 thinking display。</div>${cropProfiles.map(profile => `<label class="ww-choice"><input type="radio" name="ww-crop-profile" value="${esc(profile.id)}" ${profile.id === wwDraft.crop_profile ? 'checked' : ''} onchange="wwDraft.crop_profile=this.value;wwRerenderLocal()"><span><b>${esc(profile.label)}</b><small>${esc(profile.detail || '')}</small></span></label>`).join('')}</div>` : `<label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label><label class="ww-setting-line"><span><b>Thinking display</b><small>${wwDraft.thinking_display === 'none' ? '不显示思考过程' : '显示思考摘要'}</small></span><span class="ww-switch"><input type="checkbox" ${wwDraft.thinking_display === 'summarized' ? 'checked' : ''} onchange="wwDraft.thinking_display=this.checked?'summarized':'none';wwRerenderLocal()"><i></i></span></label>`}
       ${fresh ? '<div class="ww-warn">这个选项会得到一个没有你们旧对话的新辞窗口。当前旧窗口仍会保留，随时可以退回。</div>' : ''}
       <div class="ww-actions">${!fresh ? `<button class="btn ghost" ${cropping && !cropReady ? 'disabled' : ''} onclick="wwStart(true)">先生成${cropping ? '裁剪' : '交接'}预览</button>` : ''}<button class="btn" ${cropping && !cropReady ? 'disabled' : ''} onclick="wwStart(false)">${fresh ? '开全新窗口' : cropping ? '裁剪当前窗口' : '开始自动换窗'}</button></div>
-      <div class="card-desc">${fresh ? '' : '开始准备后会先关闭辞当前 session 的自主苏醒；'}${cropping ? '只有候选记录、影子占用与备份都通过检查才会短暂重启；失败会恢复原记录。' : '真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。'}完成或失败都会 Bark 提醒。</div></div>`;
+      <div class="card-desc">${fresh ? '' : '开始准备后会先关闭辞当前 session 的自主苏醒；'}${cropping ? '只有候选记录、影子占用与备份都通过检查才会短暂重启；失败会恢复原记录。' : '真正切换前会先校验新窗口；如果校验失败，旧主窗口不会被关掉。'}完成或失败都会发手机通知。</div></div>`;
       h += `<div class="ww-action-heading">操作模块</div>${action}`;
     } else h += '<div class="card"><div class="card-desc">当前有操作正在执行，结束或取消后可以开始下一项。</div></div>';
   } else {

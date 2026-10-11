@@ -22,7 +22,7 @@ import { addDiaryEntry, getDiaryPublic } from './lib/diary.js';
 import { publicLabels } from './lib/muwen/labels.js';
 import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
-import { sendPush } from './lib/bark.js';
+import { sendPush, getPushConfig, registerPushDevice, removePushDevice } from './lib/bark.js';
 import * as windowWorkbench from './lib/window-workbench.js';
 import {
   addSchedule, getSchedule, updateSchedule, completeSchedule, removeSchedule, getDueSchedules, markSchedulePushed,
@@ -226,6 +226,12 @@ app.get('/api/push-history', async (req, res) => {
   const { getPushHistory } = await import('./lib/bark.js');
   res.json(getPushHistory(Number(req.query.limit) || 100));
 });
+app.get('/api/push/config', (_, res) => res.json(getPushConfig()));
+app.post('/api/push/devices', (req, res) => {
+  try { res.json(registerPushDevice(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.delete('/api/push/devices/:token', (req, res) => res.json(removePushDevice(req.params.token)));
 app.get('/api/fishing/encyclopedia', async (_, res) => {
   try { res.json({ text: await playFishing('encyclopedia') }); }
   catch (e) { res.status(500).json({ error: String(e.message || e) }); }
@@ -564,7 +570,7 @@ app.post('/api/window-workbench/agent/heartbeat', windowAgent, (req, res) => {
     if (result.context_notice) {
       const level = Number(result.context_notice.level) || 70;
       sendPush(`辞的当前窗口已到 ${level}%`, result.context_notice.message, level >= 80 ? 'alarm' : 'bell')
-        .catch(e => console.error('[window-workbench] context Bark 失败：', e.message || e));
+        .catch(e => console.error('[window-workbench] context 手机通知失败：', e.message || e));
     }
   }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
@@ -610,7 +616,7 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
             : job.mode === 'restore_window' ? '原 session 已恢复为并行窗口，没有抢占主要通道。'
               : '新窗口已经校验并接替主窗口。';
     sendPush(label, detail, 'complete')
-      .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
+      .catch(e => console.error('[window-workbench] 手机通知失败：', e.message || e));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.post('/api/window-workbench/agent/jobs/:id/fail', windowAgent, async (req, res) => {
@@ -619,7 +625,7 @@ app.post('/api/window-workbench/agent/jobs/:id/fail', windowAgent, async (req, r
     res.json(job);
     if (job.status !== 'failed') return;
     sendPush('辞换窗没有完成', job.error || job.message || '旧窗口仍然保留，可以在工作台查看原因。', 'error')
-      .catch(e => console.error('[window-workbench] Bark 失败：', e.message || e));
+      .catch(e => console.error('[window-workbench] 手机通知失败：', e.message || e));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // 响应体里的非 ASCII 全部转成 \uXXXX——JSON 转义序列本身是纯 ASCII，
@@ -688,7 +694,9 @@ async function toolsStatus() {
   const legacyCallModel = process.env.ELEVENLABS_MODEL_ID;
   const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || legacyCallModel || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);
   push('木纹 / 木屋', 'ElevenLabs（语音）', process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID ? 'on' : 'unset', process.env.ELEVENLABS_VOICE_ID ? `声音 ${process.env.ELEVENLABS_VOICE_ID.slice(0, 8)}… · 留言 ${voiceModel} · 通话 ${callModel}` : '');
-  push('木纹 / 木屋', 'Bark（推手机）', process.env.BARK_KEY ? 'on' : 'unset');
+  const pushConfig = getPushConfig();
+  push('木纹 / 木屋', '手机通知', pushConfig.provider === 'none' ? 'unset' : 'on',
+    pushConfig.provider === 'apple' ? `Apple 原生推送 · ${pushConfig.native_devices} 台设备${pushConfig.bark_fallback ? ' · Bark 兜底' : ''}` : 'Bark 过渡通道');
   const sb = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
   if (sb) {
     const r = await probe(`${process.env.SUPABASE_URL}/rest/v1/`, { headers: { apikey: process.env.SUPABASE_SERVICE_KEY } });
@@ -1002,7 +1010,7 @@ app.get('/api/voice/:id/audio', (req, res) => {
 });
 // 醒来/排班这些还是棋子 Cowork 账号里的辞通过 /mcp 主动来做，服务器不轮询这部分。
 // 但棋子的日程提醒是个例外：不能等辞醒来才推，所以这里单独开一个每分钟跑一次的
-// 定时器，只干一件事——查有没有到点还没推过的日程，到点就直接 Bark 推给棋子。
+// 定时器，只干一件事——查有没有到点还没推过的日程，到点就直接发手机通知。
 cron.schedule('* * * * *', async () => {
   let due = [];
   try { due = getDueSchedules(); } catch (e) { console.error('查日程失败：', e.message || e); return; }
