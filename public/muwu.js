@@ -926,54 +926,13 @@ async function saveLyrics(id) {
 }
 
 // ================= 语音 =================
-// 这套之前在旧网页里有：辞调 speak，服务端生成音频，网页轮询 /api/speech/next 自动播，
-// 「语音记录」里能一条条回放拉进度条。我重写前端的时候把这块弄丢了，这里补回来。
-// iOS Safari 不让定时器触发的播放出声，必须先有一次人手点过的 play() 解锁；
-// 用同一个 <audio> 反复换 src，只需解锁这一次。
-const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-let voiceEl = null, voiceUnlocked = false, voiceBusy = false, voiceTimer = null;
-function voiceAudio() { if (!voiceEl) voiceEl = new Audio(); return voiceEl; }
-function unlockVoice() {
-  const a = voiceAudio();
-  a.src = SILENT_WAV;
-  a.play().catch(() => {});   // 解不出声也没关系，这次点击本身就满足了"用户手动触发过"
-  voiceUnlocked = true;
-  localStorage.setItem('muwen-voice-unlocked', '1');
-  const s = $('#voice-state'); if (s) s.textContent = '已开启';
-  const b = $('#vc-unlock'); if (b) { b.textContent = '声音已开启'; b.disabled = true; }
-  startVoicePolling();
-}
-function startVoicePolling() {
-  if (voiceTimer) return;
-  voiceTimer = setInterval(voiceTick, 8000);
-  voiceTick();
-}
-async function voiceTick() {
-  if (voiceBusy || !voiceUnlocked) return;
-  voiceBusy = true;
-  try {
-    const item = await rest('/api/speech/next').catch(() => null);
-    if (item && item.id) {
-      if (item.voiceId) {
-        const a = voiceAudio();
-        a.src = MW.audioUrl(item.voiceId);
-        try { await a.play(); await new Promise(r => { a.onended = r; a.onerror = r; }); }
-        catch { /* 被浏览器拦了就算了，记录里还能回放 */ }
-      }
-      await fetch(MW.apiUrl(`/api/speech/${item.id}/done`), { method: 'POST', headers: { 'x-access-token': MW.TOKEN } }).catch(() => {});
-    }
-  } finally { voiceBusy = false; }
-}
+// speak 的实时播报只交给娃娃。手机和木屋网页只保留可回放的语音记录，
+// 不轮询待播队列，也不会在后台突然出声。
 async function openVoice() {
   sheetLoading('语音');
   try {
     const [hist, calls] = await Promise.all([rest('/api/voice/history?limit=60'), rest('/api/call/history?limit=50').catch(() => [])]);
-    sheetSet(`<div class="card">
-        <div class="card-title" style="font-size:14px">自动播放</div>
-        <div class="card-desc" style="margin-top:4px">辞用 speak 说话时，这个页面开着就会自动播出来。手机上必须先手动点一下才允许出声（浏览器的限制）。</div>
-        <button class="btn" id="vc-unlock" style="margin-top:10px" ${voiceUnlocked ? 'disabled' : ''} onclick="unlockVoice()">${voiceUnlocked ? '声音已开启' : '开启声音播放'}</button>
-      </div>
-      <div class="section-title">通话记录 ${calls.length ? `<span style="color:var(--text-light);font-weight:400">${calls.length} 通</span>` : ''}</div>
+    sheetSet(`<div class="section-title">通话记录 ${calls.length ? `<span style="color:var(--text-light);font-weight:400">${calls.length} 通</span>` : ''}</div>
       ${calls.length ? calls.map(c => `<div class="entry"><div class="entry-head"><span>${c.caller === 'cy' ? '辞拨出' : '棋子拨出'}</span><span>${esc(({ended:'已挂断',rejected:'已拒绝',missed:'未接通',blocked:'安静时间'}[c.status] || c.status))}</span></div><div class="entry-body">${esc(fmtTime(c.created_at))}${c.accepted_at ? ` · ${Math.max(0,Math.round((Date.parse(c.ended_at||new Date())-Date.parse(c.accepted_at))/1000))} 秒` : ''}</div>${c.events && c.events.some(e=>e.type==='utterance') ? `<details class="intimate-fold"><summary>通话文字</summary><div class="intimate-body">${c.events.filter(e=>e.type==='utterance').map(e=>`<div style="margin-top:6px"><b>${e.by==='cy'?'辞':'棋子'}：</b>${esc(e.text)}</div>`).join('')}</div></details>` : ''}</div>`).join('') : '<div class="empty">还没有通话记录</div>'}
       <div class="section-title">语音记录 ${hist.length ? `<span style="color:var(--text-light);font-weight:400">${hist.length} 条</span>` : ''}</div>
       ${hist.length ? hist.map(x => `<div class="entry">
@@ -1627,8 +1586,6 @@ applyAvatars(); applyIcons(); applyHomeOrder(); loadHome(); CX.init();
   if (h === 'search') switchPage('search');
   else if (h.startsWith('chatlog=')) { switchPage('search'); setTimeout(() => openRingDay(h.slice(8)), 50); }
 })();
-// 上次解锁过就直接开始轮询（解锁状态记在本地，不用每次都点）
-if (localStorage.getItem('muwen-voice-unlocked') === '1') { voiceUnlocked = true; startVoicePolling(); }
 window.switchPage = switchPage; window.closeSheet = closeSheet;
 
 // ---------- 设置页：聊天配色 + 拍一拍库 ----------

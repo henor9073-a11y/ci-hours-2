@@ -747,16 +747,19 @@ try {
     const heat = await rest('/api/grains?limit=500');
     for (let i = 1; i < heat.length; i++) assert.ok(heat[i - 1].heat >= heat[i].heat, '默认还是热度');
   });
-  await step('语音接口还在（前端那块被我弄丢过，这里守住）', async () => {
+  await step('speak 只给娃娃播，手机和木屋保留可回放记录', async () => {
     const hist = await (await fetch(`${base}/api/voice/history?token=${TOKEN}`)).json();
     assert.ok(Array.isArray(hist));
+    // 娃娃 relay 仍要从这里取待播语音。
     const next = await (await fetch(`${base}/api/speech/next?token=${TOKEN}`)).json();
     assert.ok(next === null || typeof next === 'object');
-    // 木屋里必须有语音板块的入口和播放器逻辑
+    // 木屋只展示历史和手动播放器，不能再消费娃娃的实时待播队列。
     const js = await (await fetch(`${base}/muwu.js?token=${TOKEN}`)).text();
-    for (const k of ['openVoice', '/api/speech/next', 'unlockVoice', 'audioUrl']) {
+    for (const k of ['openVoice', '/api/voice/history', 'audioUrl']) {
       assert.ok(js.includes(k), `muwu.js 里该有 ${k}`);
     }
+    assert.ok(!js.includes('/api/speech/next'), '木屋不该消费娃娃的待播队列');
+    assert.ok(!js.includes('unlockVoice'), '木屋不该保留后台自动播报入口');
     const html = await (await fetch(`${base}/muwu?token=${TOKEN}`)).text();
     assert.ok(html.includes('openVoice()'), '木屋要有语音入口');
   });

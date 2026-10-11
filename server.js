@@ -35,7 +35,10 @@ import {
 } from './lib/health.js';
 import { getWheels, createWheel, updateWheel, removeWheel, spinWheel, getBoardNotes, createBoardNote, updateBoardNote, archiveBoardNote, restoreBoardNote } from './lib/shared-spaces.js';
 import { getLocationState, updateLocation, addLocationPlace, updateLocationPlace, removeLocationPlace } from './lib/location.js';
-import { getWatchHealth, ingestWatchHealth } from './lib/watch-health.js';
+import {
+  getWatchHealth, ingestWatchHealth, getWatchStatus, requestWatchRefresh,
+  pendingWatchActions, completeWatchAction
+} from './lib/watch-health.js';
 import {
   getPetHousehold, getPet, careForPet,
   syncPetNest, pendingPetActions, completePetAction
@@ -228,7 +231,8 @@ app.get('/api/fishing/encyclopedia', async (_, res) => {
   catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 app.get('/api/moods', (req, res) => res.json(mw.moods.getMoods({ limit: Number(req.query.limit) || 50 })));
-app.get('/api/album', (req, res) => res.json(mw.album.listPhotos({ limit: Number(req.query.limit) || 100 })));
+app.get('/api/album', (req, res) => res.json(mw.album.listPhotos({ category: req.query.category || '', limit: Number(req.query.limit) || 100 })));
+app.get('/api/album-categories', (_, res) => res.json(mw.album.listPhotoCategories()));
 app.get('/api/album/:id/image', (req, res) => {
   const meta = mw.album.getPhotoMeta(req.params.id);
   const p = mw.album.getPhotoPath(req.params.id);
@@ -244,6 +248,13 @@ app.get('/api/album/:id/original', (req, res) => {
   res.setHeader('Content-Type', meta.original_mime_type || meta.mime_type);
   res.setHeader('Cache-Control', 'private, max-age=604800');
   fs.createReadStream(p).pipe(res);
+});
+app.delete('/api/album/:id', (req, res) => {
+  try {
+    const photo = mw.album.deletePhoto(req.params.id);
+    if (!photo) return res.status(404).json({ error: '找不到这张照片' });
+    res.json({ ok: true, deleted: photo });
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.get('/api/handover', (_, res) => res.json(mw.handover.getHandover() || {}));
 app.get('/api/wake-packet', (_, res) => res.json(mw.wake.getWakePacket()));
@@ -292,6 +303,14 @@ app.get('/api/watch-health', async (req, res) => {
 app.post('/api/watch-health/sync', (req, res) => {
   try { res.json(ingestWatchHealth(req.body || {}, 'watch_relay_push')); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/watch-status', (_, res) => res.json(getWatchStatus()));
+app.post('/api/watch-refresh', (_, res) => res.json(requestWatchRefresh()));
+app.get('/api/watch-health/agent/actions', (req, res) => res.json(pendingWatchActions(Number(req.query.limit) || 20)));
+app.post('/api/watch-health/agent/actions/:id/complete', (req, res) => {
+  const action = completeWatchAction(req.params.id, req.body || {});
+  if (!action) return res.status(404).json({ error: '找不到这个手表操作' });
+  res.json(action);
 });
 
 // ---- Cove Pet Nest：Mac mini 主动同步 localhost:9480，照料动作由固定用途代理领走执行 ----
@@ -363,6 +382,11 @@ app.get('/api/chat/status', (_, res) => res.json(mw.chat.getStatus()));
 app.post('/api/chat/status', (req, res) => {
   try { res.json(mw.chat.setStatus('nor', (req.body || {}).text)); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/chat/status/nudge', async (_, res) => {
+  try {
+    res.json(await mw.chat.sendSystemEvent('棋子想看看你现在的状态，有空时换一下吧。', 'status_nudge', { deliverToCy: true }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // 按住说话 → 往右滑「转文字」：只转不存，文字回填到输入框由她改完再发
 app.post('/api/chat/transcribe', async (req, res) => {
@@ -501,8 +525,8 @@ app.get('/api/daily-quote', (_, res) => res.json(mw.quote.latestQuote() || { tex
 // 相册上传：前端（手机）直接传 base64 进来，后端自动压缩
 app.post('/api/album', async (req, res) => {
   try {
-    const { image_base64, mime_type, caption, date, tags } = req.body || {};
-    res.json(await mw.album.savePhoto({ image_base64, mime_type, caption, date, tags }));
+    const { image_base64, mime_type, caption, date, tags, category } = req.body || {};
+    res.json(await mw.album.savePhoto({ image_base64, mime_type, caption, date, tags, category }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.get('/api/wake-status', (req, res) => res.json(mw.wake.getWakeStatus({ logLimit: Number(req.query.limit) || 20 })));
@@ -754,7 +778,7 @@ app.post('/api/diary', async (req, res) => {
   if (!text) return res.status(400).json({ error: '日记内容不能为空' });
   try {
     const entry = addDiaryEntry(text, 'public', 'nor_diary', String((req.body || {}).date || ''));
-    await mw.chat.sendSystemEvent('棋子写了一篇日记', 'nor_diary');
+    await mw.chat.sendSystemEvent('棋子更新了日记', 'nor_diary', { deliverToCy: true });
     res.json(entry);
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
@@ -936,8 +960,8 @@ app.post('/api/replan', async (_, res) => {
 // ---- MCP 连接器：给 Cowork/claude.ai 之类的客户端用 ----
 app.post('/mcp', handleMcpRequest);
 app.get('/mcp', (_, res) => res.status(405).json({ error: '这个端点只接受 POST' }));
-// ---- 语音：网页轮询这两个端点，拿到就播放服务端生成好的音频 ----
-// /mcp 里的 speak 工具把文字（和生成好的音频 id）存进队列，这里给网页拉取/回报消费状态。
+// ---- 语音：娃娃 relay 轮询这两个端点，拿到就播放服务端生成好的音频 ----
+// 手机和木屋网页不消费这个队列；它们只从语音记录里按需手动回放。
 // 走跟其他接口一样的密码中间件（?token= 或 x-access-token）。
 app.get('/api/speech/next', (_, res) => res.json(getPendingSpeech()));
 app.post('/api/speech/:id/done', (req, res) => {

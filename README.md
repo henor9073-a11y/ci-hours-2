@@ -362,7 +362,8 @@ npm test
 `speak({text})` 这个 MCP 工具调用时，服务端直接调 ElevenLabs 把文字生成语音
 （`lib/voice.js`，木屋留言 `model_id` 默认 `eleven_v4`，可用 `ELEVENLABS_MESSAGE_MODEL_ID` 覆盖；实时通话用 `ELEVENLABS_CALL_MODEL_ID`，并兼容旧的 `ELEVENLABS_MODEL_ID` 配置），存进磁盘
 （`DATA_DIR/voices/*.mp3`）并记一条历史（`voice-history.json`）。同时把这条排进
-播放队列（`/api/speech/next` 给网页拉取，`/api/speech/:id/done` 标记消费掉）——
+播放队列（`/api/speech/next` 只给娃娃 relay 拉取，`/api/speech/:id/done` 标记消费掉）——
+手机和木屋网页不会消费这条队列，也不会在后台自动播报；它们只在语音记录里提供手动回放。
 只保留最新一条算"待播的"，旧的没播的自动跳过。
 
 网页开着（电脑或手机浏览器都行）就会自动轮询、拿到就播放，不需要单独跑本地脚本，
