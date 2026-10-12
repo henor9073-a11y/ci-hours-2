@@ -42,6 +42,15 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   wake_mode: 'chase', wake_count_today: 3, wake_next_interval_min: 5,
   watchdog: { installed: true, healthy: false, checked_at: '2026-10-08T10:05:00+11:00', problems: ['主要窗口没运行', 17] },
   daily_pipeline: { last_run_at: '2026-10-08T08:30:00+11:00', last_success_date: '2026-10-07', last_error_at: '2026-10-08 08:30:00', last_error_date: '2026-10-07', last_error: '一次失败' },
+  usage: {
+    fetched_at: '2026-10-12T10:29:06+00:00', plan_label: 'Max (5x)',
+    limits: [
+      { id: 'session:0', kind: 'session', label: '会话额度', percent: 7, resets_at: '2026-10-12T13:40:00+00:00', severity: 'normal', is_active: false },
+      { id: 'weekly_all:1', kind: 'weekly_all', label: '每周 · 全部模型', percent: 95, resets_at: '2026-10-13T04:00:00+00:00', severity: 'critical', is_active: true }
+    ],
+    weekly_breakdown: [{ id: 'claude_code', label: 'Claude Code', percent: 100 }],
+    extra_usage: { enabled: false, percent: 0 }
+  },
   windows: [
     { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4,
       crop_generation: 2, last_crop_at: '2026-10-08T02:00:00+11:00',
@@ -70,6 +79,10 @@ assert.equal(ww.getWorkbench().agent.current.watchdog.installed, true);
 assert.deepEqual(ww.getWorkbench().agent.current.watchdog.problems, ['主要窗口没运行', '17']);
 assert.equal(ww.getWorkbench().agent.current.daily_pipeline.last_success_date, '2026-10-07');
 assert.equal(ww.getWorkbench().agent.current.daily_pipeline.last_error_date, '2026-10-07');
+assert.equal(ww.getWorkbench().agent.current.usage.plan_label, 'Max (5x)');
+assert.deepEqual(ww.getWorkbench().agent.current.usage.limits.map(x => [x.label, x.percent]), [['会话额度', 7], ['每周 · 全部模型', 95]]);
+assert.deepEqual(ww.getWorkbench().agent.current.usage.weekly_breakdown.map(x => [x.label, x.percent]), [['Claude Code', 100]]);
+assert.equal(ww.getWorkbench().agent.current.usage.extra_usage.enabled, false);
 assert.deepEqual(ww.deliveryRoute(primaryId), {
   allowed: true, requested_session_id: primaryId, primary_session_id: primaryId, reason: null
 });
