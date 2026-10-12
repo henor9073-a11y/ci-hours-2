@@ -359,6 +359,25 @@ app.post('/api/chat', async (req, res) => {
     res.json(await mw.chat.sendMessage({ ...b, sender: 'nor', thinking: '', tools: [], voice_id: '' }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+// Apple Watch 只能上报预先定义好的动作，不能提交任意系统文字。
+// 这样既能在木屋里作为居中小字显示，也会只唤醒工作台标记的主要窗口。
+const WATCH_SYSTEM_EVENTS = {
+  miss: { content: '来自 Apple Watch · 棋子点了「想你了」', action: 'watch_miss' },
+  seen: { content: '来自 Apple Watch · 棋子点了「看到了」', action: 'watch_seen' },
+  wake: { content: '来自 Apple Watch · 棋子在手表上叫你', action: 'watch_wake' }
+};
+app.post('/api/watch-events', async (req, res) => {
+  try {
+    const key = String((req.body || {}).event || '');
+    const event = WATCH_SYSTEM_EVENTS[key];
+    if (!event) return res.status(400).json({ error: '不支持的手表事件' });
+    res.json(await mw.chat.sendSystemEvent(event.content, event.action, {
+      deliverToCy: true,
+      deliveryKey: `sigh_watch:${key}`,
+      sourceDevice: 'sigh_watch'
+    }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 // GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
 app.get('/api/chat/pending', (req, res) => {
   const route = deliveryRoute(req);

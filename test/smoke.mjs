@@ -906,6 +906,35 @@ try {
     assert.ok(pv, '转文字失败的语音也要送');
     assert.ok(pv.text_for_cy.includes('语音') && pv.text_for_cy.includes('转文字失败'), pv.text_for_cy);
   });
+  await step('Apple Watch：固定动作显示系统小字，只投递主要窗口', async () => {
+    const invalid = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: '任意伪造文字' })
+    });
+    assert.equal(invalid.status, 400, '手表接口不能接收任意系统文字');
+
+    const response = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'miss' })
+    });
+    assert.equal(response.status, 200);
+    const event = await response.json();
+    assert.equal(event.sender, 'system');
+    assert.equal(event.type, 'system');
+    assert.equal(event.source_device, 'sigh_watch');
+    assert.equal(event.content, '来自 Apple Watch · 棋子点了「想你了」');
+    assert.equal(event.action, 'watch_miss');
+    assert.equal(event.deliver_to_cy, true);
+    assert.equal(event.read, false);
+
+    const secondary = await rest(`/api/chat/pending?session_id=${SECONDARY_SESSION}`);
+    assert.equal(secondary.messages.length, 0, '副窗口不能领取手表提示');
+    const primary = await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`);
+    const pending = primary.messages.find(x => x.id === event.id);
+    assert.ok(pending, '手表提示必须送到主要窗口');
+    assert.ok(pending.text_for_cy.includes('[系统提示]'));
+    assert.ok(pending.text_for_cy.includes('来自 Apple Watch'));
+  });
   await step('木屋聊天：钩子补真实 thinking / 工具（/api/chat/annotate + hooks/chat-annotate.py）', async () => {
     const rep = await tool('chat_reply', { content: '钩子会补思考的那条', thinking: '辞自己写的，会被覆盖' });
     // 假的 transcript：这一轮有两个 thinking 块、一次 get_calendar、然后 chat_reply
