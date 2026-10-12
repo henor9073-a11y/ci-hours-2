@@ -362,9 +362,10 @@ app.post('/api/chat', async (req, res) => {
 // Apple Watch 只能上报预先定义好的动作，不能提交任意系统文字。
 // 这样既能在木屋里作为居中小字显示，也会只唤醒工作台标记的主要窗口。
 const WATCH_SYSTEM_EVENTS = {
-  miss: { content: '来自 Apple Watch · 棋子点了「想你了」', action: 'watch_miss' },
-  seen: { content: '来自 Apple Watch · 棋子点了「看到了」', action: 'watch_seen' },
-  wake: { content: '来自 Apple Watch · 棋子在手表上叫你', action: 'watch_wake' }
+  // miss / seen 暂时保留给尚未更新的旧 Watch App；三者都收束成同一个动作。
+  miss: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' },
+  seen: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' },
+  wake: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' }
 };
 app.post('/api/watch-events', async (req, res) => {
   try {
@@ -374,7 +375,8 @@ app.post('/api/watch-events', async (req, res) => {
     res.json(await mw.chat.sendSystemEvent(event.content, event.action, {
       deliverToCy: true,
       deliveryKey: `sigh_watch:${key}`,
-      sourceDevice: 'sigh_watch'
+      sourceDevice: 'sigh_watch',
+      deliveryText: event.deliveryText
     }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });

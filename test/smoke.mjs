@@ -922,8 +922,8 @@ try {
     assert.equal(event.sender, 'system');
     assert.equal(event.type, 'system');
     assert.equal(event.source_device, 'sigh_watch');
-    assert.equal(event.content, '来自 Apple Watch · 棋子点了「想你了」');
-    assert.equal(event.action, 'watch_miss');
+    assert.equal(event.content, '棋子叫了一下小辞');
+    assert.equal(event.action, 'watch_call');
     assert.equal(event.deliver_to_cy, true);
     assert.equal(event.read, false);
 
@@ -933,7 +933,7 @@ try {
     const pending = primary.messages.find(x => x.id === event.id);
     assert.ok(pending, '手表提示必须送到主要窗口');
     assert.ok(pending.text_for_cy.includes('[系统提示]'));
-    assert.ok(pending.text_for_cy.includes('来自 Apple Watch'));
+    assert.equal(pending.text_for_cy, '[系统提示] 棋子叫你');
   });
   await step('木屋聊天：钩子补真实 thinking / 工具（/api/chat/annotate + hooks/chat-annotate.py）', async () => {
     const rep = await tool('chat_reply', { content: '钩子会补思考的那条', thinking: '辞自己写的，会被覆盖' });
