@@ -1227,7 +1227,7 @@ try {
     assert.ok(chat.includes('playPending') && chat.includes("e.name === 'AbortError'"), '留言流式语音加载中不能被重复点按 abort，也不能把取消误报成损坏');
     assert.ok(chat.includes("m.voice_id ? MW.audioUrl(m.voice_id)") && chat.includes("'准备中'") && chat.includes("m.voice_stream && !m.voice_id"), '辞的语音应后台缓存，准备好后恢复时长并直接播放完整文件');
     const chatBackend = fs.readFileSync(path.join(process.cwd(), 'lib/muwen/chat.js'), 'utf8');
-    assert.ok(chatBackend.includes('synthesizeVoiceLater(msg.id, msg.content)') && chatBackend.includes('m.voice_id = voice.id'), 'chat_reply 文字先返回，语音要在后台预生成缓存');
+    assert.ok(chatBackend.includes('synthesizeVoiceLater(msg.id)') && chatBackend.includes('ensureVoiceCached') && chatBackend.includes('m.voice_id = voice.id'), 'chat_reply 文字先返回，语音要在后台预生成缓存');
     const voiceBackend = fs.readFileSync(path.join(process.cwd(), 'lib/voice.js'), 'utf8');
     assert.ok(voiceBackend.includes("ELEVENLABS_MESSAGE_MODEL_ID || 'eleven_v4'") && voiceBackend.includes('LEGACY_CALL_MODEL') && voiceBackend.includes('stability: 0.3'), '留言默认走 v4、通话保留独立/旧配置，稳定性为 0.3');
     assert.ok(voiceBackend.includes("startsWith('eleven_v4')") && !voiceBackend.includes('const VOICE_SETTINGS'), 'v4 不能继续发送旧版 style/speed 设置');

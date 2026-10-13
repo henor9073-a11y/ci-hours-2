@@ -535,6 +535,12 @@ app.get('/api/chat/voice-stream/:id', async (req, res) => {
   }
   try { await streamSpeech(m.content, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
+// 极长回复若曾因旧的 20 秒缓存时限失败，可由受保护的客户端补生成一次。
+// 同一条消息的并发请求会合并，不会重复向 ElevenLabs 计费。
+app.post('/api/chat/voice-cache/:id', async (req, res) => {
+  try { res.json(await mw.chat.ensureVoiceCached(req.params.id)); }
+  catch (err) { res.status(502).json({ error: String(err.message || err) }); }
+});
 app.get('/api/moment', (req, res) => res.json(mw.moments.getMoment(req.query.date)));
 app.post('/api/moment', (req, res) => {
   try {
