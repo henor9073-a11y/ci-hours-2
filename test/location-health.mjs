@@ -7,6 +7,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'location-health-te
 
 const location = await import('../lib/location.js');
 const health = await import('../lib/watch-health.js');
+const watchCloud = await import('../lib/watch-cloud.js');
 const petNest = await import('../lib/pet-nest.js');
 
 const home = location.addLocationPlace({
@@ -44,6 +45,19 @@ const disconnected = health.normalizeWatchHealth({ heartRate: null, bloodOxygen:
 assert.equal(disconnected.heart_rate_bpm, null);
 assert.equal(disconnected.blood_oxygen_percent, null);
 assert.equal(disconnected.steps, null);
+
+const vibration = watchCloud.enqueueWatchCommand({
+  id: 'relay-vibration-1', type: 'vibrate', pattern: 'heartbeat', message: '在'
+});
+assert.equal(vibration.id, 'relay-vibration-1');
+assert.equal(watchCloud.enqueueWatchCommand({ id: 'relay-vibration-1', type: 'vibrate' }).created_at, vibration.created_at);
+assert.equal(watchCloud.nextWatchCommand('').id, 'relay-vibration-1');
+const voice = watchCloud.enqueueWatchCommand({ id: 'relay-voice-1', type: 'voice', transcript: '我在这里' });
+assert.equal(watchCloud.nextWatchCommand('relay-vibration-1').id, voice.id);
+assert.equal(watchCloud.nextWatchCommand(voice.id), null);
+assert.equal(watchCloud.watchEventReceipt('watch-event-1'), null);
+watchCloud.recordWatchEventReceipt('watch-event-1', 'message-1');
+assert.equal(watchCloud.watchEventReceipt('watch-event-1').message_id, 'message-1');
 
 petNest.syncPetNest({
   grains: 12,

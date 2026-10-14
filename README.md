@@ -108,7 +108,8 @@
 
 - `GET /api/kiss-progress` 从每日总结的 `kiss_count` 累加，返回当前数、目标数和每天明细；首页图标与详情趋势共用这一份真数据。
 - iPhone 用 significant-location-change 低功耗后台定位，`POST /api/location` 自动匹配常用地点并在聊天里写“棋子离开了家／到了学校”；辞用 MCP `get_location` 读最近状态和模糊位置。
-- Mac mini 窗口代理从 `localhost:9470/ai/health` 主动推送手表快照；辞用 MCP `get_watch_health` 读最近心率、步数、血氧和睡眠。云端只缓存，不反向访问 Mac 的 localhost。
+- Apple Watch 在家优先连 Mac mini 的 `:9470`；离家后自动改走木屋公网。iPhone 用 WatchConnectivity 把当前公网地址和访问凭据安全同步给手表，手表源码不保存密钥。
+- “叫一下小辞”、健康快照以及辞回给手表的震动／文字语音提示都有公网通道；临时断网的叫人动作会在手表本地排队，恢复连接后补送，并用事件编号防止重复唤醒。辞仍用 MCP `get_watch_health` 读取最近心率、步数、血氧和睡眠；云端不会反向访问 Mac 的 localhost。
 - 小窝页面是原生界面。Mac mini 窗口代理同步 `localhost:9480` 的家庭与宠物数据，并领取喂食／摸摸／玩耍动作；凭据只留在 Mac mini 的 `~/.local/share/cove-pet-nest/credentials.json`。
 - **搜**：木屋数据（日程/睡眠/生理期/身体/书架）+ 可开关的木纹记忆，同样分类聚合
 - **醒**：苏醒三层状态与最近一次真实运行结果；旧的手动排班入口已隐藏，因为它没有接到当前 Mac mini 执行链路

@@ -923,7 +923,7 @@ try {
 
     const response = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'miss' })
+      body: JSON.stringify({ event: 'miss', event_id: 'watch-offline-1' })
     });
     assert.equal(response.status, 200);
     const event = await response.json();
@@ -942,6 +942,24 @@ try {
     assert.ok(pending, '手表提示必须送到主要窗口');
     assert.ok(pending.text_for_cy.includes('[系统提示]'));
     assert.equal(pending.text_for_cy, '[系统提示] 棋子叫你');
+
+    const duplicate = await (await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'wake', event_id: 'watch-offline-1' })
+    })).json();
+    assert.equal(duplicate.duplicate, true, '断网重试不能重复叫两次');
+    assert.equal(duplicate.id, event.id);
+
+    const queued = await (await fetch(`${base}/api/watch-commands?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'relay-command-1', type: 'vibrate', pattern: 'knock', message: '敲门' })
+    })).json();
+    assert.equal(queued.id, 'relay-command-1');
+    const next = await rest('/api/watch-commands/next');
+    assert.equal(next.command.id, 'relay-command-1');
+    assert.equal(next.command.pattern, 'knock');
+    const none = await rest('/api/watch-commands/next?after=relay-command-1');
+    assert.equal(none.command, null);
   });
   await step('木屋聊天：钩子补真实 thinking / 工具（/api/chat/annotate + hooks/chat-annotate.py）', async () => {
     const rep = await tool('chat_reply', { content: '钩子会补思考的那条', thinking: '辞自己写的，会被覆盖' });

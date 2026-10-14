@@ -43,6 +43,9 @@ import {
   pendingWatchActions, completeWatchAction
 } from './lib/watch-health.js';
 import {
+  enqueueWatchCommand, nextWatchCommand, watchEventReceipt, recordWatchEventReceipt
+} from './lib/watch-cloud.js';
+import {
   getPetHousehold, getPet, careForPet,
   syncPetNest, pendingPetActions, completePetAction
 } from './lib/pet-nest.js';
@@ -328,7 +331,10 @@ app.get('/api/watch-health', async (req, res) => {
   catch (e) { res.status(502).json({ error: String(e.message || e) }); }
 });
 app.post('/api/watch-health/sync', (req, res) => {
-  try { res.json(ingestWatchHealth(req.body || {}, 'watch_relay_push')); }
+  try {
+    const source = req.headers['x-watch-source'] === 'sigh_watch' ? 'sigh_watch_direct' : 'watch_relay_push';
+    res.json(ingestWatchHealth(req.body || {}, source));
+  }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 app.get('/api/watch-status', (_, res) => res.json(getWatchStatus()));
@@ -338,6 +344,13 @@ app.post('/api/watch-health/agent/actions/:id/complete', (req, res) => {
   const action = completeWatchAction(req.params.id, req.body || {});
   if (!action) return res.status(404).json({ error: '找不到这个手表操作' });
   res.json(action);
+});
+app.post('/api/watch-commands', (req, res) => {
+  try { res.json(enqueueWatchCommand(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/watch-commands/next', (req, res) => {
+  res.json({ command: nextWatchCommand(req.query.after || '') });
 });
 
 // ---- Cove Pet Nest：Mac mini 主动同步 localhost:9480，照料动作由固定用途代理领走执行 ----
@@ -393,12 +406,17 @@ app.post('/api/watch-events', async (req, res) => {
     const key = String((req.body || {}).event || '');
     const event = WATCH_SYSTEM_EVENTS[key];
     if (!event) return res.status(400).json({ error: '不支持的手表事件' });
-    res.json(await mw.chat.sendSystemEvent(event.content, event.action, {
+    const eventID = String((req.body || {}).event_id || '').trim();
+    const receipt = eventID ? watchEventReceipt(eventID) : null;
+    if (receipt) return res.json({ ok: true, duplicate: true, id: receipt.message_id });
+    const message = await mw.chat.sendSystemEvent(event.content, event.action, {
       deliverToCy: true,
-      deliveryKey: `sigh_watch:${key}`,
+      deliveryKey: `sigh_watch:${eventID || key}`,
       sourceDevice: 'sigh_watch',
       deliveryText: event.deliveryText
-    }));
+    });
+    if (eventID) recordWatchEventReceipt(eventID, message.id);
+    res.json(message);
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
