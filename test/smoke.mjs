@@ -310,10 +310,18 @@ try {
     const ph = found.results.find(r => r.layer === 'photos');
     assert.ok(ph && ph.id === p2.photo.id, `caption 应该能搜到：${JSON.stringify(found.results.map(r => r.layer))}`);
 
-    // 取回原图 + REST
-    const got = await tool('get_photo', { id: p1.photo.id });
-    assert.equal(got.image_base64, small);
-    assert.equal(got.returned, 'original');
+    // 辞默认直接看到轻量预览图；只有明确 original=true 才取完整原图。
+    const previewCall = await rpc('tools/call', { name: 'get_photo', arguments: { id: p2.photo.id } });
+    assert.equal(previewCall.result.content[0].type, 'image');
+    assert.equal(previewCall.result.content[0].mimeType, 'image/jpeg');
+    const previewMeta = JSON.parse(previewCall.result.content[1].text);
+    assert.equal(previewMeta.returned, 'preview');
+    assert.ok(previewMeta.bytes <= 2 * 1024 * 1024);
+    const originalCall = await rpc('tools/call', { name: 'get_photo', arguments: { id: p2.photo.id, original: true } });
+    assert.equal(originalCall.result.content[0].type, 'image');
+    assert.equal(originalCall.result.content[0].mimeType, 'image/png');
+    assert.deepEqual(Buffer.from(originalCall.result.content[0].data, 'base64'), bigPng);
+    assert.equal(JSON.parse(originalCall.result.content[1].text).returned, 'original');
     const img = await fetch(`${base}/api/album/${p2.photo.id}/image?token=${TOKEN}`);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
     const original = await fetch(`${base}/api/album/${p2.photo.id}/original?token=${TOKEN}`);
@@ -1060,8 +1068,9 @@ try {
     const saved = (await tool('list_photos', { limit: 500 })).find(photo => photo.caption === 'Claude 里发来的测试图');
     assert.ok(saved, 'Claude 附件应该进入相册列表');
     assert.ok(saved.tags.includes('Claude图片') && saved.tags.includes('辞收藏') && saved.tags.includes('测试'));
-    const original = await tool('get_photo', { id: saved.id });
-    assert.equal(original.image_base64, png, 'Claude 附件原图应逐字节保留');
+    const original = await rpc('tools/call', { name: 'get_photo', arguments: { id: saved.id, original: true } });
+    assert.equal(original.result.content[0].type, 'image');
+    assert.equal(original.result.content[0].data, png, 'Claude 附件原图应逐字节保留');
   });
   await step('情绪清单：21 条种子、改形状、记一次', async () => {
     const d = await tool('get_emotions');
