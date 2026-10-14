@@ -1411,7 +1411,7 @@ try {
     fs.rmSync(path.join(DATA, 'notebook_notes.json'), { force: true });
   });
 
-  await step('召回升级：联想 2 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超预算', async () => {
+  await step('召回升级：联想 3 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超预算', async () => {
     const { autoRecall, formatInjection, isHistoryAsk, INJECT_BUDGET } = await import('../lib/muwen/recall.js');
     const noSem = async () => ({ picks: [], index_count: 0 });
     const noRing = async () => ({ picks: [], index_count: 0 });
@@ -1423,7 +1423,7 @@ try {
 
     const chat = await autoRecall('今天摆摊人好多', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     assert.equal(chat.intent, 'association');
-    assert.equal(chat.max_return, 2, `联想该给 2 条上限：${chat.max_return}`);
+    assert.equal(chat.max_return, 3, `联想该给 3 条上限：${chat.max_return}`);
     const hist = await autoRecall('摆摊那天我们之前是怎么说的', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     assert.equal(hist.intent, 'answer');
     assert.equal(hist.max_return, 6, `查历史该给 6 条上限：${hist.max_return}`);
@@ -1482,7 +1482,7 @@ try {
     assert.equal(weak.memories[0].layer, 'semantic');
     assert.equal(weak.memories[0].id, target.grain.id);
     assert.equal(weak.memories[0].reason, '她在问连续性');
-    assert.ok(weak.memories.length <= 2);
+    assert.ok(weak.memories.length <= 3);
 
     // 强命中（adj 高）→ 不该跑语义层，省钱
     let called = false;
