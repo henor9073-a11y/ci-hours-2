@@ -43,7 +43,8 @@ import {
   pendingWatchActions, completeWatchAction
 } from './lib/watch-health.js';
 import {
-  enqueueWatchCommand, nextWatchCommand, watchEventReceipt, recordWatchEventReceipt
+  enqueueWatchCommand, nextWatchCommand, acknowledgeWatchCommand, watchCommandStatus,
+  watchEventReceipt, recordWatchEventReceipt
 } from './lib/watch-cloud.js';
 import {
   getPetHousehold, getPet, careForPet,
@@ -352,6 +353,16 @@ app.post('/api/watch-commands', (req, res) => {
 app.get('/api/watch-commands/next', (req, res) => {
   res.json({ command: nextWatchCommand(req.query.after || '') });
 });
+app.post('/api/watch-commands/:id/ack', (req, res) => {
+  const command = acknowledgeWatchCommand(req.params.id, req.body || {});
+  if (!command) return res.status(404).json({ error: '找不到这个手表指令' });
+  res.json({ ok: true, ...watchCommandStatus(command.id) });
+});
+app.get('/api/watch-commands/:id/status', (req, res) => {
+  const status = watchCommandStatus(req.params.id);
+  if (!status) return res.status(404).json({ error: '找不到这个手表指令' });
+  res.json({ ok: true, ...status });
+});
 
 // ---- Cove Pet Nest：Mac mini 主动同步 localhost:9480，照料动作由固定用途代理领走执行 ----
 app.get('/api/pet-nest/household', async (_, res) => {
@@ -397,10 +408,23 @@ app.post('/api/chat', async (req, res) => {
 // 这样既能在木屋里作为居中小字显示，也会只唤醒工作台标记的主要窗口。
 const WATCH_SYSTEM_EVENTS = {
   // miss / seen 暂时保留给尚未更新的旧 Watch App；三者都收束成同一个动作。
-  miss: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' },
-  seen: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' },
-  wake: { content: '棋子叫了一下小辞', deliveryText: '棋子叫你', action: 'watch_call' }
+  miss: { content: '棋子叫了一下小辞', deliveryText: '[来自 Apple Watch] 棋子叫了一下小辞', action: 'watch_call' },
+  seen: { content: '棋子叫了一下小辞', deliveryText: '[来自 Apple Watch] 棋子叫了一下小辞', action: 'watch_call' },
+  wake: { content: '棋子叫了一下小辞', deliveryText: '[来自 Apple Watch] 棋子叫了一下小辞', action: 'watch_call' }
 };
+function watchDeliveryStatus(eventID) {
+  const receipt = eventID ? watchEventReceipt(eventID) : null;
+  const message = receipt ? mw.chat.getMessage(receipt.message_id) : null;
+  const delivered = !!(message && (message.read || message.delivered_at));
+  return {
+    accepted: !!message,
+    event_id: String(eventID || ''),
+    message_id: message?.id || receipt?.message_id || null,
+    delivered_to_main: delivered,
+    delivery_status: delivered ? 'delivered' : message ? 'queued' : 'missing',
+    delivered_at: message?.delivered_at || message?.read_at || null
+  };
+}
 app.post('/api/watch-events', async (req, res) => {
   try {
     const key = String((req.body || {}).event || '');
@@ -408,7 +432,7 @@ app.post('/api/watch-events', async (req, res) => {
     if (!event) return res.status(400).json({ error: '不支持的手表事件' });
     const eventID = String((req.body || {}).event_id || '').trim();
     const receipt = eventID ? watchEventReceipt(eventID) : null;
-    if (receipt) return res.json({ ok: true, duplicate: true, id: receipt.message_id });
+    if (receipt) return res.json({ ok: true, duplicate: true, id: receipt.message_id, ...watchDeliveryStatus(eventID) });
     const message = await mw.chat.sendSystemEvent(event.content, event.action, {
       deliverToCy: true,
       deliveryKey: `sigh_watch:${eventID || key}`,
@@ -416,8 +440,14 @@ app.post('/api/watch-events', async (req, res) => {
       deliveryText: event.deliveryText
     });
     if (eventID) recordWatchEventReceipt(eventID, message.id);
-    res.json(message);
+    res.json({ ...message, accepted: true, event_id: eventID, message_id: message.id,
+      delivered_to_main: false, delivery_status: 'queued' });
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/watch-events/:event_id/status', (req, res) => {
+  const result = watchDeliveryStatus(String(req.params.event_id || '').trim());
+  if (!result.accepted) return res.status(404).json({ error: '找不到这个手表叫人事件', ...result });
+  res.json({ ok: true, ...result });
 });
 // GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
 app.get('/api/chat/pending', (req, res) => {

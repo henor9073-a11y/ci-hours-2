@@ -941,7 +941,20 @@ try {
     const pending = primary.messages.find(x => x.id === event.id);
     assert.ok(pending, '手表提示必须送到主要窗口');
     assert.ok(pending.text_for_cy.includes('[系统提示]'));
-    assert.equal(pending.text_for_cy, '[系统提示] 棋子叫你');
+    assert.equal(pending.text_for_cy, '[系统提示] [来自 Apple Watch] 棋子叫了一下小辞');
+
+    const queuedStatus = await rest('/api/watch-events/watch-offline-1/status');
+    assert.equal(queuedStatus.delivery_status, 'queued');
+    assert.equal(queuedStatus.delivered_to_main, false);
+
+    const ack = await (await fetch(`${base}/api/chat/delivered?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': PRIMARY_SESSION },
+      body: JSON.stringify({ ids: [event.id] })
+    })).json();
+    assert.equal(ack.delivered, 1);
+    const deliveredStatus = await rest('/api/watch-events/watch-offline-1/status');
+    assert.equal(deliveredStatus.delivery_status, 'delivered');
+    assert.equal(deliveredStatus.delivered_to_main, true);
 
     const duplicate = await (await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -958,6 +971,18 @@ try {
     const next = await rest('/api/watch-commands/next');
     assert.equal(next.command.id, 'relay-command-1');
     assert.equal(next.command.pattern, 'knock');
+    const queuedCommandStatus = await rest('/api/watch-commands/relay-command-1/status');
+    assert.equal(queuedCommandStatus.delivery_status, 'queued');
+    assert.equal(queuedCommandStatus.executed_on_watch, false);
+    const executed = await (await fetch(`${base}/api/watch-commands/relay-command-1/ack?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'sigh_watch', pattern: 'knock' })
+    })).json();
+    assert.equal(executed.delivery_status, 'executed');
+    assert.equal(executed.executed_on_watch, true);
+    const executedStatus = await rest('/api/watch-commands/relay-command-1/status');
+    assert.equal(executedStatus.delivery_status, 'executed');
+    assert.ok(executedStatus.acknowledged_at);
     const none = await rest('/api/watch-commands/next?after=relay-command-1');
     assert.equal(none.command, null);
   });
