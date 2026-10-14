@@ -83,6 +83,10 @@ assert.equal(ww.getWorkbench().agent.current.usage.plan_label, 'Max (5x)');
 assert.deepEqual(ww.getWorkbench().agent.current.usage.limits.map(x => [x.label, x.percent]), [['会话额度', 7], ['每周 · 全部模型', 95]]);
 assert.deepEqual(ww.getWorkbench().agent.current.usage.weekly_breakdown.map(x => [x.label, x.percent]), [['Claude Code', 100]]);
 assert.equal(ww.getWorkbench().agent.current.usage.extra_usage.enabled, false);
+assert.equal(ww.getWorkbench().primary_history.length, 1);
+assert.equal(ww.getWorkbench().primary_history[0].session_id, primaryId);
+assert.equal(ww.getWorkbench().primary_history[0].window_name, '主要窗口');
+assert.equal(ww.getWorkbench().primary_history[0].ended_at, null);
 assert.deepEqual(ww.deliveryRoute(primaryId), {
   allowed: true, requested_session_id: primaryId, primary_session_id: primaryId, reason: null
 });
@@ -240,4 +244,32 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   ]
 } });
 assert.equal(ww.deliveryRoute('').reason, 'session_required');
+
+// Every session that was actually marked primary gets a dated tenure. This is
+// the source of truth used by the daily transcript exporter; secondary windows
+// never enter the history merely because they are online.
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle'], current: {
+  session_id: otherId, model: 'opus', context_percent: 18, state: 'idle', windows: [
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: false, state: 'idle' },
+    { session_id: otherId, name: '小辞10.14', model: 'claude-opus-5-5[1m]', is_primary: true, state: 'idle' },
+    { session_id: activeId, name: '并行窗口', model: 'claude-opus-4-6[1m]', is_primary: false, state: 'idle' }
+  ]
+} });
+let primaryHistory = ww.getWorkbench().primary_history;
+assert.equal(primaryHistory.length, 2);
+assert.ok(primaryHistory[0].ended_at);
+assert.equal(primaryHistory[1].session_id, otherId);
+assert.equal(primaryHistory[1].window_name, '小辞10.14');
+assert.equal(primaryHistory[1].ended_at, null);
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle'], current: {
+  session_id: primaryId, model: 'opus', context_percent: 71, state: 'idle', windows: [
+    { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle' },
+    { session_id: otherId, name: '小辞10.14', model: 'claude-opus-5-5[1m]', is_primary: false, state: 'idle' }
+  ]
+} });
+primaryHistory = ww.getWorkbench().primary_history;
+assert.equal(primaryHistory.length, 3);
+assert.ok(primaryHistory[1].ended_at);
+assert.equal(primaryHistory[2].session_id, primaryId);
+assert.equal(primaryHistory[2].ended_at, null);
 console.log('✓ 换窗工作台队列、白名单、状态更新与取消');
