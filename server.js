@@ -17,6 +17,9 @@ import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
 import { getPendingSpeech, markSpeechDone } from './lib/speech.js';
 import { getVoiceHistory, getVoiceFilePath, streamSpeech } from './lib/voice.js';
+import {
+  backupStorageConfig, listCiHoursBackups, uploadCiHoursBackup
+} from './lib/backup-storage.js';
 import { addTranscript, getTranscripts, searchTranscripts, getTranscriptById, getDailySummariesByMonth } from './lib/transcripts.js';
 import { addDiaryEntry, getDiaryPublic } from './lib/diary.js';
 import { publicLabels } from './lib/muwen/labels.js';
@@ -84,6 +87,24 @@ app.use((req, res, next) => {
   return res.status(401).json({ error: '需要密码' });
 });
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
+
+// ---- 私有云备份：Mac mini 每周把本地整库 gzip 再镜像一份到 Supabase Storage ----
+// 入口位于密码中间件之后；Supabase service key 永远只留在 Render 环境里。
+app.get('/api/backups/status', async (req, res) => {
+  try { res.json(await listCiHoursBackups(req.query.limit)); }
+  catch (e) { res.status(502).json({ error: String(e.message || e), ...backupStorageConfig() }); }
+});
+app.post('/api/backups/upload', upload.single('backup'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: '缺少 backup 文件' });
+    res.json(await uploadCiHoursBackup({
+      filename: req.file.originalname,
+      buffer: req.file.buffer
+    }));
+  } catch (e) {
+    res.status(502).json({ error: String(e.message || e) });
+  }
+});
 
 function deliveryRoute(req) {
   const sessionId = req.headers['x-muwu-session-id']

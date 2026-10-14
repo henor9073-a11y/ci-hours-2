@@ -340,6 +340,7 @@ npm test
 | `BARK_KEY` | Bark 推送用的设备 key | 用 `send_push` 才需要 |
 | `SUPABASE_URL` | Supabase 项目地址，形如 `https://xxx.supabase.co` | 用 `get_phone_activity` 才需要 |
 | `SUPABASE_SERVICE_KEY` | Supabase service_role/secret key（不是 anon key，绕过 RLS 直接读） | 同上 |
+| `SUPABASE_BACKUP_BUCKET` | ci-hours 每周整库备份使用的私有 Storage bucket；默认 `ci-hours-backups` | 否 |
 | `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
 | `MUWEN_RECALL_PROVIDER` | 智能召回服务商：生产推荐 `gemini`，也支持 `anthropic` | 智能召回需要 |
@@ -347,6 +348,17 @@ npm test
 | `MUWEN_GEMINI_MODEL` | Gemini 默认模型，建议 `gemini-3.1-flash-lite` | 否 |
 | `ANTHROPIC_API_KEY` | 兼容保留的 Anthropic API key | provider 为 `anthropic` 时需要 |
 | `MUWEN_RECALL_MODEL` | 手动 recall agent 的模型覆盖；不填则跟 provider 默认模型 | 否 |
+
+## 整库备份
+
+Mac mini 的备份任务先把年轮全文、纹理和其余 JSON 集合压成一个 `json.gz`，在本地
+保留轮换副本，再把同一个文件交给 `POST /api/backups/upload`。后端使用只存在于
+Render 环境里的 Supabase service key，把文件写进 `SUPABASE_BACKUP_BUCKET` 的
+`ci-hours/` 目录；bucket 不存在时会创建为私有桶。`GET /api/backups/status` 可以核对
+云端文件名、大小和时间。这两个接口都受 `ACCESS_PASSWORD` 保护。
+
+这里备份的是 ci-hours 数据库里的年轮原文和记忆，不等于 Claude Code 的完整 JSONL：
+JSONL 里的工具返回、系统记录等仍需单独保管，不能拿本备份代替。
 
 ## 醒来机制
 
