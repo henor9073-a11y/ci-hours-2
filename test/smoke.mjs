@@ -1411,7 +1411,7 @@ try {
     fs.rmSync(path.join(DATA, 'notebook_notes.json'), { force: true });
   });
 
-  await step('召回升级：联想 3 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超 1500 字', async () => {
+  await step('召回升级：联想 2 条 / 查历史 6 条、30 分钟不重复、片段取最相关那段、注入不超预算', async () => {
     const { autoRecall, formatInjection, isHistoryAsk, INJECT_BUDGET } = await import('../lib/muwen/recall.js');
     const noSem = async () => ({ picks: [], index_count: 0 });
     const noRing = async () => ({ picks: [], index_count: 0 });
@@ -1423,7 +1423,7 @@ try {
 
     const chat = await autoRecall('今天摆摊人好多', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     assert.equal(chat.intent, 'association');
-    assert.equal(chat.max_return, 3, `联想该给 3 条上限：${chat.max_return}`);
+    assert.equal(chat.max_return, 2, `联想该给 2 条上限：${chat.max_return}`);
     const hist = await autoRecall('摆摊那天我们之前是怎么说的', { useAgent: true, _semanticPick: noSem, _pickRings: noRing, suppressRecent: false });
     assert.equal(hist.intent, 'answer');
     assert.equal(hist.max_return, 6, `查历史该给 6 条上限：${hist.max_return}`);
@@ -1453,6 +1453,15 @@ try {
     const big = formatInjection({ query: '旧事', memories: many });
     assert.ok(big.length <= INJECT_BUDGET + 40, `注入总量该封在 ${INJECT_BUDGET} 字上下：实际 ${big.length}`);
     assert.ok(big.includes('[muwen:recall]'), '封顶了也得保留抬头');
+
+    // 5. 明显的 state/config JSON 不能作为记忆自动注入；正常记忆仍然保留
+    const dump = JSON.stringify(Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`state_key_${i}`, { done: false, value: 'x'.repeat(30) }])));
+    const guarded = formatInjection({ query: '刚才怎么了', memories: [
+      { layer: 'authority', kind: 'grain', id: 'g-state', category: 'experience', heat: 50, confidence: 'cite', text: dump },
+      { layer: 'authority', kind: 'grain', id: 'g-normal', category: 'experience', heat: 50, confidence: 'cite', text: '棋子刚才说她准备去游戏中心看看测试。' }
+    ] });
+    assert.ok(!guarded.includes('state_key_'), '系统状态 JSON 不该进入自动召回注入');
+    assert.ok(guarded.includes('游戏中心'), '过滤系统状态时不能误伤正常记忆');
   });
 
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
@@ -1473,7 +1482,7 @@ try {
     assert.equal(weak.memories[0].layer, 'semantic');
     assert.equal(weak.memories[0].id, target.grain.id);
     assert.equal(weak.memories[0].reason, '她在问连续性');
-    assert.ok(weak.memories.length <= 3);
+    assert.ok(weak.memories.length <= 2);
 
     // 强命中（adj 高）→ 不该跑语义层，省钱
     let called = false;
@@ -1489,7 +1498,7 @@ try {
     assert.ok(Array.isArray(degraded.memories));
     assert.ok((degraded.why || '').includes('语义层失败'));
 
-    // 关键词和语义都空 → 才轮到年轮兜底
+    // 普通联想即使关键词和语义都空，也不能擅自翻原始年轮
     const empty = async () => ({ picks: [], none: true });
     const none = await autoRecall('量子色动力学的渐近自由', { useAgent: true, _semanticPick: empty, suppressRecent: false });
     assert.deepEqual(none.memories, []);
@@ -1515,10 +1524,15 @@ try {
     const ids = idx.text.split('\n').slice(1).map(l => l.split(' ')[0]);
     assert.deepEqual(ids, [...ids].sort(), '年轮索引必须按 id 排序');
 
-    // 前两层弱（不必空手）→ 就该放行年轮层，结果算 last_resort 不算权威
+    // 普通联想不翻年轮；明确查历史时，前两层弱才放行年轮层
     const emptySemantic = async () => ({ picks: [], none: true });
     const pick = async () => ({ picks: [{ id: ring.id, reason: '她像是在问那次胡扯' }], none: false, index_count: idx.count, model: 'stub' });
-    const r = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
+    let casualRingCalled = false;
+    const casualPick = async () => { casualRingCalled = true; return pick(); };
+    const casual = await autoRecall('螺旋桨维修手册第三章', { useAgent: true, _semanticPick: emptySemantic, _pickRings: casualPick, suppressRecent: false });
+    assert.equal(casualRingCalled, false, '普通联想不该打开原始年轮');
+    assert.ok(!casual.memories.some(m => m.layer === 'last_resort'));
+    const r = await autoRecall('我们之前聊过的螺旋桨维修手册第三章是什么', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
     assert.ok(r.layers_used.includes('rings-semantic'), `应该触发年轮语义层：${JSON.stringify(r.layers_used)}`);
     assert.equal(r.memories[0].layer, 'last_resort');
     assert.equal(r.memories[0].id, ring.id);
@@ -1528,7 +1542,7 @@ try {
     // 关键词在年轮里搜得到 → 不跑语义层，省钱
     let called = false;
     const spy = async () => { called = true; return { picks: [], none: true }; };
-    await autoRecall('给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy, suppressRecent: false });
+    await autoRecall('翻一下之前给年轮索引测试用的内容跟记忆库里别的东西都不沾边', { useAgent: true, _semanticPick: emptySemantic, _pickRings: spy, suppressRecent: false });
     assert.equal(called, false, '年轮关键词已经搜到了就不该再调模型');
 
     // ---- 段级打分：整篇沾边不算命中，得有某一段真的在说这件事 ----
@@ -1553,13 +1567,13 @@ try {
     // 只有散落噪音、没有真命中的时候 → 关键词层空手，索引层接手
     let ringModelCalled = false;
     const pick2 = async () => { ringModelCalled = true; return { picks: [{ id: ring.id, reason: '索引层挑的' }], none: false, index_count: 1, model: 'stub' }; };
-    const scatterOnly = await autoRecall('我家狗要不要打麻药洗牙那件事后来怎么样了', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2, suppressRecent: false });
+    const scatterOnly = await autoRecall('我家狗上次要不要打麻药洗牙那件事后来怎么样了', { useAgent: true, _semanticPick: emptySemantic, _pickRings: pick2, suppressRecent: false });
     assert.equal(ringModelCalled, true, '覆盖率没过线就该交给索引层');
     assert.ok(!scatterOnly.memories.some(m => m.id === noisy.id), `没过线的散落噪音不该返回：${JSON.stringify(scatterOnly.memories.map(m => m.id))}`);
 
     // 纹理有弱命中（沾边但不准）→ 年轮层照样要放行。弱命中本身过不了相关性下限，
     // 所以位置留给年轮线索——这正是"宁可给一条相关的，不要凑三条不相关的"。
-    const weak = await autoRecall('她那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
+    const weak = await autoRecall('她上次那天为什么委屈', { useAgent: true, minScore: 1, maxReturn: 3, _semanticPick: emptySemantic, _pickRings: pick, suppressRecent: false });
     const ringHit = weak.memories.find(m => m.layer === 'last_resort');
     assert.ok(ringHit && ringHit.id === ring.id, `弱命中时年轮线索要挤进来：${JSON.stringify(weak.layers_used)}`);
     assert.ok(!weak.memories.some(m => m.layer === 'authority' && m.adj < 20), '没过相关性下限的纹理不该返回');
@@ -1573,7 +1587,7 @@ try {
 
     // 语义层报错 → 静默降级，不炸整个召回
     const boom = async () => { throw new Error('模型超时'); };
-    const degraded = await autoRecall('潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom, suppressRecent: false });
+    const degraded = await autoRecall('上次潜水艇声呐校准流程', { useAgent: true, _semanticPick: emptySemantic, _pickRings: boom, suppressRecent: false });
     assert.deepEqual(degraded.memories, []);
     assert.ok((degraded.why || '').includes('年轮语义层失败'));
   });
