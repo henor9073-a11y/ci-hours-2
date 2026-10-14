@@ -251,10 +251,11 @@
 - 三层级联（对应 LMC-5 的向量→关键词→原始事件）：① 纹理 `grains` 关键词命中（authority）；② 关键词弱时语义层兜底（模型读记忆索引按意思挑，见下）；③ 前两层都空才翻年轮 `rings`（last_resort，只当线索）。
 - 琐碎消息（"嗯""好的""可以的""同意""11"、纯标点）和 `/loop` / 系统控制提示直接跳过；短但有意义的"疼吗""你怕我不要你吗"不会按长度误杀。
 - **本地保守模式（不需要 API）**：始终可用。只靠本机关键词与连续片段打分，越过强相关门槛才注入；短确认、纯认同、操作控制消息直接跳过。它宁可漏掉“暗号→项圈”这种完全换说法的联系，也不会凭一个普通词硬塞无关旧事。
-- **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：有可用 Gemini key 时，在本地层上增加语义能力。每条非琐碎消息先把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。模型判断这句话根本不用翻记忆时会直接 skip。
-  - 生产推荐 `MUWEN_RECALL_PROVIDER=gemini` + `gemini-3.1-flash-lite`；同一个 provider 同时负责意图扩写和最终相关性精选。`MUWEN_AUTORECALL_MODEL` 仍可单独覆盖模型。
+- **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：有可用 API key 时，在本地层上增加语义能力。推荐的一把-key方案是 OpenAI：`text-embedding-3-small` 先从整库找候选，`gpt-6-luna` 只读十几条候选做最终相关性精选。向量负责“换了说法也能找到”，Luna 负责排除旧状态、错误主体和泛泛同情绪。
+  - 生产推荐 `MUWEN_RECALL_PROVIDER=openai` + `OPENAI_API_KEY`。OpenAI 模式不再额外跑一次关键词扩写；embedding 已经负责跨词面匹配，弱匹配时只需“查询向量 + Luna 精选”两步。`MUWEN_OPENAI_INTENT_EXPANSION=1` 可打开旧扩写做对照实验。
+  - Gemini 仍兼容：`MUWEN_RECALL_PROVIDER=gemini` + `gemini-3.1-flash-lite` 时，会沿用意图扩写和整库索引精选。`MUWEN_AUTORECALL_MODEL` 仍可单独覆盖模型。
   - 关键词命中在注入前还会经过一次最终精选：自然联想可以返回多条，但每一条都必须与此刻真正相关，不再把高字面分直接当成高相关性。
-  - Gemini 没配置或挂了会退回本地保守模式；已经低于相关性门槛的候选仍然不会注入。服务器即使有 Claude key 也不会自动拿来兜底烧额度。
+  - API 没配置或挂了会退回本地保守模式；已经低于相关性门槛的候选仍然不会注入。服务器即使有 Claude key 也不会自动拿来兜底烧额度。
   - 实测：扩写前"你还记得我们的暗号吗"召不到暗号那条，扩写后它排第一。
 - 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
 - `POST /api/recall {query}` 回 `{"text": "拼好的注入文本", "count": N}`（`application/json`）；`?format=full` 回完整结构（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
@@ -263,14 +264,14 @@
 
 ### 语义兜底层（关键词搜不到的时候）
 
-关键词层的天花板是"换了说法就召不到"。扩写检索角度能救一部分，但仍然是字面匹配。所以加了第三层：
-**关键词一条没搜到、或者最高分只是字面沾边（长度归一化后低于 `MUWEN_SEMANTIC_FLOOR`，默认 22）时，让模型读整个记忆索引按意思挑。** 挑中的排在关键词结果前面——因为这层是在"关键词不准"的前提下才跑的。
+关键词层的天花板是"换了说法就召不到"。所以加了第三层：
+**关键词一条没搜到、或者最高分只是字面沾边（长度归一化后低于 `MUWEN_SEMANTIC_FLOOR`，默认 22）时，用 embedding 从整库找最相似的十几条，再让 Luna 按四道准入精选。** 挑中的排在关键词结果前面——因为这层是在"关键词不准"的前提下才跑的。
 
 - 阈值怎么来的：拿线上 231 条真实记忆量过，真命中落在 25–49，换了说法的语义查询卡在 15–18，22 能把两者分开。强命中（比如"项圈还在吗" adj=48.6）根本不会触发这层，省钱。
-- **为什么暂时不用 embedding 取代精选**：向量适合找候选，但"旧状态是否已经被推翻"、"只是泛泛同情绪还是这一次真的有关"仍需要读得懂关系的精选层。当前先用便宜的 Gemini 把候选扩写和最终筛选做好；以后可以再加 embedding 缩小语义索引，接口点在 `lib/muwen/semantic.js`。
-- **成本**：生产默认建议 Gemini 3.1 Flash-Lite（`$0.25/MTok` 输入、`$1.50/MTok` 输出，以 Google 当期定价为准），比原来的 Opus 高频筛选便宜一个数量级以上。语义兜底仍只在关键词弱时触发。
-- 模型看完觉得没有真正相关的会返回空，不硬塞。索引里只有开头一段，挑中之后正文自动取全。
-- 相关环境变量：`MUWEN_AUTORECALL_SEMANTIC=0` 单独关掉这层、`MUWEN_SEMANTIC_MODEL`、`MUWEN_SEMANTIC_FLOOR`、`MUWEN_SEMANTIC_INDEX_MAX`（默认 800 条，超了按热度截断）、`MUWEN_SEMANTIC_TIMEOUT_MS`（默认 12000）。
+- **向量不取代精选**：向量适合找候选，但"旧状态是否已经被推翻"、"只是泛泛同情绪还是这一次真的有关"仍需要读得懂关系的精选层。两者组合，不在便宜和关联性之间二选一。
+- **增量索引**：向量存到持久盘的 `recall_embeddings.json`；启动后在后台补齐，新增或正文变动的记忆才会重算，每批落盘，部署中断后不会从头花钱。初次索引尚未完成时仍照常走本地保守召回。
+- 模型看完觉得没有真正相关的会返回空，不硬塞。候选里带较长正文片段，挑中之后再取完整原文。
+- 相关环境变量：`MUWEN_AUTORECALL_SEMANTIC=0` 单独关掉这层、`MUWEN_SEMANTIC_MODEL`、`MUWEN_SEMANTIC_FLOOR`、`MUWEN_SEMANTIC_TIMEOUT_MS`（默认 12000）、`MUWEN_EMBEDDING_MODEL`、`MUWEN_EMBEDDING_DIMENSIONS`（默认 512）、`MUWEN_EMBEDDING_BATCH_SIZE`（默认 96）。
 - 跟扩写层一样：已配置的 provider 超时或报错不会让对话卡住，但也不会把未经精选的弱关键词结果注入。
 
 ### 召回（先觉察，后想起）
@@ -278,8 +279,8 @@
 不是每轮自动搜。辞自己写一句 notice（"这让我想到了什么"）→ 搜索层出 ≤20 条候选 → recall agent（模型）
 从候选里挑真正相关的 0–5 条返回，**可能返回空**，宁可空手也不硬塞。被返回的 heat +5。每次都记日志。
 
-recall agent 通过统一 provider 调用。生产推荐 `MUWEN_RECALL_PROVIDER=gemini`、`GEMINI_API_KEY` 和
-`MUWEN_GEMINI_MODEL=gemini-3.1-flash-lite`。Anthropic 仅作兼容，必须同时显式设置
+recall agent 通过统一 provider 调用。生产推荐 `MUWEN_RECALL_PROVIDER=openai` 和 `OPENAI_API_KEY`；
+默认精选模型是 `gpt-6-luna`，向量模型是 `text-embedding-3-small`。Gemini 方案仍兼容。Anthropic 仅作兼容，必须同时显式设置
 `MUWEN_RECALL_PROVIDER=anthropic` 和 `MUWEN_RECALL_ALLOW_ANTHROPIC=1` 才会启用，避免高频召回误烧 Claude 额度。没配 key 或 provider 调用失败时返回空，
 不会把未经挑选的搜索结果交给辞。
 
@@ -345,7 +346,11 @@ npm test
 | `SUPABASE_BACKUP_BUCKET` | ci-hours 每周整库备份使用的私有 Storage bucket；默认 `ci-hours-backups` | 否 |
 | `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
-| `MUWEN_RECALL_PROVIDER` | 语义增强服务商：生产推荐 `gemini`；不填也有本地保守自动召回 | 否 |
+| `MUWEN_RECALL_PROVIDER` | 语义增强服务商：生产推荐 `openai`；不填也有本地保守自动召回 | 否 |
+| `OPENAI_API_KEY` | OpenAI API key；同一把 key 供向量候选和 Luna 精选 | provider 为 `openai` 时需要 |
+| `MUWEN_OPENAI_RECALL_MODEL` | OpenAI 精选模型，默认 `gpt-6-luna` | 否 |
+| `MUWEN_EMBEDDING_MODEL` | 向量模型，默认 `text-embedding-3-small` | 否 |
+| `MUWEN_EMBEDDING_DIMENSIONS` | 向量维度，默认 512 | 否 |
 | `GEMINI_API_KEY` | Gemini API key；只供召回扩写、语义兜底和最终精选 | provider 为 `gemini` 时需要 |
 | `MUWEN_GEMINI_MODEL` | Gemini 默认模型，建议 `gemini-3.1-flash-lite` | 否 |
 | `ANTHROPIC_API_KEY` | 兼容保留的 Anthropic API key | provider 为 `anthropic` 时需要 |

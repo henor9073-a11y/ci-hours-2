@@ -738,8 +738,13 @@ async function toolsStatus() {
   push('木纹 / 木屋', '木纹（这台服务器）', 'on', `运行 ${Math.round(process.uptime() / 60)} 分钟`);
   push('木纹 / 木屋', '智能召回筛选', 'on',
     mw.recall.RECALL_PROVIDER_READY
-      ? `${mw.recall.RECALL_PROVIDER} · ${mw.recall.RECALL_MODEL} · 本地保守层兜底`
-      : '本地保守筛选（免费）· Gemini 语义增强未配置 · 不自动使用 Claude');
+      ? (mw.recall.RECALL_PROVIDER === 'openai'
+        ? (() => {
+            const stats = mw.embeddings.embeddingStats();
+            return `OpenAI · ${mw.recall.RECALL_MODEL} 精选 · ${stats.model} 向量 ${stats.indexed}/${stats.total} · 本地保守层兜底`;
+          })()
+        : `${mw.recall.RECALL_PROVIDER} · ${mw.recall.RECALL_MODEL} · 本地保守层兜底`)
+      : '本地保守筛选（免费）· API 语义增强未配置 · 不自动使用 Claude');
   const voiceModel = process.env.ELEVENLABS_MESSAGE_MODEL_ID || 'eleven_v4';
   const legacyCallModel = process.env.ELEVENLABS_MODEL_ID;
   const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || legacyCallModel || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);
@@ -1123,4 +1128,13 @@ app.get('/api/tidy', (_, res) => res.json(mw.tidy.lastReport() || {}));
 // 再用 write_daily_quote 存。
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`木纹（muwen）——辞的时间，启动于端口 ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`木纹（muwen）——辞的时间，启动于端口 ${PORT}`);
+  // 有 OpenAI key 时在后台增量补向量。服务先照常启动，初次建库失败也只影响语义层，
+  // 本地召回和网页都不会被卡住；后续弱匹配会再次触发补齐。
+  if (mw.embeddings.embeddingsReady()) {
+    setTimeout(() => mw.embeddings.warmEmbeddings()
+      .then(result => console.log('[muwen] 召回向量索引：', JSON.stringify(result)))
+      .catch(error => console.error('[muwen] 召回向量索引失败（自动召回仍有本地兜底）：', error.message || error)), 1500);
+  }
+});
