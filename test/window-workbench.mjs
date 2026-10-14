@@ -12,6 +12,7 @@ assert.equal(first.active_job, null);
 assert.equal(first.choices.models[0].id, 'claude-opus-4-6[1m]');
 assert.ok(first.choices.models.every(model => model.id.endsWith('[1m]')));
 assert.deepEqual(first.choices.crop_profiles.map(profile => profile.id), ['normal', 'economy', 'extreme']);
+assert.ok(first.choices.crop_profiles.every(profile => /原话.*承接资料/.test(profile.detail)));
 assert.deepEqual(first.choices.models.map(model => model.id), [
   'claude-opus-4-6[1m]',
   'claude-sonnet-4-6[1m]',

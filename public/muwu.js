@@ -1100,9 +1100,10 @@ function wwPacket(p) {
     return `<div class="ww-packet ww-crop-preview">
       <div class="ww-packet-title">同窗裁剪预览 · ${esc(c.profile_label || '正常')}</div>
       <div class="ww-crop-number"><strong>${percent}</strong><span>影子窗口实测裁后 context</span></div>
-      <div class="ww-packet-grid"><span>${semantic}</span><span>原话 ${c.dialogue_text_preserved === false ? '未完全保留' : '逐字保留'}</span><span>工具配对 ${Number(validation.tool_pairs || 0)}</span><span>思考块 ${Number(validation.thinking_blocks || 0)}</span>${c.archived_images != null ? `<span>归档图片 ${Number(c.archived_images)}</span><span>归档工具载荷 ${Number(c.archived_tool_payloads || 0)}</span>` : ''}</div>
+      <div class="ww-packet-grid"><span>${semantic}</span><span>双方原话 ${c.dialogue_text_preserved === false ? '未完全保留' : '逐字保留'}</span><span>开头承接资料 ${Number(c.protected_continuity_records || 0)} 条</span><span>工具配对 ${Number(validation.tool_pairs || 0)}</span><span>思考块 ${Number(validation.thinking_blocks || 0)}</span>${c.archived_images != null ? `<span>归档图片 ${Number(c.archived_images)}</span><span>归档工具载荷 ${Number(c.archived_tool_payloads || 0)}</span>` : ''}</div>
       ${(c.retained_from || c.retained_to) ? `<div class="ww-retained"><b>留下的部分</b><span>${esc(fmtTime(c.retained_from || ''))} — ${esc(fmtTime(c.retained_to || ''))}</span>${c.first_retained_user ? `<small>从「${esc(c.first_retained_user)}」开始</small>` : ''}${c.last_retained_user ? `<small>到「${esc(c.last_retained_user)}」为止</small>` : ''}</div>` : ''}
       ${c.below_numeric_floor_reason ? '<div class="ww-warn">全部有意义历史本身不足 50%，所以保留 100% 语义历史，不用冗余快照填数字。</div>' : ''}
+      ${c.profile_target_missed ? '<div class="ww-warn">原话和承接资料本身已经超过这个档位的目标；系统不会为了凑比例删除它们，因此实际占用会更高。</div>' : ''}
       <div class="card-desc">${validation.uuid_chain_valid ? '完整回合、工具配对和记录链均已通过检查。' : '候选记录仍需检查。'}执行前会再备份；失败会恢复原记录和同一个 session。</div>
     </div>`;
   }
@@ -1284,7 +1285,7 @@ function wwRender(data, node) {
       ${wwDraft.brief_mode !== 'custom' ? `<div class="ww-option-title">前 22 小时聊天记录来源</div><label class="ww-choice"><input type="radio" name="ww-older-source" value="main_window" ${wwDraft.older_22h_source !== 'daily_export' ? 'checked' : ''} onchange="wwDraft.older_22h_source='main_window';wwRerenderLocal()"><span><b>从主要窗口里拿</b><small>适合这个窗口已经连续聊够约 24 小时。</small></span></label><label class="ww-choice"><input type="radio" name="ww-older-source" value="daily_export" ${wwDraft.older_22h_source === 'daily_export' ? 'checked' : ''} onchange="wwDraft.older_22h_source='daily_export';wwRerenderLocal()"><span><b>从每日导出的记录里拿</b><small>适合主窗口不足 24 小时；缺少导出时会明确报错，不会偷偷换来源。</small></span></label>${c.created_at && Date.now() - new Date(c.created_at).getTime() < 24 * 60 * 60_000 ? '<div class="ww-choice-note">当前主要窗口不足 24 小时，建议选“每日导出的记录”。</div>' : ''}` : ''}
     </div>` : '';
     const action = `<div class="card ww-controls">
-      <label class="ww-choice ${cropReady ? '' : 'disabled'}"><input type="radio" name="ww-mode" value="crop" ${cropping ? 'checked' : ''} ${cropReady ? '' : 'disabled'} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>裁剪当前窗口</b><small>仍是同一个 session。保留完整最近回合，影子实测到 50–55%，先备份再短暂重启。</small></span></label>
+      <label class="ww-choice ${cropReady ? '' : 'disabled'}"><input type="radio" name="ww-mode" value="crop" ${cropping ? 'checked' : ''} ${cropReady ? '' : 'disabled'} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>裁剪当前窗口</b><small>仍是同一个 session。双方原话和窗口开头的承接资料全部保留；先备份并影子实测，再短暂重启。</small></span></label>
       ${!cropReady ? `<div class="ww-choice-note">${cropCapable ? '当前还没到 55%，暂时不需要裁剪。' : 'Mac mini 的裁窗执行器还没有开放。'}</div>` : ''}
       <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh && !cropping ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>准确日期的每日总结 + 前 22 小时原始对话 + 最后 2 小时 JSONL；不附 CLAUDE.md。</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
