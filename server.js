@@ -736,8 +736,10 @@ async function toolsStatus() {
   const push = (group, name, state, detail = '') => items.push({ group, name, state, detail });
   // 服务器自己 + 它靠的几把钥匙
   push('木纹 / 木屋', '木纹（这台服务器）', 'on', `运行 ${Math.round(process.uptime() / 60)} 分钟`);
-  push('木纹 / 木屋', '智能召回筛选', mw.recall.RECALL_PROVIDER_READY ? 'on' : 'unset',
-    mw.recall.RECALL_PROVIDER_READY ? `${mw.recall.RECALL_PROVIDER} · ${mw.recall.RECALL_MODEL}` : '没配可用的 provider；自动注入不会使用未经筛选的结果');
+  push('木纹 / 木屋', '智能召回筛选', 'on',
+    mw.recall.RECALL_PROVIDER_READY
+      ? `${mw.recall.RECALL_PROVIDER} · ${mw.recall.RECALL_MODEL} · 本地保守层兜底`
+      : '本地保守筛选（免费）· Gemini 语义增强未配置 · 不自动使用 Claude');
   const voiceModel = process.env.ELEVENLABS_MESSAGE_MODEL_ID || 'eleven_v4';
   const legacyCallModel = process.env.ELEVENLABS_MODEL_ID;
   const callModel = process.env.ELEVENLABS_CALL_MODEL_ID || legacyCallModel || (voiceModel === 'eleven_v4' ? 'eleven_v4_turbo' : voiceModel);

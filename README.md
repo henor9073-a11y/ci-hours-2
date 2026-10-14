@@ -250,10 +250,11 @@
 
 - 三层级联（对应 LMC-5 的向量→关键词→原始事件）：① 纹理 `grains` 关键词命中（authority）；② 关键词弱时语义层兜底（模型读记忆索引按意思挑，见下）；③ 前两层都空才翻年轮 `rings`（last_resort，只当线索）。
 - 琐碎消息（"嗯""好的""可以的""同意""11"、纯标点）和 `/loop` / 系统控制提示直接跳过；短但有意义的"疼吗""你怕我不要你吗"不会按长度误杀。
-- **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：关键词层的天花板是"换了说法就召不到"——"你还记得我们的暗号吗"里根本没有"项圈"两个字。打开之后，每条非琐碎消息先跑一次模型，把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。只多一次模型调用，不是再跑一遍挑选 agent。模型判断这句话根本不用翻记忆时会直接 skip。
+- **本地保守模式（不需要 API）**：始终可用。只靠本机关键词与连续片段打分，越过强相关门槛才注入；短确认、纯认同、操作控制消息直接跳过。它宁可漏掉“暗号→项圈”这种完全换说法的联系，也不会凭一个普通词硬塞无关旧事。
+- **轻量 agent 模式（`MUWEN_AUTORECALL_AGENT=1`）**：有可用 Gemini key 时，在本地层上增加语义能力。每条非琐碎消息先把消息扩写成 2–4 个检索角度（关键实体 / 同义说法和黑话 / 情绪主题 / 指代还原），每个角度各搜一遍，按 id 合并取最高分，被多个角度同时命中的加分。模型判断这句话根本不用翻记忆时会直接 skip。
   - 生产推荐 `MUWEN_RECALL_PROVIDER=gemini` + `gemini-3.1-flash-lite`；同一个 provider 同时负责意图扩写和最终相关性精选。`MUWEN_AUTORECALL_MODEL` 仍可单独覆盖模型。
   - 关键词命中在注入前还会经过一次最终精选：自然联想可以返回多条，但每一条都必须与此刻真正相关，不再把高字面分直接当成高相关性。
-  - 已配置的 provider 挂了或超时时安全返回空（当下 sticky/today 便签仍可返回），不再把未经筛选的关键词结果塞进辞的对话。本地没有配置 provider 时保留纯搜索模式，方便离线测试。
+  - Gemini 没配置或挂了会退回本地保守模式；已经低于相关性门槛的候选仍然不会注入。服务器即使有 Claude key 也不会自动拿来兜底烧额度。
   - 实测：扩写前"你还记得我们的暗号吗"召不到暗号那条，扩写后它排第一。
 - 自动召回不给记忆升温（避免同一批被每条消息顶上天），也记进 `recall_logs.json`（标 `auto`）。
 - `POST /api/recall {query}` 回 `{"text": "拼好的注入文本", "count": N}`（`application/json`）；`?format=full` 回完整结构（带 `via`/`angles`/`matched_angles`，能看出是哪个角度召回的）。也能直接传 `queries` 跳过模型扩写。MCP 工具 `auto_recall` 同理，主要给调试。
@@ -278,7 +279,8 @@
 从候选里挑真正相关的 0–5 条返回，**可能返回空**，宁可空手也不硬塞。被返回的 heat +5。每次都记日志。
 
 recall agent 通过统一 provider 调用。生产推荐 `MUWEN_RECALL_PROVIDER=gemini`、`GEMINI_API_KEY` 和
-`MUWEN_GEMINI_MODEL=gemini-3.1-flash-lite`；也可保留 `anthropic` provider。没配 key 或 provider 调用失败时返回空，
+`MUWEN_GEMINI_MODEL=gemini-3.1-flash-lite`。Anthropic 仅作兼容，必须同时显式设置
+`MUWEN_RECALL_PROVIDER=anthropic` 和 `MUWEN_RECALL_ALLOW_ANTHROPIC=1` 才会启用，避免高频召回误烧 Claude 额度。没配 key 或 provider 调用失败时返回空，
 不会把未经挑选的搜索结果交给辞。
 
 ### 旧接口
@@ -343,10 +345,11 @@ npm test
 | `SUPABASE_BACKUP_BUCKET` | ci-hours 每周整库备份使用的私有 Storage bucket；默认 `ci-hours-backups` | 否 |
 | `ELEVENLABS_API_KEY` | ElevenLabs 的 API key | 用 `speak` 才需要 |
 | `ELEVENLABS_VOICE_ID` | ElevenLabs 的 voice ID | 同上 |
-| `MUWEN_RECALL_PROVIDER` | 智能召回服务商：生产推荐 `gemini`，也支持 `anthropic` | 智能召回需要 |
+| `MUWEN_RECALL_PROVIDER` | 语义增强服务商：生产推荐 `gemini`；不填也有本地保守自动召回 | 否 |
 | `GEMINI_API_KEY` | Gemini API key；只供召回扩写、语义兜底和最终精选 | provider 为 `gemini` 时需要 |
 | `MUWEN_GEMINI_MODEL` | Gemini 默认模型，建议 `gemini-3.1-flash-lite` | 否 |
 | `ANTHROPIC_API_KEY` | 兼容保留的 Anthropic API key | provider 为 `anthropic` 时需要 |
+| `MUWEN_RECALL_ALLOW_ANTHROPIC` | 设为 `1` 才允许自动召回使用 Anthropic；防止误烧 Claude 额度 | 否 |
 | `MUWEN_RECALL_MODEL` | 手动 recall agent 的模型覆盖；不填则跟 provider 默认模型 | 否 |
 
 ## 整库备份
