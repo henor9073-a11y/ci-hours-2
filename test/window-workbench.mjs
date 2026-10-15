@@ -6,6 +6,10 @@ import assert from 'assert';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'window-workbench-test-'));
 process.env.WINDOW_WAITING_IDLE_TIMEOUT_MS = '1000';
 const ww = await import('../lib/window-workbench.js');
+const workbenchUi = fs.readFileSync(new URL('../public/muwu.js', import.meta.url), 'utf8');
+assert.match(workbenchUi, /wwTaskBar\(data, 'windows'\)/);
+assert.match(workbenchUi, /wwTaskBar\(data, 'actions'\)/);
+assert.doesNotMatch(workbenchUi, /if \(job\) h \+= wwJobCard\(job\);/);
 
 const first = ww.getWorkbench();
 assert.equal(first.active_job, null);
@@ -32,6 +36,7 @@ assert.equal(job.handover_contract.recent_context_json_hours, 2);
 assert.equal(job.handover_contract.include_daily_summary, true);
 assert.equal(job.handover_contract.daily_summary_rule, 'exact_day_before_raw_window');
 assert.equal(job.handover_contract.include_claude_md, false);
+assert.match(job.handover_contract.note, /对话原文／thinking／重要工具调用/);
 assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 
 const primaryId = '11111111-1111-4111-8111-111111111111';

@@ -524,6 +524,19 @@ body.chat-open > .header { display: none; }
 .ww-tabs i { min-width:19px; height:19px; display:grid; place-items:center; padding:0 5px; border-radius:999px; background:color-mix(in srgb,var(--primary-light) 70%,transparent); color:var(--text-light); font:500 10px/19px inherit; font-style:normal; }
 .ww-tabs button.on i { background:color-mix(in srgb,var(--card) 76%,transparent); color:var(--accent); }
 .ww-current-job { margin-bottom:13px; border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); }
+.ww-taskbar { margin:0 0 12px; padding:10px 12px; border:1px solid color-mix(in srgb,var(--border) 76%,transparent); border-radius:14px; background:color-mix(in srgb,var(--card) 76%,transparent); box-shadow:0 4px 14px color-mix(in srgb,var(--text) 4%,transparent); }
+.ww-taskbar > span { display:block; margin-bottom:5px; color:var(--text-light); font-size:10px; font-weight:650; letter-spacing:.04em; }
+.ww-taskbar > div { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.ww-taskbar b { min-width:0; font-size:13px; }
+.ww-taskbar em { flex:0 0 auto; color:var(--text-secondary); font-size:11px; font-style:normal; }
+.ww-taskbar small { display:block; margin-top:5px; color:var(--text-secondary); font-size:10px; line-height:1.45; }
+.ww-taskbar .ww-progress { margin:8px 0 0; }
+.ww-taskbar.running { border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
+.ww-taskbar.bad { border-color:rgba(190,82,82,.25); }
+.ww-taskbar.empty { display:flex; align-items:baseline; gap:8px; }
+.ww-taskbar.empty > span { margin:0; }
+.ww-taskbar.empty b { color:var(--text-secondary); font-size:11px; font-weight:500; }
+.ww-taskbar.empty small { margin:0 0 0 auto; text-align:right; }
 .ww-context { display:grid; grid-template-columns:84px 1fr; align-items:center; gap:12px; margin-top:15px; }
 .ww-context > div:first-child { display:flex; flex-direction:column; }
 .ww-context strong { font-size:27px; line-height:1; }

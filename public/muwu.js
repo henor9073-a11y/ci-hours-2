@@ -1103,6 +1103,7 @@ function wwPacket(p) {
       <div class="ww-packet-grid"><span>${semantic}</span><span>双方原话 ${c.dialogue_text_preserved === false ? '未完全保留' : '逐字保留'}</span><span>开头承接资料 ${Number(c.protected_continuity_records || 0)} 条</span><span>工具配对 ${Number(validation.tool_pairs || 0)}</span><span>思考块 ${Number(validation.thinking_blocks || 0)}</span>${c.archived_images != null ? `<span>归档图片 ${Number(c.archived_images)}</span><span>归档工具载荷 ${Number(c.archived_tool_payloads || 0)}</span>` : ''}</div>
       ${(c.retained_from || c.retained_to) ? `<div class="ww-retained"><b>留下的部分</b><span>${esc(fmtTime(c.retained_from || ''))} — ${esc(fmtTime(c.retained_to || ''))}</span>${c.first_retained_user ? `<small>从「${esc(c.first_retained_user)}」开始</small>` : ''}${c.last_retained_user ? `<small>到「${esc(c.last_retained_user)}」为止</small>` : ''}</div>` : ''}
       ${c.below_numeric_floor_reason ? '<div class="ww-warn">全部有意义历史本身不足 50%，所以保留 100% 语义历史，不用冗余快照填数字。</div>' : ''}
+      ${c.strict_fallback_used ? '<div class="ww-choice-note">初次节省仍超过目标，已自动进一步归档近期图片和工具载荷。</div>' : ''}
       ${c.profile_target_missed ? '<div class="ww-warn">原话和承接资料本身已经超过这个档位的目标；系统不会为了凑比例删除它们，因此实际占用会更高。</div>' : ''}
       <div class="card-desc">${validation.uuid_chain_valid ? '完整回合、工具配对和记录链均已通过检查。' : '候选记录仍需检查。'}执行前会再备份；失败会恢复原记录和同一个 session。</div>
     </div>`;
@@ -1113,7 +1114,7 @@ function wwPacket(p) {
   return `<div class="ww-packet">
     <div class="ww-packet-title">换窗简报</div>
     <div class="ww-packet-sec"><b>${esc(daily.date || '日期待确认')} · 每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '这一天没有正式每日总结')}</div></div>
-    <div class="ww-packet-sec"><b>前 22 小时原始对话</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><span>来源：${older.source === 'daily_export' ? '每日导出' : '主要窗口'}${older.coverage_hours != null ? ` · 覆盖 ${Number(older.coverage_hours).toFixed(1)} 小时` : ''}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
+    <div class="ww-packet-sec"><b>前 22 小时精选原始记录</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><span>只含对话、thinking 和重要工具调用${older.thinking_blocks != null ? ` · thinking ${Number(older.thinking_blocks)}` : ''}${older.important_tool_calls != null ? ` · 重要工具 ${Number(older.important_tool_calls)}` : ''}</span><span>来源：${older.source === 'daily_export' ? '每日导出（仅对话）' : '主要窗口'}${older.coverage_hours != null ? ` · 覆盖 ${Number(older.coverage_hours).toFixed(1)} 小时` : ''}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
     <div class="ww-packet-sec"><b>最后 2 小时 JSONL</b><span>${Number(recent.records || 0)} 条完整记录 · ${esc(fmtTime(recent.from || ''))} — ${esc(fmtTime(recent.to || ''))}</span></div>
   </div>`;
 }
@@ -1220,6 +1221,27 @@ function wwJobCard(job) {
     ${job.error ? `<div class="err">${esc(job.error)}</div>` : ''}${job.packet_preview ? wwPacket(job.packet_preview) : ''}
     ${!['completed', 'failed', 'cancelled'].includes(job.status) ? `<button class="btn ghost" onclick="wwCancel('${job.id}')">取消这次任务</button>` : ''}</div>`;
 }
+const WW_ACTION_JOB_MODES = new Set(['crop', 'handoff', 'fresh', 'secondary']);
+function wwJobScope(job) { return job && WW_ACTION_JOB_MODES.has(job.mode) ? 'actions' : 'windows'; }
+function wwTaskBar(data, scope) {
+  const active = data.active_job || null;
+  const ownActive = active && wwJobScope(active) === scope ? active : null;
+  const recent = ownActive || (Array.isArray(data.history) ? data.history.find(item => wwJobScope(item) === scope) : null);
+  const label = scope === 'windows' ? '窗口管理任务' : '换窗 / 裁切任务';
+  const otherLabel = scope === 'windows' ? '换窗 / 裁切' : '窗口管理';
+  if (!recent) {
+    return `<div class="ww-taskbar empty"><span>${label}</span><b>暂无任务</b>${active ? `<small>${otherLabel}页正在执行「${esc(wwJobTitle(active))}」</small>` : ''}</div>`;
+  }
+  const running = !!ownActive;
+  const pct = Math.max(0, Math.min(100, Number(recent.progress || 0)));
+  return `<div class="ww-taskbar ${running ? 'running' : ''} ${recent.status === 'failed' ? 'bad' : ''}">
+    <span>${label} · ${running ? '当前' : '最近'}</span>
+    <div><b>${esc(wwJobTitle(recent))}</b><em>${esc(wwJobName(recent.status))}</em></div>
+    ${running ? `<div class="ww-progress"><i style="width:${Math.max(2, pct)}%"></i></div>` : ''}
+    <small>${esc(running ? (recent.message || '') : `${fmtTime(recent.finished_at || recent.updated_at || recent.requested_at)} · ${recent.message || ''}`)}</small>
+    ${!running && active ? `<small>${otherLabel}页正在执行「${esc(wwJobTitle(active))}」</small>` : ''}
+  </div>`;
+}
 function wwResultSummary(job) {
   const r = job && job.result && typeof job.result === 'object' ? job.result : {};
   const rows = [];
@@ -1257,16 +1279,19 @@ function wwRender(data, node) {
     <div class="ww-meta"><span>模型：${esc(c.model || '—')}</span><span>会话：${c.session_id ? esc(c.session_id.slice(0, 8)) + '…' : '—'}</span><span>最近活动：${wwAge(c.last_activity_at)}</span><span>主力苏醒：${c.wake_enabled ? '已开启' : '未开启'}</span></div>
     ${c.remote_url ? `<a class="ww-open" href="${esc(c.remote_url)}" target="_blank" rel="noopener">打开辞现在的窗口 ›</a>` : ''}</div>`;
   let h = wwTabs(data);
-  if (job) h += wwJobCard(job);
   const notice = data.context_notice && data.context_notice.session_id === c.session_id ? data.context_notice : null;
   const windows = Array.isArray(c.windows) ? c.windows : [];
   const working = windows.filter(w => w.state !== 'offline');
   const stopped = windows.filter(w => w.state === 'offline');
   if (wwView === 'windows') {
+    h += wwTaskBar(data, 'windows');
+    if (job && wwJobScope(job) === 'windows') h += wwJobCard(job);
     h += status;
     h += wwSection('working', '当前活动窗口', working.length ? `<div class="ww-window-list">${working.map(w => wwWindowCard(w, !!job, false, forceStopAvailable)).join('')}</div>` : '<div class="card"><div class="card-desc">目前没有正在工作的窗口。</div></div>', working.length);
     h += wwSection('stopped', '历史窗口', stopped.length ? `<div class="ww-window-list">${stopped.map(w => wwWindowCard(w, !!job, true, forceStopAvailable)).join('')}</div>` : '<div class="card"><div class="card-desc">还没有停止的历史窗口。</div></div>', stopped.length);
   } else if (wwView === 'actions') {
+    h += wwTaskBar(data, 'actions');
+    if (job && wwJobScope(job) === 'actions') h += wwJobCard(job);
     h += status;
     if (notice) h += `<div class="card ww-context-notice level-${Number(notice.level) >= 80 ? '80' : '70'}"><div><b>当前窗口已到 ${Math.round(Number(notice.percent || notice.level))}%</b><span>${esc(notice.message || '')}</span></div><button class="btn" onclick="wwChooseCrop()">看裁剪方案</button><button class="btn ghost" onclick="wwChooseHandoff()">看换窗方案</button></div>`;
     h += `<div class="card ww-setting-card"><div><b>辞当前 session 的自主苏醒</b><span>这里只控制主力苏醒；三层框架稍后单独整理。</span></div><label class="ww-switch"><input type="checkbox" ${c.wake_enabled ? 'checked' : ''} ${job || !wakeToggleAvailable ? 'disabled' : ''} onchange="wwSetWake(this.checked)"><i></i></label></div>`;
@@ -1287,7 +1312,7 @@ function wwRender(data, node) {
     const action = `<div class="card ww-controls">
       <label class="ww-choice ${cropReady ? '' : 'disabled'}"><input type="radio" name="ww-mode" value="crop" ${cropping ? 'checked' : ''} ${cropReady ? '' : 'disabled'} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>裁剪当前窗口</b><small>仍是同一个 session。双方原话和窗口开头的承接资料全部保留；先备份并影子实测，再短暂重启。</small></span></label>
       ${!cropReady ? `<div class="ww-choice-note">${cropCapable ? '当前还没到 55%，暂时不需要裁剪。' : 'Mac mini 的裁窗执行器还没有开放。'}</div>` : ''}
-      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh && !cropping ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>准确日期的每日总结 + 前 22 小时原始对话 + 最后 2 小时 JSONL；不附 CLAUDE.md。</small></span></label>
+      <label class="ww-choice"><input type="radio" name="ww-mode" value="handoff" ${!fresh && !cropping ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>连续换窗</b><small>准确日期的每日总结 + 前 22 小时对话、thinking、重要工具调用 + 最后 2 小时 JSONL；不附 CLAUDE.md。</small></span></label>
       <label class="ww-choice"><input type="radio" name="ww-mode" value="fresh" ${fresh ? 'checked' : ''} onchange="wwDraft.mode=this.value;wwRefresh(false)"><span><b>真正的新窗口</b><small>不带旧对话。适合完全无关的新事情，不适合给辞日常换窗。</small></span></label>
       ${handoffOptions}
       ${cropping ? `<div class="ww-crop-profiles"><div class="ww-choice-note">选择裁剪强度；三档都会先保存完整原件，并沿用当前模型和 thinking display。</div>${cropProfiles.map(profile => `<label class="ww-choice"><input type="radio" name="ww-crop-profile" value="${esc(profile.id)}" ${profile.id === wwDraft.crop_profile ? 'checked' : ''} onchange="wwDraft.crop_profile=this.value;wwRerenderLocal()"><span><b>${esc(profile.label)}</b><small>${esc(profile.detail || '')}</small></span></label>`).join('')}</div>` : `<label class="ww-field"><span>下一个窗口用</span><select onchange="wwDraft.model=this.value">${models.map(x => `<option value="${esc(x.id)}" ${x.id === wwDraft.model ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label><label class="ww-setting-line"><span><b>Thinking display</b><small>${wwDraft.thinking_display === 'none' ? '不显示思考过程' : '显示思考摘要'}</small></span><span class="ww-switch"><input type="checkbox" ${wwDraft.thinking_display === 'summarized' ? 'checked' : ''} onchange="wwDraft.thinking_display=this.checked?'summarized':'none';wwRerenderLocal()"><i></i></span></label>`}
