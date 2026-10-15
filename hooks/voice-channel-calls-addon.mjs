@@ -1,4 +1,4 @@
-// 给 GPD 的 voice-channel.mjs 使用：在同一个 Claude Code channel/session 中轮询木屋通话。
+// 给 GPD 的 voice-channel.mjs 使用：在同一个 Claude Code channel/session 中轮询木屋通话和婴儿房。
 // voice-channel.mjs 连接 mcp 后调用：
 //   import { startCallBridge } from './voice-channel-calls-addon.mjs'
 //   startCallBridge({ mcp, muwu: MUWU, safeMeta, log })
@@ -10,6 +10,7 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
   const base = muwu.url.replace(/\/$/, '');
   const q = 'token=' + encodeURIComponent(muwu.token) + '&session_id=' + encodeURIComponent(muwu.sessionId);
   const pushed = new Set(), utteranceBuffer = new Map(); let busy = false, bufferChangedAt = 0;
+  const nurseryPushed = new Set(); let nurseryBusy = false;
   async function poll() {
     if (busy) return; busy = true;
     try {
@@ -48,7 +49,44 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error }) {
     } catch (e) { log('木屋通话轮询失败', e?.message); }
     finally { busy = false; }
   }
+
+  async function pollNursery() {
+    if (nurseryBusy) return; nurseryBusy = true;
+    try {
+      const r = await fetch(`${base}/api/nursery/pending?${q}`, { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error('取婴儿房消息 HTTP ' + r.status);
+      const { messages = [] } = await r.json();
+      for (const message of messages) {
+        if (nurseryPushed.has(message.id)) continue;
+        await mcp.notification({ method: 'notifications/claude/channel', params: {
+          content: message.text_for_cy || message.content,
+          meta: safeMeta({
+            origin: 'muwu_nursery',
+            speaker: message.sender === 'kuri' ? 'kuri' : message.sender,
+            room: message.room,
+            message_id: message.id,
+            source_device: message.source_device || '',
+            sent_at: message.at
+          })
+        }});
+        nurseryPushed.add(message.id);
+      }
+      if (nurseryPushed.size) {
+        const ids = [...nurseryPushed];
+        const d = await fetch(`${base}/api/nursery/delivered?${q}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ids }), signal: AbortSignal.timeout(15000)
+        });
+        if (!d.ok) throw new Error('回报婴儿房消息 HTTP ' + d.status);
+        ids.forEach(id => nurseryPushed.delete(id));
+      }
+    } catch (e) { log('婴儿房轮询失败', e?.message); }
+    finally { nurseryBusy = false; }
+  }
+
   const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400);
-  poll(); log(`木屋通话：已绑定窗口 ${muwu.sessionId.slice(0, 8)}，每 0.4 秒取一次`);
-  return { stop() { clearInterval(timer); } };
+  const nurseryTimer = setInterval(() => pollNursery().catch(e => log('婴儿房轮询异常', e?.message)), 1000);
+  poll(); pollNursery();
+  log(`木屋通话+婴儿房：已绑定窗口 ${muwu.sessionId.slice(0, 8)}`);
+  return { stop() { clearInterval(timer); clearInterval(nurseryTimer); } };
 }

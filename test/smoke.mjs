@@ -524,7 +524,7 @@ try {
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
-    assert.equal(crons.length, 5, `服务器该有五个 cron（日程提醒 + 记忆衰减 + 便签同步 + 后台苏醒两条），实际 ${crons.join(',')}`);
+    assert.equal(crons.length, 6, `服务器该有六个 cron（日程提醒 + 婴儿房机械钟 + 记忆衰减 + 便签同步 + 后台苏醒两条），实际 ${crons.join(',')}`);
     assert.ok(!/0 9 \* \* \*/.test(srv), '9:00 那个替辞写今日一句的 cron 该拆掉了');
     // 守的是"不许有会说话的 cron"，不是数量：机械活可以加，调模型 / 发消息 / 写留言的不行。
     // 便签同步（*/10）就是机械活——只是把 notebook 拉一份过来，不调模型、不开口。

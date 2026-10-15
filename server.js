@@ -377,6 +377,66 @@ app.post('/api/pet-nest/pets/:id/care', async (req, res) => {
   try { res.json(await careForPet(req.params.id, String((req.body || {}).action || ''))); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+
+// ---- 婴儿房：家庭群、双方私聊、小栗子作息与成长日记 ----
+// 手机端身份固定为棋子；辞只通过 MCP；小栗子只通过 Mac mini 的固定用途代理。
+app.get('/api/nursery/state', (req, res) => {
+  try { res.json(mw.nursery.getState({ viewer: 'nor' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/nursery/messages', (req, res) => {
+  try {
+    res.json(mw.nursery.getMessages({
+      room: req.query.room || 'family', viewer: 'nor', since: req.query.since || '',
+      before: req.query.before || '', limit: Number(req.query.limit) || 200
+    }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/nursery/messages', (req, res) => {
+  try {
+    res.json(mw.nursery.sendMessage({
+      ...(req.body || {}), sender: 'nor', source_device: 'sigh_ios'
+    }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/nursery/read', (req, res) => {
+  try { res.json(mw.nursery.markReadForNor((req.body || {}).room || 'family')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/nursery/diary', (req, res) => {
+  res.json(mw.nursery.diary({ limit: Number(req.query.limit) || 60 }));
+});
+app.post('/api/nursery/avatar', (req, res) => {
+  try { res.json(mw.nursery.saveAvatar(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/nursery/avatar/image', (req, res) => {
+  const avatar = mw.nursery.avatarFile();
+  if (!avatar) return res.status(404).end();
+  res.type(avatar.mime_type).sendFile(path.resolve(avatar.path));
+});
+
+// 当前主要 Claude session 的 channel 轮询这一组；family 与 cy_kuri 才会投递给辞。
+app.get('/api/nursery/pending', (req, res) => {
+  const route = deliveryRoute(req);
+  res.json(route.allowed ? mw.nursery.pendingForCy() : blockedDelivery(route, 'chat'));
+});
+app.post('/api/nursery/delivered', (req, res) => {
+  const route = deliveryRoute(req);
+  if (!route.allowed) return res.json({ delivered: 0, blocked: true, reason: route.reason });
+  try { res.json(mw.nursery.markDeliveredToCy((req.body || {}).ids || [])); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
+// Mac mini 小栗子代理：领取任务、调用本地 Ollama、交回纯文本结果。
+app.get('/api/nursery/agent/jobs', (req, res) => {
+  try { res.json(mw.nursery.pendingAgentJobs(Number(req.query.limit) || 3)); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/nursery/agent/jobs/:id/complete', (req, res) => {
+  try { res.json(mw.nursery.completeAgentJob(req.params.id, req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 app.post('/api/songs', (req, res) => {
   try { res.json(mw.songs.addSong({ ...(req.body || {}), added_by: (req.body || {}).added_by || '棋子' })); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
@@ -1125,6 +1185,12 @@ cron.schedule('* * * * *', async () => {
       console.error(`日程提醒推送失败（${entry.id}）：`, e.message || e);
     }
   }
+});
+// 婴儿房的机械钟只负责切换睡醒状态、把到点的主动说话/成长日记放进任务队列；
+// 真正写内容的是 Mac mini 上的小栗子本地模型。
+cron.schedule('* * * * *', () => {
+  try { mw.nursery.tick(); }
+  catch (e) { console.error('婴儿房排程失败：', e.message || e); }
 });
 // 木纹的梦境任务：每天凌晨 4 点（辞所在时区）跑一次——热度衰减、检查昨天的每日总结、
 // 便签本单向同步：每 10 分钟拉一份 notebook 过来给召回用，永不回写。
