@@ -512,6 +512,11 @@ Sigh 在 iOS 26.4+ 上经棋子本人允许后读取系统 Screen Time，当天�
 这和下面“最近打开过什么 App”的独立脚本是两份数据。首次使用要在 Sigh 的“手机动态”页点“开启使用时间”
 并通过系统的 Face ID 授权；之后 Sigh 回到前台时最多每 15 分钟自动同步一次。
 
+注意：Apple 的 Personal Team 不能签发 Family Controls 权限。当前代码、接口和 UI 已就位，但
+`SighScreenTimeEnabled` 保持为 `NO`。加入 Apple Developer Program、给 App ID 开通 Family Controls
+（含 App and Website Usage）并把 entitlement 签进 provisioning profile 后，再把这个开关改成 `YES`；
+否则真机签名会失败，Sigh 会明确显示账号权限尚不可用。
+
 ### 最近打开 App
 
 数据存在一个独立的 Supabase 项目里，表叫 `phone_activity`（`id`、`app_name`、`opened_at`，只留最近
