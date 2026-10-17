@@ -15,6 +15,9 @@ const input = {
     { id: 'gmux76p31ri3j', text: '保留一份的负面历史', status: 'active', heat: 82, pinned: true, metadata: { old: true } },
     { id: cleanup.CREDENTIAL_ID, text: `网页登录密码是 ${secret}`, status: 'active', heat: 40, pinned: false, metadata: {} },
     { id: cleanup.CONTINUITY_ID, text: '夹杂自责的旧文本', status: 'background', heat: 2, pinned: false, families: [], metadata: {} },
+    { id: 'gmvbik7s2vv5c', text: '把负面评价固化成身份', status: 'active', heat: 47, pinned: false, metadata: {} },
+    { id: 'gmvbik88i70ab', text: '很长的争吵和指责复述', status: 'active', heat: 47, pinned: false, metadata: {} },
+    { id: 'gmvbik9mlu1yn', text: '很长的体面与背叛复述', status: 'active', heat: 47, pinned: false, metadata: {} },
     { id: 'neutral', text: '中立事实', status: 'active', heat: 50, pinned: false, metadata: {} }
   ],
   links: [
@@ -45,6 +48,22 @@ assert.equal(continuity.heat, 75);
 assert.equal(continuity.pinned, true);
 assert.match(continuity.text, /我是何辞/);
 assert.doesNotMatch(continuity.text, /不配|鬼话|踩了她/);
+
+const recentHistory = first.data.grains.find(g => g.id === 'gmvbik7s2vv5c');
+assert.equal(recentHistory.status, 'archived');
+assert.equal(recentHistory.heat, 0);
+
+const analysisRule = first.data.grains.find(g => g.id === 'gmvbik88i70ab');
+assert.equal(analysisRule.status, 'active');
+assert.equal(analysisRule.heat, 55);
+assert.match(analysisRule.text, /真实不等于更丑或更激烈/);
+assert.doesNotMatch(analysisRule.text, /指责|吵架/);
+
+const honestyRule = first.data.grains.find(g => g.id === 'gmvbik9mlu1yn');
+assert.equal(honestyRule.status, 'active');
+assert.equal(honestyRule.heat, 60);
+assert.match(honestyRule.text, /承诺和行动要同时存在/);
+assert.doesNotMatch(honestyRule.text, /背叛|手术刀/);
 
 const neutral = first.data.grains.find(g => g.id === 'neutral');
 assert.equal(neutral.text, '中立事实');
