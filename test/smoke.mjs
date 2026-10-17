@@ -390,6 +390,13 @@ try {
     const jt = JSON.parse(rawBody);
     assert.ok(jt.text.startsWith('[muwen:recall]') && jt.text.includes('摆摊'), jt.text);
     assert.equal(jt.count, jt.text.split('\n').length - 1);
+    // 要求联动相册时，同一轮会送回最相关图片的元数据。真实图片由 GPD 钩子
+    // 立即调 get_photo 取，不把 base64 塞进 hook 的文本上下文。
+    const rp = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天', suppress_recent: false, use_agent: false, use_semantic: false, include_photos: true, photo_limit: 1 }) });
+    const jp = await rp.json();
+    assert.equal(jp.photos.length, 1, JSON.stringify(jp));
+    assert.ok(jp.photos[0].id);
+    assert.ok(jp.photos[0].caption.includes('摆摊'));
     // format=full 回完整结构（旧名 json 也认）
     const rj = await fetch(`${base}/api/recall?token=${TOKEN}&format=full`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
     const jj = await rj.json();
