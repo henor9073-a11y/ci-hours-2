@@ -12,6 +12,7 @@ import { searchGutenberg, addFromGutenberg, addFromUpload } from './lib/books.js
 import { planToday } from './lib/ci.js';
 import { getQuestions, askQuestion, replyToQuestion, resolveQuestion } from './lib/memory.js';
 import * as mw from './lib/muwen/index.js';
+import { runNegativeMemoryCleanup20261017 } from './lib/muwen/cleanup-negative-memory-2026-10-17.js';
 import { handleMcpRequest } from './lib/mcp.js';
 import { mountOAuth } from './lib/oauth-routes.js';
 import { checkToken as checkOAuthToken } from './lib/oauth.js';
@@ -54,6 +55,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 木纹：启动时把 ci-hours 的 memory.json 迁进 grains/profiles（只跑一次，旧文件原样保留当备份）
 mw.migrate.migrateIfNeeded();
+runNegativeMemoryCleanup20261017();
 
 const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
