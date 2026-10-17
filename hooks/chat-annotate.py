@@ -21,6 +21,54 @@ URL = (os.environ.get('MUWEN_URL') or 'https://ci-hours-2.onrender.com').rstrip(
 TOKEN = os.environ.get('MUWEN_TOKEN') or '010219'
 TAIL_BYTES = 6 * 1024 * 1024      # 一轮对话不会超过这么多；transcript 动辄上百 MB，别整个读
 SELF = 'chat_reply'
+SENSITIVE_KEYS = ('token', 'password', 'secret', 'authorization', 'api_key', 'apikey', 'cookie')
+
+
+def clipped(value, limit):
+    text = str(value or '').strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + '\n…（详情过长，已截断）'
+
+
+def safe_value(value):
+    """保留操作细节，但不把凭据跟着聊天记录带到手机。"""
+    if isinstance(value, dict):
+        return {
+            str(key): ('[已隐藏]' if any(mark in str(key).lower() for mark in SENSITIVE_KEYS) else safe_value(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [safe_value(item) for item in value]
+    return value
+
+
+def input_text(value):
+    if value in (None, {}, []):
+        return ''
+    try:
+        return clipped(json.dumps(safe_value(value), ensure_ascii=False, indent=2), 3000)
+    except Exception:
+        return clipped(value, 3000)
+
+
+def result_text(value):
+    if isinstance(value, str):
+        return clipped(value, 6000)
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict) and item.get('type') == 'text':
+                parts.append(str(item.get('text') or ''))
+            elif isinstance(item, str):
+                parts.append(item)
+        return clipped('\n'.join(part for part in parts if part), 6000)
+    if isinstance(value, dict):
+        try:
+            return clipped(json.dumps(safe_value(value), ensure_ascii=False, indent=2), 6000)
+        except Exception:
+            pass
+    return clipped(value, 6000)
 
 
 def message_id(tool_response):
@@ -83,29 +131,42 @@ def this_turn(entries, tool_use_id):
             break
     if end is None:
         return [], []
-    thinking, tools = [], []
-    for i in range(end, -1, -1):
+    start = -1
+    for i in range(end - 1, -1, -1):
         e = entries[i]
         msg = e.get('message') or {}
         content = msg.get('content')
         if e.get('type') == 'user':
             # tool_result 也是 type=user；真正的人说话是 content 为字符串或者带 text 块
             if isinstance(content, str) or any(isinstance(c, dict) and c.get('type') == 'text' for c in (content or [])):
+                start = i
                 break
+    thinking, tools, by_id = [], [], {}
+    for e in entries[start + 1:end + 1]:
+        content = (e.get('message') or {}).get('content') or []
+        if not isinstance(content, list):
             continue
-        if e.get('type') != 'assistant':
-            continue
-        for c in content or []:
+        for c in content:
             if not isinstance(c, dict):
                 continue
-            if c.get('type') == 'thinking' and c.get('thinking'):
+            if e.get('type') == 'assistant' and c.get('type') == 'thinking' and c.get('thinking'):
                 thinking.append(c['thinking'])
-            elif c.get('type') == 'tool_use':
+            elif e.get('type') == 'assistant' and c.get('type') == 'tool_use':
                 name = str(c.get('name') or '')
                 if name and not name.endswith(SELF):
-                    tools.append(name)
-    thinking.reverse()
-    tools.reverse()
+                    tool = {'name': name}
+                    request = input_text(c.get('input'))
+                    if request:
+                        tool['input'] = request
+                    tools.append(tool)
+                    if c.get('id'):
+                        by_id[str(c['id'])] = tool
+            elif e.get('type') == 'user' and c.get('type') == 'tool_result':
+                tool = by_id.get(str(c.get('tool_use_id') or ''))
+                if tool is not None:
+                    result = result_text(c.get('content'))
+                    if result:
+                        tool['result'] = result
     return thinking, tools
 
 
@@ -127,7 +188,7 @@ def main():
         return 0
     if not thinking and not tools:
         return 0
-    body = {'id': mid, 'tools': [{'name': n} for n in tools]}
+    body = {'id': mid, 'tools': tools}
     if thinking:
         body['thinking'] = '\n\n'.join(t.strip() for t in thinking if t.strip())
     try:

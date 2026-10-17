@@ -1028,7 +1028,7 @@ try {
       { type: 'user', message: { role: 'user', content: '上一轮的话' } },
       { type: 'assistant', message: { content: [{ type: 'thinking', thinking: '上一轮的思考，不该被收进去' }] } },
       { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '这一轮棋子说的' }] } },
-      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'First real thought.' }, { type: 'tool_use', id: 'tu1', name: 'mcp__muwen__get_calendar', input: {} }] } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'First real thought.' }, { type: 'tool_use', id: 'tu1', name: 'mcp__muwen__get_calendar', input: { date: '2026-10-18', token: 'must-not-leak' } }] } },
       { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'x' }] } },
       { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'Second thought after the tool.' }, { type: 'tool_use', id: 'tu2', name: 'mcp__muwen__chat_reply', input: { content: '钩子会补思考的那条' } }] } }
     ];
@@ -1040,6 +1040,9 @@ try {
     const m = (await rest('/api/chat?limit=3')).find(x => x.id === rep.id);
     assert.equal(m.thinking, 'First real thought.\n\nSecond thought after the tool.', '该是记录里真实的思考，按顺序、只有这一轮');
     assert.deepEqual(m.tools.map(t => t.name), ['mcp__muwen__get_calendar'], 'chat_reply 自己不算工具');
+    assert.match(m.tools[0].input, /2026-10-18/);
+    assert.ok(!m.tools[0].input.includes('must-not-leak'), '工具详情不能泄露 token');
+    assert.equal(m.tools[0].result, 'x');
     // 网页那边：思考 → Thought process 弹层；工具名要变成人话
     const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
     assert.ok(js.includes('Thought process') && js.includes('prettyTool'));

@@ -454,7 +454,7 @@
     if (act === 'think') {
       openSheet('Thought process', `<div class="cx-sheet-think">${esc(m.thinking)}</div>`);
     } else if (act === 'tools') {
-      openSheet(`Used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}`, `<div class="cx-sheet-tools">${m.tools.map(t => `<div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used ${esc(prettyTool(t.name))}</div>${t.result ? `<div class="cx-tl-r">${esc(t.result)}</div>` : ''}</div></div>`).join('')}</div>`);
+      openSheet(`Used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}`, `<div class="cx-sheet-tools">${m.tools.map(t => `<div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used ${esc(prettyTool(t.name))}</div>${t.input ? `<div class="cx-tl-r"><b>操作</b><br>${esc(t.input)}</div>` : ''}${t.result ? `<div class="cx-tl-r"><b>结果</b><br>${esc(t.result)}</div>` : ''}</div></div>`).join('')}</div>`);
     } else if (act === 'event-tool') {
       openSheet('Used 1 tool', `<div class="cx-sheet-tools"><div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used Play Fishing</div><div class="cx-tl-r">${esc(m.content || '辞去钓鱼了')}</div></div></div></div>`);
     } else if (act === 'mirror') {

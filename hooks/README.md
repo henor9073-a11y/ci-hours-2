@@ -14,7 +14,7 @@
 | `user-prompt-recall.js` | `UserPromptSubmit` | Mac 主窗口用的自动召回。文字记忆命中时会同时找最相关的 1 张图，注册为本轮必看图片；同一张 30 分钟内不重复。 |
 | `photo-recall-viewed.js` | `PostToolUse: mcp__muwen__get_photo` | 辞真正调用 `get_photo` 看到图后，清掉本轮的待看标记。 |
 | `photo-recall-guard.js` | `Stop` | 如果辞漏看了自动召回的图，续回一次要求先调 `get_photo`。最多拦一次，工具断线时不会锁死会话。 |
-| `chat-annotate.py` | `PostToolUse`（matcher `mcp__muwen__chat_reply`） | 辞回木屋消息之后，从会话记录取这一轮真实的 thinking 和工具调用补到那条消息上（棋子那边显示成 Thought process / Used N tools）。静默失败，不记日志。 |
+| `chat-annotate.py` | `PostToolUse`（matcher `mcp__muwen__chat_reply`） | 辞回木屋消息之后，从会话记录取这一轮真实的 thinking、工具名、脱敏后的操作参数与结果补到那条消息上（棋子点 Used N tools 可展开）。过长结果会截断，静默失败，不记日志。 |
 | `claude-image-to-album.py` | `PostToolUse`（matcher `mcp__muwen__save_claude_image`） | 辞在 Claude 端决定收藏棋子发来的图片后，从当前 session 的原始记录读取最近一张用户图片，存进与木屋共用的相册；不要求模型复制 base64。 |
 | `muwu-tool-only-display.py` | `MessageDisplay` | 木屋文字/语音（`muwu`）和通话（`muwu_call`）回合只在木屋显示工具回复，不再在终端重复显示 assistant 文字。只是隐藏终端渲染，原文仍完整留在当前 session；终端里直接输入的正常对话不受影响。 |
 | `claude-chat-mirror.py` | `Stop` | 主要 Claude 窗口里直接说出的原话只读镜像到木屋 💭；木屋注入回合自动跳过，服务端也按 session 与内容去重，不会让辞重发。 |
