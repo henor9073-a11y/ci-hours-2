@@ -73,6 +73,9 @@ const autoPending = chat.pendingForCy();
 assert.equal(autoPending.reply_mode, 'auto_sync');
 assert.match(autoPending.messages.find(m => m.id === created.id).text_for_cy, /不要为文字调用 chat_reply/);
 chat.setSyncSettings({ auto_sync_reply: false });
+const toolPending = chat.pendingForCy();
+assert.equal(toolPending.reply_mode, 'tool');
+assert.match(toolPending.messages.find(m => m.id === created.id).text_for_cy, /所有文字回复必须调用 chat_reply/);
 
 chat.markDelivered([created.id]);
 assert.equal(chat.getMessage(created.id).send_status, 'read');

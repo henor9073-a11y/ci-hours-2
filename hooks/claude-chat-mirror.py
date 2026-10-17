@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -25,6 +26,18 @@ from typing import Any, Dict, List, Tuple
 TAIL_BYTES = 12 * 1024 * 1024
 SELF = "chat_reply"
 SENSITIVE_KEYS = ("token", "password", "secret", "authorization", "api_key", "apikey", "cookie")
+LOG_PATH = Path(os.environ.get("MUWEN_MIRROR_LOG") or Path.home() / ".claude" / "hooks" / "claude-chat-mirror.log")
+
+
+def log_status(status: str, **fields: Any) -> None:
+    """Keep a compact diagnostic trail without storing conversation text."""
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"at": datetime.now().isoformat(timespec="seconds"), "status": status, **fields}
+        with LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
 
 
 def read_event() -> Dict[str, Any]:
@@ -190,20 +203,28 @@ def current_turn(entries: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], str, st
 
 def main() -> int:
     event = read_event()
-    if event.get("hook_event_name") != "Stop" or event.get("stop_hook_active"):
+    # This file is registered only under Stop. Remote Control builds do not all
+    # expose hook_event_name consistently, so do not use its absence as a gate.
+    if event.get("stop_hook_active") is True or event.get("stopHookActive") is True:
+        log_status("skipped_stop_hook_active")
         return 0
     base = str(os.environ.get("MUWEN_URL") or "https://ci-hours-2.onrender.com").rstrip("/")
     token = str(os.environ.get("MUWEN_TOKEN") or "010219")
-    session_id = str(event.get("session_id") or "")
+    session_id = str(event.get("session_id") or event.get("sessionId") or "")
     if not base or not token or not session_id:
+        log_status("skipped_missing_route", has_session=bool(session_id))
         return 0
 
+    transcript_path = str(event.get("transcript_path") or event.get("transcriptPath") or "")
     prompt, content, thinking, tools, has_chat_reply = current_turn(
-        tail_entries(str(event.get("transcript_path") or ""))
+        tail_entries(transcript_path)
     )
     if not content:
+        content = str(event.get("last_assistant_message") or event.get("lastAssistantMessage") or "").strip()
+    if not content:
+        log_status("skipped_no_content", has_transcript=bool(transcript_path))
         return 0
-    turn_id = str(event.get("turn_id") or prompt.get("promptId") or "")
+    turn_id = str(event.get("turn_id") or event.get("turnId") or prompt.get("promptId") or "")
     digest = hashlib.sha256((session_id + "\0" + turn_id + "\0" + content).encode("utf-8", "replace")).hexdigest()
     body = json.dumps({
         "session_id": session_id,
@@ -222,10 +243,12 @@ def main() -> int:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=15):
-            pass
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError):
-        pass
+        with urllib.request.urlopen(request, timeout=15) as response:
+            log_status("sent", http_status=response.status, from_muwu=from_muwu(prompt), tools=len(tools))
+    except urllib.error.HTTPError as error:
+        log_status("http_error", code=error.code)
+    except (OSError, urllib.error.URLError) as error:
+        log_status("network_error", error=type(error).__name__)
     return 0
 
 
