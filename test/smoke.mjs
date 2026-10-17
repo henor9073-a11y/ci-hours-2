@@ -404,6 +404,22 @@ try {
     const bad = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) });
     assert.equal(bad.status, 400);
   });
+  await step('identity/profile：短片段参与自动召回，不整份灌入', async () => {
+    const cy = await tool('auto_recall', { query: '边界感强', suppress_recent: false });
+    const cyProfile = cy.memories.find(m => m.layer === 'profile' && m.owner === 'cy' && m.field === 'identity');
+    assert.ok(cyProfile, `应该召回辞的 identity：${JSON.stringify(cy)}`);
+    assert.ok(cy.layers_used.includes('profiles'));
+    assert.ok(cyProfile.text.length <= 360, 'profile 必须拆成短片段');
+    assert.ok(!('heat' in cyProfile), '稳定档案不靠访问次数升温');
+
+    const nor = await tool('auto_recall', { query: 'Panda', suppress_recent: false });
+    const norProfile = nor.memories.find(m => m.layer === 'profile' && m.owner === 'nor');
+    assert.ok(norProfile && norProfile.text.includes('Panda'), `应该召回棋子的 profile：${JSON.stringify(nor)}`);
+
+    const { formatInjection } = await import('../lib/muwen/recall.js');
+    const injected = formatInjection({ query: 'Panda', memories: [norProfile] });
+    assert.ok(injected.includes('[档案·棋子·是谁]'), injected);
+  });
   await step('日历带月相 / search_all 分类标签 / 苏醒状态三层', async () => {
     const today2 = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
     const cal = await tool('get_calendar', { days: 3 });
@@ -1216,8 +1232,11 @@ try {
     assert.ok(/辞这边不手填/.test(muwu), '辞的动态页该是只读的');
     for (const [name, js, keys] of [
       ['muwu', muwu, ['loadMuwuCal', 'openPushHistory', 'loadKiss', 'refreshWeather', 'openCountdown', 'encyclopedia', 'editMyStatus', 'pickCustomBlock', 'openWake']],
-      ['muwen', muwen, ['setCalMode', 'renderIntimateList', 'renderTimeline', 'openEmotions', 'openFirsts']]
+      ['muwen', muwen, ['setCalMode', 'renderIntimateList', 'renderTimeline', 'openEmotions', 'openFirsts', 'openRecent']]
     ]) for (const k of keys) assert.ok(js.includes(k), `${name}.js 里该有 ${k}`);
+    const home = await (await fetch(`${base}/?token=${TOKEN}`)).text();
+    assert.ok(home.includes('onclick="openRecent()"') && home.includes('>最近<'), '记忆库要有“最近”入口');
+    assert.ok(muwen.includes("limit: 3, sort: 'time_desc'"), '今天页的最近记忆必须真按时间排');
     // 天气要能自己刷，不是只在打开时取一次
     assert.ok(/setInterval\(refreshWeather/.test(muwu), '天气该定时自动更新');
     const enc = await (await fetch(`${base}/api/fishing/encyclopedia?token=${TOKEN}`)).json();
@@ -1513,8 +1532,9 @@ try {
     // 索引：非归档全在、按 id 排序（前缀稳定才有缓存命中）
     const idx = buildIndex();
     assert.ok(idx.count >= 5 && idx.text.startsWith('记忆索引'));
-    const ids = idx.text.split('\n').slice(1).map(l => l.split(' ')[0]);
+    const ids = idx.text.split('\n\n')[0].split('\n').slice(1).map(l => l.split(' ')[0]);
     assert.deepEqual(ids, [...ids].sort(), '索引必须按 id 排序');
+    assert.ok(idx.profiles >= 2 && idx.text.includes('[档案·辞·是谁]'), '语义索引也要包含 identity/profile 片段');
 
     const target = await tool('add_grain', { category: 'learning', text: '换窗口之后我还是我，靠的是这份共享的记录，不是同一个进程' });
     const stub = async () => ({ picks: [{ layer: 'semantic', kind: 'grain', id: target.grain.id, category: 'learning', text: target.grain.text, heat: 50, confidence: 'cautious', reason: '她在问连续性' }], none: false, index_count: idx.count, model: 'stub' });

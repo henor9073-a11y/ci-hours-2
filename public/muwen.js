@@ -140,8 +140,8 @@ async function loadToday() {
       : '<div class="empty" style="padding:8px">还没记心情</div>';
   }).catch(() => { $('#t-moods').innerHTML = ''; });
 
-  mcp('search_grains', { limit: 3 }).then(gs => {
-    $('#t-recent').innerHTML = gs.length ? gs.map(g => grainCard(g)).join('') : '<div class="empty">还没有记忆</div>';
+  mcp('search_grains', { limit: 3, sort: 'time_desc' }).then(gs => {
+    $('#t-recent').innerHTML = gs.length ? gs.map(g => grainCard(g, { time: true })).join('') : '<div class="empty">还没有记忆</div>';
   }).catch(e => fail($('#t-recent'), e));
 }
 async function loadStats() {
@@ -360,9 +360,9 @@ function grainSortChips() {
   return `<div class="chip-row" style="margin:6px 0 2px">${GRAIN_SORTS.map(([k, v]) => `<div class="chip${s === k ? ' on' : ''}" onclick="setGrainSort('${k}')">${v}</div>`).join('')}</div>`;
 }
 // 按时间排的时候按月分段，像时间线；按热度就是平铺
-function grainList(gs, emptyText) {
+function grainList(gs, emptyText, sortOverride = '') {
   if (!gs.length) return `<div class="empty">${emptyText}</div>`;
-  const sort = grainSort();
+  const sort = sortOverride || grainSort();
   if (sort === 'heat') return gs.map(g => grainCard(g)).join('');
   let h = '', month = '';
   for (const g of gs) {
@@ -372,6 +372,14 @@ function grainList(gs, emptyText) {
     h += grainCard(g, { time: true });
   }
   return h;
+}
+async function openRecent() {
+  sheetLoading('最近');
+  try {
+    const gs = await mcp('search_grains', { limit: 500, sort: 'time_desc' });
+    sheetSet(`<div class="entry-head" style="padding:8px 2px 2px">按事情发生的日期排列；没有日期的按记下时间排列</div>`
+      + grainList(gs, '还没有记忆', 'time_desc'));
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function openGrains(cat, status) {
   const title = cat ? CATS[cat] : status ? ({ active: '前台', background: '后台', archived: '归档' })[status] : '纹理';
