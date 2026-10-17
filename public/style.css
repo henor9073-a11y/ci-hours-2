@@ -345,6 +345,7 @@ body.chat-open > .header { display: none; }
 .cx-pats { display: flex; flex-direction: column; max-height: 300px; overflow-y: auto; min-width: 180px; }
 .cx-pats button { text-align: left; }
 .cx-pats-t { font-size: 10px; color: var(--cx-time); padding: 6px 12px 4px; }
+.cx-pats .cx-pats-edit { margin-top: 4px; border-top: 1px solid var(--cx-think-bd); color: var(--cx-name); text-align: center; }
 .cx-set { position: absolute; top: 58px; right: 10px; left: auto; z-index: 25; background: var(--cx-panel); color: var(--cx-text); border-radius: 16px; padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,.16); width: 250px; max-height: 70%; overflow-y: auto; }
 .cx-set.bottom { top: auto; bottom: 108px; left: 10px; right: 10px; width: auto; max-height: 50%; }
 .cx-set-t { font-size: 13px; font-weight: 600; margin-bottom: 8px; }

@@ -420,6 +420,12 @@
     // 图片撑高了：只有停在底部时补滚
     box.addEventListener('load', e => { if (e.target.tagName === 'IMG' && stick) toBottomNow(); }, true);
     root.querySelector('.cx').addEventListener('click', onClick);
+    root.querySelector('.cx').addEventListener('dblclick', e => {
+      const av = e.target.closest('.cx-av[data-who="cy"]');
+      if (!av) return;
+      e.preventDefault(); e.stopPropagation();
+      patMenu(av);
+    });
     bindLongPress(root.querySelector('.cx'));
     // 长按松手时浏览器还会补一个 click——那一下不能把刚弹出来的菜单关掉
     document.addEventListener('click', e => {
@@ -515,10 +521,11 @@
     </div>`);
   }
   function patMenu(anchor) {
+    const set = $('#cx-set'); if (set) set.hidden = true;
     const list = pats.length ? pats : [''];
     popAt(anchor, `<div class="cx-pats"><div class="cx-pats-t">拍一拍小辞…</div>
       ${list.map((p, i) => `<button onclick="CX.pat(${i})">拍了拍 小辞${esc(p)}</button>`).join('')}
-      <div class="cx-pats-t">拍一拍库在设置页改</div></div>`);
+      <button class="cx-pats-edit" onclick="CX.editPats()">编辑拍一拍库 ›</button></div>`);
   }
 
   // ---------- 发送 ----------
@@ -711,6 +718,14 @@
       $('#cx-pop').hidden = true;
       try { await sendPayload({ type: 'pat', content: pats[i] || '' }); } catch {}
     },
+    editPats() {
+      $('#cx-pop').hidden = true;
+      if (typeof window.switchPage === 'function') window.switchPage('settings');
+      setTimeout(() => {
+        const box = document.getElementById('st-pats');
+        if (box) { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 1400); }
+      }, 180);
+    },
     async pickImage(input) {
       const files = [...(input.files || [])].filter(f => String(f.type || '').startsWith('image/'));
       input.value = ''; if (!files.length) return;
@@ -769,7 +784,7 @@
         <div class="cx-set-l">棋子</div>
         <input id="cx-st-in" maxlength="30" value="${esc((status.nor && status.nor.text) || '')}" placeholder="在studio / 困了 / 想你…">
         <div style="display:flex;gap:8px;margin-top:10px"><button class="cx-pill" onclick="CX.saveStatus()">保存</button><button class="cx-pill ghost" onclick="CX.closePanel()">关</button></div>
-        <div class="cx-set-l" style="margin-top:10px">长按辞的头像可以拍一拍</div>`;
+        <div class="cx-set-l" style="margin-top:10px">双击或长按辞的头像，可以从拍一拍库里选</div>`;
     },
     async saveStatus() {
       try { status = await post('/api/chat/status', { text: $('#cx-st-in').value }); CX.closePanel(); document.dispatchEvent(new CustomEvent('muwu-status', { detail: status })); }
