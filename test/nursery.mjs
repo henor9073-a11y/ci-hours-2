@@ -15,6 +15,17 @@ assert.equal(nursery.getMessages({ room: 'family', viewer: 'nor' }).length, 1);
 const raw = JSON.parse(fs.readFileSync(path.join(dataDir, 'nursery.json'), 'utf8'));
 const replyJob = raw.jobs.find(job => job.trigger_message_id === family.id);
 assert.ok(replyJob);
+assert.equal(replyJob.trigger_sender, 'nor');
+assert.equal(replyJob.address_as, '妈妈');
+replyJob.not_before = '2000-01-01T00:00:00.000Z';
+fs.writeFileSync(path.join(dataDir, 'nursery.json'), JSON.stringify(raw, null, 2));
+const claimedReply = nursery.pendingAgentJobs(1).jobs[0];
+assert.equal(claimedReply.context.trigger_message.id, family.id);
+assert.equal(claimedReply.context.trigger_message.family_role, '妈妈');
+assert.equal(claimedReply.context.family_identities.nor.family_role, '妈妈');
+assert.equal(claimedReply.context.family_identities.cy.family_role, '爸爸');
+assert.match(claimedReply.context.instruction, /nor 永远是妈妈棋子/);
+assert.match(claimedReply.context.instruction, /严格回复 trigger_message/);
 nursery.completeAgentJob(replyJob.id, { content: '妈妈早。' });
 assert.equal(nursery.getMessages({ room: 'family', viewer: 'nor' }).at(-1).sender, 'kuri');
 assert.equal(nursery.pendingForCy().count, 2);
@@ -28,6 +39,10 @@ assert.throws(() => nursery.sendMessage({ room: 'cy_kuri', sender: 'nor', conten
 const cy = nursery.sendMessage({ room: 'cy_kuri', sender: 'cy', content: '爸爸来看看你' });
 assert.equal(cy.room, 'cy_kuri');
 assert.equal(nursery.getMessages({ room: 'cy_kuri', viewer: 'cy' }).length, 1);
+const withDad = JSON.parse(fs.readFileSync(path.join(dataDir, 'nursery.json'), 'utf8'));
+const dadJob = withDad.jobs.find(job => job.trigger_message_id === cy.id);
+assert.equal(dadJob.trigger_sender, 'cy');
+assert.equal(dadJob.address_as, '爸爸');
 
 const state = nursery.getState({ viewer: 'nor' });
 assert.ok(typeof state.presence.asleep === 'boolean');
