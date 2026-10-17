@@ -1,5 +1,5 @@
 // 木纹前端逻辑。数据全走 MW.mcp（/mcp JSON-RPC）和少量现成 REST。
-const { mcp, rest, apiUrl, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBetween, WEEK, ANCHORS } = MW;
+const { mcp, rest, apiUrl, imageUrl, esc, oneLine, charDiff, fmtTime, fmtDate, today, moon, daysBetween, WEEK, ANCHORS } = MW;
 MW.applyTheme();
 
 // ---------- 通用 ----------
@@ -346,7 +346,7 @@ async function openArchive(key) {
   try {
     if (a.kind === 'profile') {
       const rows = await mcp('get_profile', { owner: a.owner });
-      sheetSet(rows.filter(r => r.content).map(r => `<div class="entry"><div class="entry-head">${esc(r.label)} · ${esc(fmtDate(r.updated_at))}</div><div class="entry-body">${esc(r.content)}</div></div>`).join('') || '<div class="empty">还没写</div>');
+      sheetSet(rows.filter(r => r.content).map(r => `<div class="entry" onclick="openProfileRevisionEditor('${a.owner}','${r.field}')"><div class="entry-head">${esc(r.label)} · ${esc(fmtDate(r.updated_at))}<span>点开可建议修改</span></div><div class="entry-body">${esc(r.content)}</div></div>`).join('') || '<div class="empty">还没写</div>');
     } else {
       sheetTop().reload = () => openArchive(key);
       const args = { category: a.cat, limit: 500, sort: grainSort() };
@@ -431,15 +431,23 @@ async function openMemoryRevisionEditor(id) {
   sheetLoading('修改记忆');
   try {
     const g = await rest(`/api/grains/${encodeURIComponent(id)}`);
-    sheetSet(`<div class="card"><div class="card-title">修改前</div><div class="entry-body" style="white-space:pre-wrap;margin-top:8px">${esc(g.text)}</div></div>
+    sheetSet(`<div id="mr-before-raw" hidden>${esc(g.text)}</div><div class="card"><div class="card-title">修改前</div><div class="entry-body" style="white-space:pre-wrap;margin-top:8px">${esc(g.text)}</div></div>
       <div class="card"><label class="card-title" for="mr-after">建议改成</label>
-        <textarea id="mr-after" rows="9" maxlength="20000" style="margin-top:8px">${esc(g.text)}</textarea>
+        <textarea id="mr-after" rows="9" maxlength="20000" style="margin-top:8px" oninput="renderMemoryRevisionPreview()">${esc(g.text)}</textarea>
         <label class="card-title" for="mr-reason" style="display:block;margin-top:12px">为什么要改</label>
         <textarea id="mr-reason" rows="3" maxlength="4000" placeholder="哪一句不准确、希望保留什么……"></textarea>
+        <div class="section-title">逐字预览</div><div id="mr-preview" class="card-desc">开始修改后，这里会标出删掉和新增的字。</div>
         <div class="card-desc" style="margin-top:8px">这里只会生成提案并叫辞来看。辞同意后才会替换；旧版本会自动归档，不会被抹掉。</div>
         <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="submitMemoryRevision('${g.id}')">提交给辞</button><button class="btn ghost" onclick="closeSheet()">取消</button></div>
         <div id="mr-msg" class="card-desc" style="margin-top:8px"></div></div>`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function renderMemoryRevisionPreview() {
+  const before = byId('mr-before-raw')?.textContent || '';
+  const after = byId('mr-after')?.value || '';
+  const node = byId('mr-preview'); if (!node) return;
+  const diff = charDiff(before, after);
+  node.innerHTML = diff.changed ? `<div class="diff-grid"><div class="diff-pane"><div class="diff-pane-title">修改前 · 粉色为删掉</div><div class="entry-body">${diff.beforeHtml}</div></div><div class="diff-pane"><div class="diff-pane-title">修改后 · 绿色为新增</div><div class="entry-body">${diff.afterHtml}</div></div></div>` : '还没有改动。';
 }
 async function submitMemoryRevision(id) {
   const message = byId('mr-msg');
@@ -450,6 +458,35 @@ async function submitMemoryRevision(id) {
     const p = await postJSON('/api/memory-revisions', { grain_id: id, proposed_text, reason });
     sheetSet(`<div class="card"><div class="card-title">已经交给辞了</div><div class="card-desc" style="margin-top:8px">提案 ${esc(p.id)}。正式记忆现在还没有改变；辞可以同意、否决，或提出他的版本。</div>
       <button class="btn ghost" style="margin-top:12px" onclick="location.href='muwu#memory-revisions'">去木屋看修改记录</button></div>`);
+  } catch (e) { if (message) message.textContent = `没提交上：${e.message}`; }
+}
+async function openProfileRevisionEditor(owner, field) {
+  sheetLoading('修改档案');
+  try {
+    const rows = await mcp('get_profile', { owner, field });
+    const row = rows[0];
+    if (!row) throw new Error('找不到这个档案字段');
+    const before = row.content || '';
+    sheetSet(`<div id="mr-before-raw" hidden>${esc(before)}</div><div class="card"><div class="card-title">${esc(row.owner === 'cy' ? '辞' : '棋子')} · ${esc(row.label)}</div><div class="entry-body" style="margin-top:8px">${before ? esc(before) : '<span style="color:var(--text-light)">（目前还没写）</span>'}</div></div>
+      <div class="card"><label class="card-title" for="mr-after">建议改成</label>
+        <textarea id="mr-after" rows="9" maxlength="20000" style="margin-top:8px" oninput="renderMemoryRevisionPreview()">${esc(before)}</textarea>
+        <label class="card-title" for="mr-reason" style="display:block;margin-top:12px">为什么要改</label>
+        <textarea id="mr-reason" rows="3" maxlength="4000" placeholder="哪一句不准确、希望保留什么……"></textarea>
+        <div class="section-title">逐字预览</div><div id="mr-preview" class="card-desc">开始修改后，这里会标出删掉和新增的字。</div>
+        <div class="card-desc" style="margin-top:8px">这里只会提出建议。辞同意后档案才会换成新版，旧版会自动进入档案历史。</div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="submitProfileRevision('${owner}','${field}')">提交给辞</button><button class="btn ghost" onclick="closeSheet()">取消</button></div>
+        <div id="mr-msg" class="card-desc" style="margin-top:8px"></div></div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function submitProfileRevision(owner, field) {
+  const message = byId('mr-msg');
+  try {
+    if (message) message.textContent = '正在提交…';
+    const p = await postJSON('/api/memory-revisions', {
+      target_type: 'profile', owner, field,
+      proposed_text: byId('mr-after').value.trim(), reason: byId('mr-reason').value.trim()
+    });
+    sheetSet(`<div class="card"><div class="card-title">已经交给辞了</div><div class="card-desc" style="margin-top:8px">提案 ${esc(p.id)}。档案现在还没有改变；辞可以同意、否决，或提出他的版本。</div><button class="btn ghost" style="margin-top:12px" onclick="location.href='muwu#memory-revisions'">去木屋看修改记录</button></div>`);
   } catch (e) { if (message) message.textContent = `没提交上：${e.message}`; }
 }
 async function openFamilies() {
@@ -764,7 +801,7 @@ async function openProfile(owner) {
   try {
     const rows = await mcp('get_profile', { owner });
     let h = `<div class="card tap" onclick="pickAvatar('${owner}')"><div class="card-row"><div class="card-icon accent">像</div><div><div class="card-title">换头像</div><div class="card-desc">从相册里挑一张（标了「头像」的优先）</div></div></div></div>`;
-    h += rows.map(r => `<div class="entry"><div class="entry-head">${esc(r.label)}${r.updated_at ? ' · ' + esc(fmtDate(r.updated_at)) : ''}</div>
+    h += rows.map(r => `<div class="entry" onclick="openProfileRevisionEditor('${owner}','${r.field}')"><div class="entry-head">${esc(r.label)}${r.updated_at ? ' · ' + esc(fmtDate(r.updated_at)) : ''}<span>点开可建议修改</span></div>
       <div class="entry-body">${r.content ? esc(r.content) : '<span style="color:var(--text-light)">（还没写）</span>'}</div></div>`).join('');
     sheetSet(h);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }

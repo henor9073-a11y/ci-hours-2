@@ -140,6 +140,12 @@ body::before {
 .entry { background: var(--card); border-radius: var(--radius-sm); padding: 14px 16px; box-shadow: var(--shadow); margin-top: 10px; }
 .entry-head { font-size: 11px; color: var(--text-light); margin-bottom: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .entry-body { font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.diff-del,.diff-add { border-radius:4px; padding:1px 2px; color:inherit; }
+.diff-del { background:#ffdfe2; text-decoration:line-through; text-decoration-thickness:1px; }
+.diff-add { background:#dff4e4; }
+.diff-grid { display:grid; grid-template-columns:1fr; gap:10px; }
+.diff-pane { padding:11px 12px; border:1px solid var(--border); border-radius:12px; background:color-mix(in srgb,var(--card) 82%,transparent); }
+.diff-pane-title { margin-bottom:7px; color:var(--text-light); font-size:12px; font-weight:600; }
 .entry-body.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .heat { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: var(--primary-light); color: var(--primary); }
 .heat.cite { background: var(--accent-light); color: var(--accent); font-weight: 600; }

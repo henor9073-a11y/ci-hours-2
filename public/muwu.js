@@ -1,5 +1,5 @@
 // 木屋前端。跟木纹共用 app.js 和 style.css，数据同样走 /mcp。
-const { mcp, rest, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBetween, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR } = MW;
+const { mcp, rest, imageUrl, esc, oneLine, charDiff, fmtTime, fmtDate, today, moon, daysBetween, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR } = MW;
 MW.applyTheme();
 // 弹层是一层层叠着的真 DOM（下面的层只是藏起来），不同层里可能有同名 id——先在最上面那层找。
 const $ = s => { let top = null; try { top = sheetStack[sheetStack.length - 1]; } catch {} return (top && top.node && top.node.querySelector(s)) || document.querySelector(s); };
@@ -500,7 +500,7 @@ async function openMemoryRevisions(status = '') {
     const tabs = `<div class="chip-row" style="margin:6px 0 10px">
       ${[['','全部'],['open','待决定'],['applied','已生效'],['rejected','已否决'],['withdrawn','已撤回']].map(([key, label]) => `<div class="chip${status === key ? ' on' : ''}" onclick="reopenMemoryRevisions('${key}')">${label}</div>`).join('')}</div>`;
     const list = p.length ? p.map(x => `<div class="card tap" onclick="openMemoryRevision('${x.id}')">
-      <div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${x.kind === 'rollback' ? '撤销建议' : '修改建议'}</div><span class="tag plain">${esc(memoryRevisionStatus(x.status))}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${x.kind === 'rollback' ? '撤销建议' : '修改建议'} · ${esc(x.target_label || (x.target_type === 'profile' ? '档案' : '纹理'))}</div><span class="tag plain">${esc(memoryRevisionStatus(x.status))}</span></div>
       <div class="card-desc" style="margin-top:8px">原文：${esc(memoryRevisionExcerpt(x.before?.text))}</div>
       <div class="card-desc" style="margin-top:4px;color:var(--text)">建议：${esc(memoryRevisionExcerpt(x.proposed_text))}</div>
       <div class="card-desc" style="margin-top:6px">${esc(fmtTime(x.updated_at))}${x.stale ? ' · 原记忆后来变过，需要重新提议' : ''}</div></div>`).join('') : '<div class="empty">这个分类还没有记录</div>';
@@ -513,11 +513,11 @@ async function openMemoryRevision(id) {
   try {
     const p = await rest(`/api/memory-revisions/${encodeURIComponent(id)}`);
     const open = p.status === 'pending' || p.status === 'discussing';
+    const diff = charDiff(p.before?.text || '', p.proposed_text || '');
     const history = (p.history || []).map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.actor === 'cy' ? '辞' : '棋子')}</span><span>${esc(fmtTime(x.at))}</span></div><div class="entry-body" style="font-size:13px">${esc(x.action)}${x.note ? ` · ${esc(x.note)}` : ''}</div></div>`).join('');
-    sheetSet(`<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${p.kind === 'rollback' ? '撤销建议' : '记忆修改'}</div><span class="tag plain">${esc(memoryRevisionStatus(p.status))}</span></div>
+    sheetSet(`<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${p.kind === 'rollback' ? '撤销建议' : '记忆修改'} · ${esc(p.target_label || (p.target_type === 'profile' ? '档案' : '纹理'))}</div><span class="tag plain">${esc(memoryRevisionStatus(p.status))}</span></div>
       ${p.stale ? '<div class="err" style="margin-top:10px">原记忆在审议期间变过了。这份提案不能直接套用，请撤回后从最新版重新提出。</div>' : ''}
-      <div class="section-title">修改前</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.before?.text || '')}</div>
-      <div class="section-title">建议版本</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.proposed_text || '')}</div>
+      <div class="section-title">逐字对照</div><div class="diff-grid"><div class="diff-pane"><div class="diff-pane-title">修改前 · 粉色为删掉</div><div class="entry-body">${diff.beforeHtml}</div></div><div class="diff-pane"><div class="diff-pane-title">建议版本 · 绿色为新增</div><div class="entry-body">${diff.afterHtml}</div></div></div>
       ${p.reason ? `<div class="section-title">理由</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.reason)}</div>` : ''}
       ${p.decision_note ? `<div class="section-title">辞的说明</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.decision_note)}</div>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">

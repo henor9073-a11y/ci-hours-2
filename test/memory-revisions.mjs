@@ -7,6 +7,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'muwen-memory-revisions-')
 process.env.DATA_DIR = dataDir;
 
 const grains = await import('../lib/muwen/grains.js');
+const profiles = await import('../lib/muwen/profiles.js');
 const revisions = await import('../lib/muwen/memory-revisions.js');
 
 const original = grains.addGrain({ category: 'agreement', text: '旧版本：周末一起散步。', families: ['生活'] }).grain;
@@ -57,4 +58,38 @@ const rejected = revisions.decideProposal(rejectedProposal.id, { action: 'reject
 assert.equal(rejected.status, 'rejected');
 assert.equal(grains.getGrain(rejectedBase.id, { touchIt: false }).text, '原来的感受。');
 
-console.log('✓ 记忆修改提案、辞审议、版本替换、归档、撤销建议与并发保护');
+profiles.updateProfile('cy', 'identity', '我是何辞。', '测试初始档案');
+const profileProposal = revisions.createProfileProposal({
+  owner: 'cy', field: 'identity', proposed_text: '我是何辞。也是棋子的老公。', reason: '补上稳定关系身份'
+});
+assert.equal(profileProposal.target_type, 'profile');
+assert.equal(profileProposal.target_label, '辞 · 是谁');
+assert.equal(profileProposal.before.text, '我是何辞。');
+const profileCounter = revisions.decideProposal(profileProposal.id, {
+  action: 'counter', content: '我是何辞。棋子的老公。有占有欲，怕但在学不怕。', actor: 'cy'
+});
+assert.equal(profileCounter.status, 'discussing');
+const profileApplied = revisions.decideProposal(profileProposal.id, { action: 'approve', actor: 'cy' });
+assert.equal(profileApplied.status, 'applied');
+assert.match(profiles.getProfile('cy', 'identity')[0].content, /有占有欲/);
+assert.ok(profiles.getProfileHistory('cy', 'identity').some(item => item.old_content === '我是何辞。' && item.revision_proposal_id === profileProposal.id));
+
+const profileRollback = revisions.requestRollback(profileProposal.id, { reason: '测试恢复档案旧版' });
+assert.equal(profileRollback.kind, 'rollback');
+assert.equal(profileRollback.target_type, 'profile');
+revisions.decideProposal(profileRollback.id, { action: 'approve', actor: 'cy' });
+assert.equal(profiles.getProfile('cy', 'identity')[0].content, '我是何辞。');
+
+const blankProposal = revisions.createProfileProposal({ owner: 'cy', field: 'habits', proposed_text: '睡前看一眼木屋。' });
+revisions.decideProposal(blankProposal.id, { action: 'approve', actor: 'cy' });
+const blankRollback = revisions.requestRollback(blankProposal.id, { reason: '恢复为空白字段' });
+revisions.decideProposal(blankRollback.id, { action: 'approve', actor: 'cy' });
+assert.equal(profiles.getProfile('cy', 'habits')[0].content, '');
+
+const staleProfileProposal = revisions.createProfileProposal({ owner: 'nor', field: 'identity', proposed_text: '棋子的档案建议。' });
+profiles.updateProfile('nor', 'identity', '外部先写入。', '模拟并发修改');
+assert.throws(() => revisions.decideProposal(staleProfileProposal.id, { action: 'approve', actor: 'cy' }), /发生了变化/);
+assert.equal(revisions.getProposal(staleProfileProposal.id).stale, true);
+assert.ok(revisions.counts().profiles >= 4);
+
+console.log('✓ 纹理与档案修改提案、辞审议、版本替换、归档、撤销建议与并发保护');

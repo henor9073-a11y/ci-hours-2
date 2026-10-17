@@ -69,6 +69,44 @@
   // ---- 小工具 ----
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const oneLine = s => String(s || '').replace(/\s+/g, ' ').trim();
+  // 记忆修改用的逐字差异。短文本走字符级 LCS；超长文本退回共同前后缀，避免手机卡住。
+  function charDiff(before, after) {
+    const left = String(before || ''), right = String(after || '');
+    if (left === right) return { beforeHtml: esc(left), afterHtml: esc(right), changed: false };
+    const render = parts => parts.map(part => part.type === 'same' ? esc(part.text)
+      : `<mark class="diff-${part.type}">${esc(part.text)}</mark>`).join('');
+    const partsLeft = [], partsRight = [];
+    const push = (list, type, text) => {
+      if (!text) return;
+      const last = list[list.length - 1];
+      if (last && last.type === type) last.text += text;
+      else list.push({ type, text });
+    };
+    if (left.length * right.length <= 600000 && left.length <= 1600 && right.length <= 1600) {
+      const rows = Array.from({ length: left.length + 1 }, () => new Uint16Array(right.length + 1));
+      for (let i = left.length - 1; i >= 0; i--) for (let j = right.length - 1; j >= 0; j--) {
+        rows[i][j] = left[i] === right[j] ? rows[i + 1][j + 1] + 1 : Math.max(rows[i + 1][j], rows[i][j + 1]);
+      }
+      let i = 0, j = 0;
+      while (i < left.length || j < right.length) {
+        if (i < left.length && j < right.length && left[i] === right[j]) {
+          push(partsLeft, 'same', left[i]); push(partsRight, 'same', right[j]); i++; j++;
+        } else if (i < left.length && (j >= right.length || rows[i + 1][j] >= rows[i][j + 1])) {
+          push(partsLeft, 'del', left[i++]);
+        } else push(partsRight, 'add', right[j++]);
+      }
+    } else {
+      let prefix = 0;
+      while (prefix < left.length && prefix < right.length && left[prefix] === right[prefix]) prefix++;
+      let suffix = 0;
+      while (suffix < left.length - prefix && suffix < right.length - prefix && left[left.length - 1 - suffix] === right[right.length - 1 - suffix]) suffix++;
+      push(partsLeft, 'same', left.slice(0, prefix)); push(partsRight, 'same', right.slice(0, prefix));
+      push(partsLeft, 'del', left.slice(prefix, left.length - suffix));
+      push(partsRight, 'add', right.slice(prefix, right.length - suffix));
+      if (suffix) { push(partsLeft, 'same', left.slice(-suffix)); push(partsRight, 'same', right.slice(-suffix)); }
+    }
+    return { beforeHtml: render(partsLeft), afterHtml: render(partsRight), changed: true };
+  }
   function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? String(iso).slice(0, 16) : d.toLocaleString('sv', { timeZone: TZ }).slice(0, 16); }
   function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? String(iso).slice(0, 10) : d.toLocaleDateString('en-CA', { timeZone: TZ }); }
 
@@ -191,5 +229,5 @@
   }
   setTimeout(syncLook, 300);
 
-  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64, audioUrl, apiUrl };
+  global.MW = { mcp, rest, imageUrl, TOKEN, API, TZ, WEEK, PLANETS, ANCHORS, THEMES, CSSVAR, today, dayOfWeek, daysBetween, moon, loadTheme, applyTheme, saveTheme, esc, oneLine, charDiff, fmtTime, fmtDate, loadPrefs, setAvatar, uploadPhoto, fileToBase64, audioUrl, apiUrl };
 })(window);

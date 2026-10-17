@@ -249,15 +249,18 @@ app.get('/api/memory-revisions/:id', (req, res) => {
 });
 app.post('/api/memory-revisions', async (req, res) => {
   try {
-    const proposal = mw.memoryRevisions.createProposal({ ...(req.body || {}), actor: 'nor' });
+    const body = req.body || {};
+    const proposal = body.target_type === 'profile' || (body.owner && body.field)
+      ? mw.memoryRevisions.createProfileProposal({ ...body, actor: 'nor' })
+      : mw.memoryRevisions.createProposal({ ...body, actor: 'nor' });
     res.json(proposal);
     await mw.chat.sendSystemEvent(
-      `棋子提出了一份记忆修改建议（${proposal.id}）。`,
+      `棋子提出了一份${proposal.target_type === 'profile' ? '档案' : '记忆'}修改建议（${proposal.id}）。`,
       'memory_revision_proposed',
       {
         deliverToCy: true,
         deliveryKey: `memory_revision:${proposal.id}`,
-        deliveryText: `棋子建议修改一条记忆。提案 id=${proposal.id}。请用 memory_revision_get 查看修改前后和理由，再用 memory_revision_decide 同意、否决或提出你的版本。`,
+        deliveryText: `棋子建议修改${proposal.target_type === 'profile' ? `档案「${proposal.target_label}」` : '一条记忆'}。提案 id=${proposal.id}。请用 memory_revision_get 查看修改前后和理由，再用 memory_revision_decide 同意、否决或提出你的版本。`,
         sourceDevice: 'memory_revision'
       }
     );
@@ -941,6 +944,11 @@ async function toolsStatus() {
   } catch {}
   const pend = mw.chat.pendingForCy();
   push('GPD（辞住的掌机）', '木屋消息通道（语音频道）', pend.count ? 'unknown' : 'unknown', pend.count ? `有 ${pend.count} 条还没送到辞窗口` : '没有积压');
+  const pipeline = mw.rings.dailyPipelineStatus();
+  push('木纹 / 木屋', '主聊天每日流水线', pipeline.state,
+    pipeline.status === 'verified'
+      ? `${pipeline.date} 已核验 · ${pipeline.sources.map(source => source === 'muwu' ? '木屋' : 'Claude').join(' + ') || '当天没有对话'} · 明确排除婴儿房`
+      : pipeline.detail);
   return { checked_at: new Date().toISOString(), items };
 }
 app.get('/api/tools/status', async (req, res) => {
@@ -986,6 +994,7 @@ app.get('/api/history/main-context', (req, res) => {
     }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+app.get('/api/history/pipeline-status', (_, res) => res.json(mw.rings.dailyPipelineStatus()));
 app.get('/api/history/export', (req, res) => {
   try {
     const exported = mw.history.exportDay({ date: req.query.date, source: req.query.source || 'main' });

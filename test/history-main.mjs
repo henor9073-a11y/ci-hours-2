@@ -64,5 +64,10 @@ const daily = rings.addDaily({
 assert.equal(daily.source_scope, 'main');
 assert.deepEqual(daily.source_cursor, context.cursor);
 assert.ok(daily.source_segments.some(segment => segment.source === 'muwu'));
+const pipeline = rings.dailyPipelineStatus();
+assert.equal(pipeline.status, 'verified');
+assert.equal(pipeline.state, 'on');
+assert.deepEqual(pipeline.excluded_sources, ['nursery']);
+assert.ok(pipeline.sources.includes('muwu'));
 
-console.log('✓ 木屋 + Claude 主聊天统一时间线、来源标记、导出与婴儿房隔离');
+console.log('✓ 木屋 + Claude 主聊天统一时间线、来源标记、每日流水线核验、导出与婴儿房隔离');

@@ -173,10 +173,17 @@
 ### 主聊天记录（木屋 + Claude）
 - **按日期查找与搜索**默认走 `source=main`：木屋和当天所有 Claude 窗口按时间混排，逐段标明来源；婴儿房不在这里。
 - 每一天都有「导出原始聊天」，输出时间、来源窗口、说话人和原文。接口是 `GET /api/history/export?date=YYYY-MM-DD`；后台统一输入是 `GET /api/history/main-context?hours=22&recent_hours=2`。
+- 最近一份每日总结的取材范围可以核验：`GET /api/history/pipeline-status` / MCP `get_main_pipeline_status` 会显示来源分段、读取游标和婴儿房排除状态；木屋「工具」也直接显示“已核验 / 来源不完整 / 旧格式无法核验”。
 - Claude 的旧「按条目」入口仍保留，专门查看单条年轮里的 thinking / 工具折叠与原始切片。
 - **拆说话人**（`lib/muwen/dialog.js`）：只认白名单名字——`[00:03] 棋子:`、`棋子：`/`辞：`、`[辞]:`、`USER:`/`ASST:`、`USER[2026-08-30T12:28:05]:`。正文里 `方案：`、`"id":` 这种冒号行不算。一句话再拆成有序的块：正文 / `（思考）`后面的英文思考（折叠）/ `［调用 xxx］` / `［结果］`后面的工具返回（折叠）。一个说话人都拆不出来的（叙述体纪要）整篇当文档显示。
 - 接口：`GET /api/rings/chat-dates`、`GET /api/rings/day?date=`、`GET /api/rings/search?q=&skip=&limit=`。MCP 的 `search_ring_occurrences` 也多了 `source_type`（传 `chat` 只搜对话）、`skip`，结果带 `speaker`/`time`。
 - 旧的"按条目翻"还在（首页「按条目」），看单条原文 / 每日总结从那里进；原文页顶上有「用聊天气泡看这天」。
+
+### 记忆修改与审议
+- 纹理以及辞/棋子的 identity、profile 档案都不能从网页直接覆盖。点开正文后只能提出修改建议；编辑时按字显示删除（粉色划线）和新增（绿色）。
+- 提案进入木屋「工具 → 记忆修改记录」，辞用 `memory_revision_get` 查看、`memory_revision_decide` 同意/否决/提出他的版本。提案本身不参与召回。
+- 同意纹理修改时创建新纹理并归档旧纹理；同意档案修改时把旧正文写进档案历史。已生效修改可以再建议撤销，仍需辞决定。
+- 提案记录修改前后、理由、决定和完整商议轨迹；审议期间原文被别处改动时会标记 stale 并拒绝误覆盖。
 
 ### 纹理按时间排
 纹理列表（全部 / 分类 / 档案里的经历等 / 家族）顶上三个选项：**按热度**（默认）/ **新的在前** / **旧的在前**，选了会记住。按时间排时按月分段。时间用 `date`（事情发生那天）；老数据约一半没有 `date`，退回记下来那天（卡片上写"记下"）。MCP `search_grains` 和 `GET /api/grains` 都接受 `sort=heat|time_desc|time_asc`。
