@@ -313,6 +313,8 @@ body.chat-open > .header { display: none; }
 .cx-bubble.bare { background: none !important; box-shadow: none; padding: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .cx-img { display: block; max-width: 220px; max-height: 280px; border-radius: calc(var(--cx-radius) - 4px); cursor: zoom-in; }
 .cx-img.sticker { max-width: 120px; max-height: 120px; border-radius: 8px; }
+.cx-img-group { display:grid; grid-template-columns:repeat(2, 106px); gap:4px; width:216px; overflow:hidden; border-radius:calc(var(--cx-radius) - 4px); }
+.cx-img-group .cx-img.grouped { width:106px; height:106px; max-width:none; max-height:none; object-fit:cover; border-radius:8px; }
 .cx-cap { font-size: 12px; padding: 4px 6px 2px; white-space: pre-wrap; }
 .cx-quote { font-size: 12px; line-height: 1.45; opacity: .75; border-left: 2px solid var(--cx-accent); padding: 1px 0 1px 7px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; cursor: pointer; }
 .cx-meta { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--cx-time); letter-spacing: .3px; padding: 0 2px; }

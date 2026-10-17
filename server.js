@@ -59,7 +59,7 @@ runNegativeMemoryCleanup20261017();
 
 const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
-app.use(express.json({ limit: '40mb' })); // 相册的原图走 /mcp 的 base64：20MB 上限的图编码后约 27MB，留出余量，
+app.use(express.json({ limit: '80mb' })); // 聊天允许一条最多 10 张；业务层另外限制单张和总大小。
 // 好让超限时报的是 album.js 里那句人话（'先在手机上裁一下'），而不是 express 的 413 HTML。后端会再自动压到 2MB 存
 app.use((req, res, next) => {
   if (req.path === '/muwu' || req.path === '/muwu.html' || req.path === '/chat.js') {
@@ -720,8 +720,8 @@ app.get('/api/call/audio/:eventId', async (req, res) => {
   if (!e || e.type !== 'utterance' || e.by !== 'cy') return res.status(404).json({ error: '找不到这句通话语音' });
   try { await streamSpeech(e.text, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
-app.get('/api/chat/image/:id', (req, res) => {
-  const r = mw.chat.imageRef(req.params.id);
+function sendChatImage(req, res) {
+  const r = mw.chat.imageRef(req.params.id, req.params.index || req.query.index || 1);
   if (!r) return res.status(404).json({ error: '找不到这张图' });
   if (r.photo_id) {
     const p = mw.album.getPhotoPath(r.photo_id);
@@ -732,7 +732,9 @@ app.get('/api/chat/image/:id', (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=604800');
   res.setHeader('Content-Type', r.mime);
   fs.createReadStream(r.path).pipe(res);
-});
+}
+app.get('/api/chat/image/:id/:index', sendChatImage);
+app.get('/api/chat/image/:id', sendChatImage);
 app.post('/api/chat/read', (req, res) => {
   try { const b = req.body || {}; res.json(mw.chat.markRead(b.ids || [], b.who === 'cy' ? 'cy' : 'nor')); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }

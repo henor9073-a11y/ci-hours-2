@@ -1103,6 +1103,24 @@ try {
     assert.ok(!(await tool('list_photos', {})).some(x => x.id === img.photo_id), '聊天图收藏前不应该出现在相册列表');
     const file = await fetch(`${base}/api/chat/image/${img.id}?token=${TOKEN}`);
     assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png');
+    // 多张图作为同一条消息保存，刷新后也不会拆成多个气泡
+    const group = await (await fetch(`${base}/api/chat?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'image', content: '两张一起', client_message_id: 'image-group-smoke',
+        images: [
+          { image_base64: png, image_mime: 'image/png' },
+          { image_base64: png, image_mime: 'image/png' }
+        ]
+      })
+    })).json();
+    assert.equal(group.type, 'image');
+    assert.equal(group.photo_ids.length, 2);
+    assert.equal(group.media_attachments.filter(x => x.kind === 'image').length, 2);
+    assert.equal((await fetch(`${base}/api/chat/image/${group.id}/2?token=${TOKEN}`)).status, 200);
+    const groupSecond = await rpc('tools/call', { name: 'chat_get_image', arguments: { id: group.id, image_index: 2 } });
+    assert.equal(groupSecond.result.content[0].type, 'image');
+    assert.ok(groupSecond.result.content[1].text.includes('第 2/2 张'));
     // 辞那边：直接把图给他看（MCP 的 image content）
     const j = await rpc('tools/call', { name: 'chat_get_image', arguments: { id: img.id } });
     assert.equal(j.result.content[0].type, 'image');

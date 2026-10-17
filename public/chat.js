@@ -187,12 +187,20 @@
     if (!q) return '';
     return `<div class="cx-quote" data-jump="${esc(q.id)}"><b>${q.sender === 'cy' ? '辞' : '棋子'}：</b>${esc(q.text)}</div>`;
   }
-  function imgSrc(m) { return apiUrl('/api/chat/image/' + m.id); }
+  function imageCount(m) {
+    const attachments = (m.media_attachments || []).filter(x => x.kind === 'image');
+    return Math.max(1, attachments.length || (m.photo_ids || []).length || 0);
+  }
+  function imgSrc(m, index = 1) { return apiUrl('/api/chat/image/' + m.id + (index > 1 ? '/' + index : '')); }
 
   function bodyHtml(m) {
     const isAi = m.sender === 'cy';
     if (m.type === 'image') {
-      return `<img class="cx-img${m.sticker ? ' sticker' : ''}" loading="lazy" src="${imgSrc(m)}" alt="">${m.content ? `<div class="cx-cap">${esc(m.content)}</div>` : ''}`;
+      const count = imageCount(m);
+      const pictures = count > 1
+        ? `<div class="cx-img-group">${Array.from({ length: count }, (_, i) => `<img class="cx-img grouped" loading="lazy" src="${imgSrc(m, i + 1)}" alt="第 ${i + 1} 张图片">`).join('')}</div>`
+        : `<img class="cx-img${m.sticker ? ' sticker' : ''}" loading="lazy" src="${imgSrc(m)}" alt="">`;
+      return `${pictures}${m.content ? `<div class="cx-cap">${esc(m.content)}</div>` : ''}`;
     }
     return esc(m.content);
   }
@@ -683,17 +691,22 @@
       } else {
         const batch = [...pendingImages];
         try {
-          for (let i = 0; i < batch.length; i++) {
-            const item = batch[i];
-            hint(`发送图片 ${i + 1}/${batch.length}…`);
-            await sendPayload({
-              type: 'image', content: i === 0 ? text : '', client_message_id: item.clientID,
-              image_base64: await MW.fileToBase64(item.file), image_mime: item.file.type || 'image/jpeg'
+          hint(`正在发送 ${batch.length} 张图片…`);
+          const images = [];
+          for (const item of batch) {
+            images.push({
+              image_base64: await MW.fileToBase64(item.file),
+              image_mime: item.file.type || 'image/jpeg'
             });
-            const at = pendingImages.findIndex(x => x.clientID === item.clientID);
-            if (at !== -1) { URL.revokeObjectURL(pendingImages[at].url); pendingImages.splice(at, 1); renderPendingImages(); }
-            if (i === 0) { ta.value = ''; autoGrow(); }
           }
+          await sendPayload({
+            type: 'image', content: text, client_message_id: batch[0].clientID,
+            images
+          });
+          for (const item of pendingImages) URL.revokeObjectURL(item.url);
+          pendingImages = [];
+          renderPendingImages();
+          ta.value = ''; autoGrow();
           hint('');
         } catch { /* sendPayload 已显示原因；没发完的仍留在待发送区 */ }
       }
