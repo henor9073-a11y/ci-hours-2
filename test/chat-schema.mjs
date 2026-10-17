@@ -27,7 +27,7 @@ assert.equal(legacy.send_status, 'sent');
 assert.deepEqual(legacy.media_attachments, []);
 
 const created = await chat.sendMessage({
-  sender: 'nor', type: 'text', content: '新记录', source_device: 'sigh_ios'
+  sender: 'nor', type: 'text', content: '新记录', source_device: 'sigh_ios', client_message_id: 'ios-retry-1'
 });
 for (const key of required) assert.ok(Object.hasOwn(created, key), `new record missing ${key}`);
 assert.equal(created.message_id, created.id);
@@ -36,6 +36,22 @@ assert.equal(created.source_device, 'sigh_ios');
 assert.equal(created.created_at, created.at);
 assert.equal(created.send_status, 'sent');
 assert.equal(created.streaming_playback_state, 'none');
+
+const retry = await chat.sendMessage({
+  sender: 'nor', type: 'text', content: '新记录', source_device: 'sigh_ios', client_message_id: 'ios-retry-1'
+});
+assert.equal(retry.id, created.id, '同一个客户端请求重试时不能重复落库');
+assert.equal(chat.getMessages({ limit: 100 }).filter(m => m.client_message_id === 'ios-retry-1').length, 1);
+
+const mirror = await chat.sendMessage({
+  sender: 'cy', type: 'claude_mirror', content: '只读的 Claude 原话', mirror_key: 'claude-turn-1', mirror_only: true
+});
+const mirrorRetry = await chat.sendMessage({
+  sender: 'cy', type: 'claude_mirror', content: '只读的 Claude 原话', mirror_key: 'claude-turn-1', mirror_only: true
+});
+assert.equal(mirrorRetry.id, mirror.id, '同一轮 Claude 原话只能镜像一次');
+assert.ok(!chat.historyDay(mirror.date).some(m => m.id === mirror.id), 'Claude 镜像不能重复进入木屋历史导出');
+assert.ok(!chat.searchChat({ q: '只读的 Claude 原话' }).hits.some(m => m.id === mirror.id), 'Claude 镜像不能成为第二份搜索结果');
 
 chat.markDelivered([created.id]);
 assert.equal(chat.getMessage(created.id).send_status, 'read');

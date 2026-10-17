@@ -9,8 +9,36 @@
 (function () {
   const { rest, esc, fmtTime, imageUrl, apiUrl, TOKEN } = MW;
   const $ = s => document.querySelector(s);
-  const post = (p, body) => fetch(apiUrl(p), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN }, body: JSON.stringify(body) })
-    .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`); return j; });
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  async function post(p, body, attempts = 2) {
+    let last;
+    for (let n = 0; n < attempts; n++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+      try {
+        const r = await fetch(apiUrl(p), {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN },
+          body: JSON.stringify(body), signal: controller.signal
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const error = new Error(j.error || `HTTP ${r.status}`); error.status = r.status;
+          if (n + 1 < attempts && [502, 503, 504].includes(r.status)) { last = error; await wait(500); continue; }
+          throw error;
+        }
+        return j;
+      } catch (e) {
+        last = e;
+        if (n + 1 >= attempts || (e.status && ![502, 503, 504].includes(e.status))) throw e;
+        await wait(500);
+      } finally { clearTimeout(timeout); }
+    }
+    throw last || new Error('连接失败');
+  }
+  const requestID = () => {
+    try { return crypto.randomUUID(); }
+    catch { return `web-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+  };
 
   // 聊天配色（樱海石夜雾）。选择在设置页，这里只负责上色。
   const THEMES = {
@@ -47,7 +75,7 @@
   const MODELS = ['Opus 4.6 [1m]', 'Opus 5.5', 'Opus 5', 'Sonnet 5', 'Fable 5.1', 'Haiku 4.5'];
   const EMOJI = '😀 😁 😂 🤣 😊 😇 🙂 😉 😍 🥰 😘 😗 😚 😋 😛 😜 🤪 😝 🤗 🤭 🤫 🤔 😐 😑 😶 🙄 😏 😣 😥 😮 😪 😴 😌 🥱 😒 😓 😔 😕 🙃 🥲 😲 😳 🥺 😦 😧 😨 😰 😢 😭 😱 😖 😞 😩 😫 😤 😡 😠 🤬 😈 👿 💀 👻 🐶 🐱 🐰 🦊 🐻 🐼 🐺 🌙 ⭐ ✨ 🌸 🌷 🍓 🍰 ☕ 🎵 💤 💢 💦 ❤️ 🩷 💕 💞 💗 💔 👍 👎 👌 ✌️ 🤞 🫶 🙏 👏 🙌 🤝 😘 💋'.split(' ');
 
-  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, alpha: 72, aiColor: '', meColor: '', aiAlpha: null, meAlpha: null, frost: true, bg: '', bgAlpha: 100 };
+  const DEF = { theme: 'sakura', avatars: true, radius: 18, fontSize: 15, systemFontSize: 11, systemColor: '', showClaudeMirror: true, alpha: 72, aiColor: '', meColor: '', aiAlpha: null, meAlpha: null, frost: true, bg: '', bgAlpha: 100 };
   function cfg() { try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('muwen-chat-cfg') || '{}')); } catch { return { ...DEF }; } }
   const rgbHex = rgb => '#' + String(rgb).split(',').map(x => Math.max(0,Math.min(255,Number(x)||0)).toString(16).padStart(2,'0')).join('');
   const hexRgb = hex => { const h=String(hex||'').replace('#',''); return h.length===6 ? `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}` : ''; };
@@ -70,6 +98,7 @@
   let msgs = [], byId = new Map(), hasMore = true, loadingOlder = false;
   let open = false, built = false, timer = null, stick = true;
   let avatars = {}, status = { nor: {}, cy: {} }, pats = [];
+  let pendingImages = [], stickerOwner = 'nor', stickerLists = { nor: [], cy: [] };
   let quoting = null;                      // 正在引用的那条
   let expanded = {};                       // 展开了思考/工具的
   let slidePending = {}, slideRaf = 0;
@@ -80,7 +109,7 @@
   function sigOf(m) {
     return JSON.stringify([
       m.read, m.starred, m.transcript_status, m.transcript, m.has_image,
-      m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote
+      m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote, m.action, m.mirror_key
     ]);
   }
 
@@ -140,7 +169,7 @@
     try { await post('/api/chat/read', { who: 'nor', ids: un.map(m => m.id) }); } catch {}
   }
   function updateBadge() {
-    const n = msgs.filter(m => m.sender === 'cy' && !m.read).length;
+    const n = msgs.filter(m => m.sender === 'cy' && !m.read && (cfg().showClaudeMirror || m.type !== 'claude_mirror')).length;
     document.querySelectorAll('[data-chat-badge]').forEach(el => {
       el.textContent = n ? (n > 99 ? '99+' : n) : '';
       el.style.display = n ? 'flex' : 'none';
@@ -234,6 +263,9 @@
 
   function rowHtml(m) {
     if (m.type === 'pat') return `<div class="cx-item" data-id="${esc(m.id)}"><div class="cx-pat">— ${esc(patLine(m))} —${m.starred ? ' ★' : ''}</div></div>`;
+    if (m.type === 'claude_mirror') return `<div class="cx-item cx-mirror-item" data-id="${esc(m.id)}"><button class="cx-mirror" data-act="mirror">💭 <span>辞在 Claude 里说了一句话</span><b>›</b></button></div>`;
+    if (m.sender === 'system' && m.action === 'fishing') return `<div class="cx-item" data-id="${esc(m.id)}"><div class="cx-row">${avHtml('cy')}<div class="cx-col"><button class="cx-native cx-tool-event" data-act="event-tool"><span>Used 1 tool</span><b>›</b></button></div></div></div>`;
+    if (m.sender === 'system' || m.type === 'system') return `<div class="cx-item" data-id="${esc(m.id)}"><div class="cx-system">— ${esc(m.content)} —${m.starred ? ' ★' : ''}</div></div>`;
     const isAi = m.sender === 'cy';
     const time = esc(fmtTime(m.at).slice(11));
     let extra = '';
@@ -253,11 +285,22 @@
   }
   function dayHtml(date) { return `<div class="cx-day" data-day="${esc(date)}">— ${esc(date)} —</div>`; }
 
+  // 旧版在请求其实已经成功、但手机端先超时时会让用户再点一次，于是历史里留下
+  // 两个不同 id 的同文消息。新消息靠 client_message_id 根治；这里只收起紧邻的旧回声。
+  function duplicateEcho(m) {
+    if (!m || m.sender !== 'nor' || m.type !== 'text' || m.client_message_id) return false;
+    const i = msgs.findIndex(x => x.id === m.id); if (i < 1) return false;
+    const p = msgs[i - 1];
+    const gap = Math.abs(Date.parse(m.at || 0) - Date.parse(p?.at || 0));
+    return p && p.sender === 'nor' && p.type === 'text' && p.content === m.content
+      && String(p.reply_to || '') === String(m.reply_to || '') && gap <= 90000;
+  }
+
   function paintAll(toBottom) {
     const box = $('#cx-msgs'); if (!box) return;
     if (!msgs.length) { box.innerHTML = '<div class="cx-empty">还没有消息。<br>发一条，辞在窗口里就能看到。</div>'; return; }
     let h = hasMore ? '' : '<div class="cx-more">— 到头了 —</div>', prev = '';
-    for (const m of msgs) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
+    for (const m of msgs) { if (duplicateEcho(m)) continue; if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     box.innerHTML = h;
     probeDurations(box);
     if (toBottom) toBottomNow();
@@ -267,7 +310,7 @@
     const empty = box.querySelector('.cx-empty'); if (empty) empty.remove();
     const lastDay = [...box.querySelectorAll('.cx-day')].pop();
     let prev = lastDay ? lastDay.dataset.day : '', h = '';
-    for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
+    for (const m of list) { if (duplicateEcho(m)) continue; if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const wasStuck = stick;
     box.insertAdjacentHTML('beforeend', h);
     for (const m of list) {
@@ -283,7 +326,7 @@
     const firstDay = box.querySelector('.cx-day');
     if (firstDay && list.length && list[list.length - 1].date === firstDay.dataset.day) firstDay.remove();
     let h = '', prev = '';
-    for (const m of list) { if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
+    for (const m of list) { if (duplicateEcho(m)) continue; if (m.date !== prev) { h += dayHtml(m.date); prev = m.date; } h += rowHtml(m); }
     const oldEdge = box.querySelector('.cx-more'); if (oldEdge) oldEdge.remove();
     box.insertAdjacentHTML('afterbegin', h);
     for (const m of list) {
@@ -312,11 +355,13 @@
       '--cx-text': t.text, '--cx-accent': t.accent, '--cx-time': t.time, '--cx-head': t.head, '--cx-name': t.nameC,
       '--cx-think-bg': t.thinkBg, '--cx-think-bd': t.thinkBd, '--cx-panel': t.panel,
       '--cx-av-bg': t.accent + '28', '--cx-radius': c.radius + 'px', '--cx-font': c.fontSize + 'px',
+      '--cx-system-font': c.systemFontSize + 'px', '--cx-system-color': c.systemColor || t.time,
       '--cx-wallpaper': c.bg ? `url("${c.bg}")` : 'none', '--cx-bg-alpha': Math.max(0, Math.min(1, c.bgAlpha / 100)),
       '--cx-blur': c.frost ? '12px' : '0px'
     };
     for (const k in v) root.style.setProperty(k, v[k]);
     root.classList.toggle('no-av', !c.avatars);
+    root.classList.toggle('hide-claude-mirror', !c.showClaudeMirror);
     root.classList.toggle('dark', !!t.dark);
   }
   function paintHeader() {
@@ -336,8 +381,9 @@
       <div class="cx-bar">
         <div class="cx-quoting" id="cx-quoting" hidden></div>
         <textarea id="cx-text" rows="1" placeholder="说点什么…" enterkeyhint="send"></textarea>
+        <div class="cx-pending-images" id="cx-pending-images" hidden></div>
         <div class="cx-tools">
-          <label class="cx-tb" title="发图片">附<input type="file" accept="image/*" hidden onchange="CX.pickImage(this)"></label>
+          <label class="cx-tb" title="选图片（最多 10 张，发送前可取消）">附<input type="file" accept="image/*" multiple hidden onchange="CX.pickImage(this)"></label>
           <button class="cx-tb" onclick="CX.emoji()" title="表情">表</button>
           <select class="cx-model" id="cx-model" title="模型（现在只记录，换不动辞当前的模型）" onchange="CX.setModel(this.value)">
             ${MODELS.map(x => `<option${x === model() ? ' selected' : ''}>${x}</option>`).join('')}
@@ -401,6 +447,10 @@
       openSheet('Thought process', `<div class="cx-sheet-think">${esc(m.thinking)}</div>`);
     } else if (act === 'tools') {
       openSheet(`Used ${m.tools.length} tool${m.tools.length > 1 ? 's' : ''}`, `<div class="cx-sheet-tools">${m.tools.map(t => `<div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used ${esc(prettyTool(t.name))}</div>${t.result ? `<div class="cx-tl-r">${esc(t.result)}</div>` : ''}</div></div>`).join('')}</div>`);
+    } else if (act === 'event-tool') {
+      openSheet('Used 1 tool', `<div class="cx-sheet-tools"><div class="cx-tl"><span class="cx-tl-i">${TOOLICON}</span><div><div class="cx-tl-n">Used Play Fishing</div><div class="cx-tl-r">${esc(m.content || '辞去钓鱼了')}</div></div></div></div>`);
+    } else if (act === 'mirror') {
+      openSheet('💭 Claude 原话', `<div class="cx-sheet-think">${esc(m.content)}</div>`);
     } else if (act === 'vt') {
       const t = el.closest('.cx-col').querySelector('.cx-voice-text');
       t.hidden = !t.hidden; el.textContent = t.hidden ? '转文字' : '收起';
@@ -474,8 +524,9 @@
   // ---------- 发送 ----------
   async function sendPayload(body, clear) {
     hint('');
+    const client_message_id = body.client_message_id || requestID();
     try {
-      const m = await post('/api/chat', { ...body, model: model(), reply_to: quoting ? quoting.id : '' });
+      const m = await post('/api/chat', { ...body, client_message_id, model: model(), reply_to: quoting ? quoting.id : '' });
       if (clear) clear();
       CX.cancelQuote();
       const { fresh } = merge([m], 'bottom');
@@ -588,12 +639,47 @@
     try { r.recorder.stop(); } catch { $('#cx-recov').hidden = true; }
   }
 
+  let sending = false;
+  function renderPendingImages() {
+    const box = $('#cx-pending-images'); if (!box) return;
+    box.hidden = !pendingImages.length;
+    box.innerHTML = pendingImages.map((item, i) => `<div class="cx-pending-photo"><img src="${item.url}" alt=""><button onclick="CX.removePendingImage(${i})" title="取消这张">×</button></div>`).join('')
+      + (pendingImages.length ? `<button class="cx-pending-clear" onclick="CX.clearPendingImages()">全部取消</button>` : '');
+  }
+  function renderStickerGrid() {
+    const box = $('#cx-stk'); if (!box) return;
+    const list = stickerLists[stickerOwner] || [];
+    box.innerHTML = list.length ? list.map(p => `<div class="cx-stk-one" onclick="CX.sendSticker('${p.id}')"><img loading="lazy" src="${imageUrl(p.id)}" alt="">${stickerOwner === 'nor' ? `<button onclick="event.stopPropagation();CX.removeSticker('${p.id}')" title="从我的表情包移除">×</button>` : ''}</div>`).join('')
+      : `<div class="cx-set-l">${stickerOwner === 'nor' ? '你的表情包还没有内容' : '辞的表情包还没有内容；等他自己添加后会出现在这里'}</div>`;
+  }
+
   const CX = {
     async send() {
-      const ta = $('#cx-text'); const text = ta.value.trim(); if (!text) return;
-      const keep = ta.value;
-      ta.value = ''; autoGrow();
-      try { await sendPayload({ type: 'text', content: text }); } catch { ta.value = keep; autoGrow(); }
+      const ta = $('#cx-text'); const text = ta.value.trim();
+      if ((!text && !pendingImages.length) || sending) return;
+      sending = true; ta.disabled = true;
+      if (!pendingImages.length) {
+        const keep = ta.value; ta.value = ''; autoGrow();
+        try { await sendPayload({ type: 'text', content: text }); }
+        catch { ta.value = keep; autoGrow(); }
+      } else {
+        const batch = [...pendingImages];
+        try {
+          for (let i = 0; i < batch.length; i++) {
+            const item = batch[i];
+            hint(`发送图片 ${i + 1}/${batch.length}…`);
+            await sendPayload({
+              type: 'image', content: i === 0 ? text : '', client_message_id: item.clientID,
+              image_base64: await MW.fileToBase64(item.file), image_mime: item.file.type || 'image/jpeg'
+            });
+            const at = pendingImages.findIndex(x => x.clientID === item.clientID);
+            if (at !== -1) { URL.revokeObjectURL(pendingImages[at].url); pendingImages.splice(at, 1); renderPendingImages(); }
+            if (i === 0) { ta.value = ''; autoGrow(); }
+          }
+          hint('');
+        } catch { /* sendPayload 已显示原因；没发完的仍留在待发送区 */ }
+      }
+      ta.disabled = false; sending = false; ta.focus();
     },
     newline() {
       const ta = $('#cx-text'), s = ta.selectionStart, e = ta.selectionEnd;
@@ -626,32 +712,53 @@
       try { await sendPayload({ type: 'pat', content: pats[i] || '' }); } catch {}
     },
     async pickImage(input) {
-      const f = input.files && input.files[0]; input.value = '';
-      if (!f) return;
-      hint('发送中…');
-      try { await sendPayload({ type: 'image', image_base64: await MW.fileToBase64(f), image_mime: f.type || 'image/jpeg' }); hint(''); } catch {}
+      const files = [...(input.files || [])].filter(f => String(f.type || '').startsWith('image/'));
+      input.value = ''; if (!files.length) return;
+      const room = Math.max(0, 10 - pendingImages.length);
+      files.slice(0, room).forEach(file => pendingImages.push({ file, url: URL.createObjectURL(file), clientID: requestID() }));
+      renderPendingImages();
+      if (!room) hint('待发送区已经有 10 张；先取消几张或发送这一批');
+      else if (files.length > room) hint(`一次最多 10 张，这次留下了 ${room} 张`);
+      else hint('图片已放进待发送区，可以配文字后一起发');
+      setTimeout(() => hint(''), 2600);
     },
-    // 表情：上面一排 emoji 直接插进输入框；下面是她的表情包（相册里标了「表情包」的），点一下就发
+    removePendingImage(i) {
+      const item = pendingImages[i]; if (!item) return;
+      URL.revokeObjectURL(item.url); pendingImages.splice(i, 1); renderPendingImages();
+    },
+    clearPendingImages() { pendingImages.forEach(x => URL.revokeObjectURL(x.url)); pendingImages = []; renderPendingImages(); },
+    // 表情：两个人各自一库。棋子只管理自己的；辞通过 MCP 管理自己的。
     async emoji() {
       const set = $('#cx-set');
       if (!set.hidden && set.dataset.kind === 'emoji') { set.hidden = true; return; }
       set.dataset.kind = 'emoji'; set.hidden = false; set.classList.add('bottom');
       set.innerHTML = `<div class="cx-emo">${EMOJI.map(e => `<button onclick="CX.insert('${e}')">${e}</button>`).join('')}</div>
-        <div class="cx-set-l split"><span style="opacity:.65">我的表情包</span><label class="cx-file">+ 加一张<input type="file" accept="image/*" hidden onchange="CX.addSticker(this)"></label></div>
+        <div class="cx-stk-tabs"><button class="${stickerOwner === 'nor' ? 'on' : ''}" onclick="CX.showStickerOwner('nor')">我的</button><button class="${stickerOwner === 'cy' ? 'on' : ''}" onclick="CX.showStickerOwner('cy')">辞的</button></div>
+        <div class="cx-set-l split"><span id="cx-stk-label" style="opacity:.65">${stickerOwner === 'nor' ? '我的表情包' : '辞的表情包（由他自己管理）'}</span>${stickerOwner === 'nor' ? '<label class="cx-file">+ 批量添加<input type="file" accept="image/*" multiple hidden onchange="CX.addStickers(this)"></label>' : ''}</div>
         <div class="cx-stk" id="cx-stk"><div class="cx-set-l">…</div></div>`;
       try {
-        const list = (await rest('/api/album?limit=500')).filter(p => (p.tags || []).includes('表情包'));
-        $('#cx-stk').innerHTML = list.length ? list.map(p => `<img loading="lazy" src="${imageUrl(p.id)}" onclick="CX.sendSticker('${p.id}')" alt="">`).join('')
-          : '<div class="cx-set-l">还没有。点「加一张」，或者在相册里给图打「表情包」标签</div>';
+        stickerLists = await rest('/api/chat/stickers'); renderStickerGrid();
       } catch { $('#cx-stk').innerHTML = '<div class="cx-set-l">读不到相册</div>'; }
     },
+    showStickerOwner(owner) { stickerOwner = owner === 'cy' ? 'cy' : 'nor'; $('#cx-set').dataset.kind = ''; CX.emoji(); },
     insert(e) { const ta = $('#cx-text'); const s = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, s) + e + ta.value.slice(ta.selectionEnd ?? s); ta.selectionStart = ta.selectionEnd = s + e.length; autoGrow(); },
     async sendSticker(photoId) { $('#cx-set').hidden = true; try { await sendPayload({ type: 'image', photo_id: photoId, sticker: true }); } catch {} },
-    async addSticker(input) {
-      const f = input.files && input.files[0]; input.value = ''; if (!f) return;
-      hint('存表情包…');
-      try { await MW.uploadPhoto(f, { caption: '棋子的表情包', tags: ['表情包'] }); hint(''); $('#cx-set').dataset.kind = ''; CX.emoji(); }
-      catch (e) { hint('没存上：' + e.message); }
+    async addStickers(input) {
+      const files = [...(input.files || [])].filter(f => String(f.type || '').startsWith('image/')); input.value = ''; if (!files.length) return;
+      try {
+        for (let i = 0; i < files.length; i++) {
+          hint(`添加表情包 ${i + 1}/${files.length}…`);
+          await MW.uploadPhoto(files[i], { caption: '棋子的表情包', tags: ['棋子的表情包'], category: '表情包' });
+        }
+        hint(`加好了，共 ${files.length} 张`); stickerOwner = 'nor'; $('#cx-set').dataset.kind = ''; CX.emoji();
+      } catch (e) { hint('有表情包没存上：' + e.message); }
+    },
+    async removeSticker(id) {
+      try {
+        const r = await fetch(apiUrl('/api/chat/stickers/' + encodeURIComponent(id)), { method: 'DELETE', headers: { 'x-access-token': TOKEN } });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        stickerLists.nor = stickerLists.nor.filter(p => p.id !== id); renderStickerGrid(); hint('已从你的表情包移除');
+      } catch (e) { hint('没删掉：' + e.message); }
     },
     // 点辞的头像：看两个人的状态，改自己的（辞的只有他自己能改）
     statusSheet() {
@@ -688,6 +795,10 @@
         <input type="range" min="4" max="24" value="${c.radius}" oninput="CX.slide('radius',this.value)">
         <div class="cx-set-l">字号 <span id="cx-v-fontSize">${c.fontSize}</span>px</div>
         <input type="range" min="12" max="22" value="${c.fontSize}" oninput="CX.slide('fontSize',this.value)">
+        <div class="cx-set-row"><span>系统提示颜色</span><input type="color" value="${c.systemColor || t.time}" onchange="CX.set('systemColor',this.value)"></div>
+        <div class="cx-set-l">系统提示字号 <span id="cx-v-systemFontSize">${c.systemFontSize}</span>px</div>
+        <input type="range" min="9" max="20" value="${c.systemFontSize}" oninput="CX.slide('systemFontSize',this.value)">
+        <div class="cx-set-row"><span>显示 Claude 原话 💭</span><button class="cx-tg${c.showClaudeMirror ? ' on' : ''}" onclick="CX.set('showClaudeMirror',${!c.showClaudeMirror})"><i></i></button></div>
         <div class="cx-set-l">背景图</div>
         <label class="cx-file">选图片<input type="file" accept="image/*" hidden onchange="CX.bg(this)"></label>
         ${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','')">清除</span>` : ''}

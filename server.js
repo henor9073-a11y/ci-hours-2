@@ -339,6 +339,10 @@ app.get('/api/album/:id/original', (req, res) => {
 });
 app.delete('/api/album/:id', (req, res) => {
   try {
+    const meta = mw.album.getPhotoMeta(req.params.id);
+    if ((meta?.tags || []).includes('辞的表情包')) {
+      return res.status(403).json({ error: '辞的表情包由辞自己管理。' });
+    }
     const photo = mw.album.deletePhoto(req.params.id);
     if (!photo) return res.status(404).json({ error: '找不到这张照片' });
     res.json({ ok: true, deleted: photo });
@@ -512,6 +516,27 @@ app.get('/api/chat', (req, res) => {
     starred_for: ['nor', 'cy'].includes(req.query.starred_for) ? req.query.starred_for : ''
   }));
 });
+const NOR_STICKER_TAG = '棋子的表情包';
+const CY_STICKER_TAG = '辞的表情包';
+const LEGACY_STICKER_TAG = '表情包';
+app.get('/api/chat/stickers', (_, res) => {
+  const all = mw.album.listPhotos({ limit: 5000 });
+  res.json({
+    nor: all.filter(p => (p.tags || []).includes(NOR_STICKER_TAG)
+      || ((p.tags || []).includes(LEGACY_STICKER_TAG) && !(p.tags || []).includes(CY_STICKER_TAG))),
+    cy: all.filter(p => (p.tags || []).includes(CY_STICKER_TAG))
+  });
+});
+// 手机端只能把自己的表情包移出自己的库。辞的删除权只在 MCP sticker_delete。
+app.delete('/api/chat/stickers/:id', (req, res) => {
+  const p = mw.album.getPhotoMeta(req.params.id);
+  if (!p) return res.status(404).json({ error: '找不到这张表情包' });
+  const tags = p.tags || [];
+  const owns = tags.includes(NOR_STICKER_TAG)
+    || (tags.includes(LEGACY_STICKER_TAG) && !tags.includes(CY_STICKER_TAG));
+  if (!owns) return res.status(403).json({ error: '辞的表情包由辞自己添加和删除。' });
+  res.json(mw.album.removePhotoTags(req.params.id, [NOR_STICKER_TAG, LEGACY_STICKER_TAG]));
+});
 app.get('/api/chat/unread', (req, res) => res.json(mw.chat.unreadSummary(req.query.who === 'cy' ? 'cy' : 'nor')));
 app.post('/api/chat', async (req, res) => {
   // 棋子发消息走这里，不经过 MCP。网页上发的一律算棋子的——辞说话只能走 MCP 的 chat_reply，
@@ -519,6 +544,23 @@ app.post('/api/chat', async (req, res) => {
   try {
     const b = req.body || {};
     res.json(await mw.chat.sendMessage({ ...b, sender: 'nor', thinking: '', tools: [], voice_id: '' }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+// Claude 主窗口的 Stop hook 只把辞在 Claude 端显示的原话镜像进来。
+// 它是只读副本：不再投递给辞，也不进入木屋侧的每日总结/换窗统计。
+app.post('/api/chat/claude-mirror', async (req, res) => {
+  try {
+    const route = deliveryRoute(req);
+    if (!route.allowed) return res.status(409).json({ mirrored: false, blocked: true, reason: route.reason });
+    const b = req.body || {};
+    const content = String(b.content || '').trim();
+    if (!content) return res.status(400).json({ error: 'content 不能为空' });
+    const message = await mw.chat.sendMessage({
+      sender: 'cy', type: 'claude_mirror', content: content.slice(0, 30000),
+      source_device: 'claude_main_mirror', mirror_only: true,
+      mirror_key: String(b.mirror_key || ''), session_id: route.primary_session_id
+    });
+    res.json({ mirrored: true, message });
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // Apple Watch 只能上报预先定义好的动作，不能提交任意系统文字。

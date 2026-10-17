@@ -1112,6 +1112,20 @@ try {
     const sv = await tool('sticker_save', { id: img.id, note: '得意的时候用' });
     const list = await tool('get_stickers');
     assert.ok(list.some(x => x.id === sv.sticker.id && x.note === '得意的时候用'));
+    const split = await rest('/api/chat/stickers');
+    assert.ok(split.cy.some(x => x.id === sv.sticker.id), '辞收藏的图应该只进入辞的表情包库');
+    const forbidden = await fetch(`${base}/api/chat/stickers/${sv.sticker.id}?token=${TOKEN}`, { method: 'DELETE' });
+    assert.equal(forbidden.status, 403, '棋子不能删除辞的表情包');
+    const own = await (await fetch(`${base}/api/album?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: png, mime_type: 'image/png', caption: '棋子的表情包', tags: ['棋子的表情包'] })
+    })).json();
+    assert.ok((await rest('/api/chat/stickers')).nor.some(x => x.id === own.photo.id), '批量上传使用的标签应该进入棋子的库');
+    const ownRemoved = await fetch(`${base}/api/chat/stickers/${own.photo.id}?token=${TOKEN}`, { method: 'DELETE' });
+    assert.equal(ownRemoved.status, 200, '棋子可以把自己的表情包移出自己的库');
+    assert.ok(!(await rest('/api/chat/stickers')).nor.some(x => x.id === own.photo.id));
+    const albumForbidden = await fetch(`${base}/api/album/${sv.sticker.id}?token=${TOKEN}`, { method: 'DELETE' });
+    assert.equal(albumForbidden.status, 403, '不能从相册入口绕过辞的表情包权限');
     // 用收藏的表情包回：前端能拿到图
     const r = await tool('chat_reply', { content: '', photo_id: sv.sticker.id });
     assert.equal(r.type, 'image'); assert.equal(r.sticker, true);

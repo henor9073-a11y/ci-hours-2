@@ -289,10 +289,11 @@ body.chat-open > .header { display: none; }
 
 .cx-msgs { flex: 1; overflow-y: auto; padding: 12px 14px 8px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .cx-msgs::-webkit-scrollbar { width: 0; }
-.cx-more, .cx-day, .cx-pat, .cx-empty { text-align: center; font-size: 11px; color: var(--cx-time); letter-spacing: .5px; }
+.cx-more, .cx-day, .cx-empty { text-align: center; font-size: 11px; color: var(--cx-time); letter-spacing: .5px; }
 .cx-more { padding: 6px 0 10px; }
 .cx-day { margin: 12px 0 8px; }
-.cx-pat { font-style: italic; padding: 6px 0; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.cx-pat, .cx-system { text-align: center; font-size: var(--cx-system-font); color: var(--cx-system-color); letter-spacing: .5px; padding: 6px 0; }
+.cx-pat { font-style: italic; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 .cx-empty { padding: 60px 0; line-height: 1.8; font-size: 13px; }
 .cx-item { margin: 6px 0; border-radius: 12px; transition: background .4s; }
 .cx-item.flash { background: var(--cx-think-bg); }
@@ -364,7 +365,17 @@ body.chat-open > .header { display: none; }
 .cx-emo { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
 .cx-emo button { background: none; border: none; font-size: 22px; padding: 4px 0; cursor: pointer; border-radius: 6px; }
 .cx-stk { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.cx-stk img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; background: var(--cx-think-bg); cursor: pointer; }
+.cx-stk-one { position: relative; min-width: 0; cursor: pointer; }
+.cx-stk img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 8px; background: var(--cx-think-bg); display: block; }
+.cx-stk-one > button { position: absolute; top: -5px; right: -5px; width: 21px; height: 21px; border: 0; border-radius: 50%; background: rgba(70,55,64,.8); color: #fff; font-size: 15px; line-height: 19px; padding: 0; }
+.cx-stk-tabs { display: flex; gap: 6px; margin: 10px 0 2px; }
+.cx-stk-tabs button { flex: 1; border: 0; border-radius: 10px; padding: 7px 8px; background: var(--cx-think-bg); color: var(--cx-name); font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1.2; }
+.cx-stk-tabs button.on { background: var(--cx-accent); color: #fff; }
+.cx-pending-images { display: flex; gap: 7px; overflow-x: auto; padding: 7px 2px 3px; align-items: center; }
+.cx-pending-photo { position: relative; flex: 0 0 58px; height: 58px; }
+.cx-pending-photo img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 1px solid var(--cx-think-bd); }
+.cx-pending-photo button { position: absolute; right: -4px; top: -5px; width: 20px; height: 20px; border: 0; border-radius: 50%; color: #fff; background: rgba(70,55,64,.84); padding: 0; line-height: 18px; }
+.cx-pending-clear { flex: 0 0 auto; border: 0; border-radius: 9px; background: var(--cx-think-bg); color: var(--cx-name); padding: 7px 9px; font-family: inherit; font-size: 11px; font-weight: 500; line-height: 1.2; }
 .cx-viewer { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.88); display: flex; align-items: center; justify-content: center; }
 .cx-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
@@ -387,6 +398,10 @@ body.chat-open > .header { display: none; }
 .cx-quote.out { background: var(--cx-think-bg); border-radius: 8px; padding: 4px 8px 4px 9px; margin-bottom: 4px; }
 .cx-native { background: none; border: none; color: var(--cx-name); font-size: 13px; font-family: inherit; display: flex; align-items: center; gap: 6px; padding: 3px 2px; cursor: pointer; }
 .cx-native b { font-weight: 400; font-size: 15px; opacity: .7; }
+.cx-tool-event { padding-top: 7px; }
+.cx-mirror { margin: 2px auto; border: 0; border-radius: 999px; background: var(--cx-think-bg); color: var(--cx-system-color); font-family: inherit; font-size: var(--cx-system-font); font-weight: 500; line-height: 1.4; padding: 6px 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.cx-mirror b { font-weight: 400; opacity: .65; }
+.cx.hide-claude-mirror .cx-mirror-item { display: none; }
 .cx-sheet-wrap { position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,0); transition: background .22s; }
 .cx-sheet-wrap.in { background: rgba(0,0,0,.45); }
 .cx-sheet { position: absolute; left: 50%; bottom: 0; transform: translate(-50%, 100%); width: 100%; max-width: 430px; height: 52dvh; max-height: 88dvh; background: var(--card); color: var(--text); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; transition: transform .22s ease, height .22s ease; box-shadow: 0 -6px 30px rgba(0,0,0,.15); }
