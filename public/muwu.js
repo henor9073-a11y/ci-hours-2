@@ -468,15 +468,79 @@ async function loadToolsCard() {
 async function openTools() {
   sheetLoading('工具');
   try {
-    const t = await rest('/api/tools/status?fresh=1'); toolsCache = t;
+    const [t, revisions] = await Promise.all([
+      rest('/api/tools/status?fresh=1'),
+      rest('/api/memory-revisions?limit=1').catch(() => ({ counts: {} }))
+    ]); toolsCache = t;
     const groups = {};
     t.items.forEach(x => (groups[x.group] = groups[x.group] || []).push(x));
-    sheetSet(Object.entries(groups).map(([g, items]) => `<div class="section-title">${esc(g)}</div>` + items.map(x => `<div class="card tool-row">
+    const counts = revisions.counts || {};
+    sheetSet(`<div class="card tap" onclick="openMemoryRevisions()"><div style="display:flex;justify-content:space-between;gap:10px"><div><div class="card-title">记忆修改记录</div><div class="card-desc">查看修改前后、审议结果和撤销申请</div></div><span class="tag plain">${counts.open || 0} 待决定</span></div>
+      <div class="card-desc" style="margin-top:8px">已生效 ${counts.applied || 0} · 已否决 ${counts.rejected || 0} · 已撤回 ${counts.withdrawn || 0}</div></div>` +
+      Object.entries(groups).map(([g, items]) => `<div class="section-title">${esc(g)}</div>` + items.map(x => `<div class="card tool-row">
         <span class="tool-dot ${x.state}"></span>
         <div style="flex:1;min-width:0"><div class="card-title" style="font-size:14px">${esc(x.name)}</div><div class="card-desc">${esc(x.detail || '')}</div></div>
         <span class="tag plain">${x.state === 'on' ? '在线' : x.state === 'off' ? '断了' : x.state === 'unset' ? '没配' : '看不到'}</span></div>`).join('')).join('') +
       `<div class="card-desc" style="margin:14px 4px 0">探测时间 ${esc(fmtTime(t.checked_at))}。"看不到"是指跑在 GPD 上、只有它主动报到服务器才知道的那些（苏醒三层在设置页看）。</div>`);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+const MEMORY_REVISION_STATUS = {
+  pending: '等辞决定', discussing: '商议中', applied: '已生效', rejected: '已否决', withdrawn: '已撤回'
+};
+function memoryRevisionStatus(status) { return MEMORY_REVISION_STATUS[status] || status || '未知'; }
+function memoryRevisionExcerpt(text, n = 90) {
+  const value = oneLine(text || '');
+  return value.length > n ? value.slice(0, n) + '…' : value;
+}
+async function openMemoryRevisions(status = '') {
+  sheetLoading('记忆修改记录');
+  try {
+    const data = await rest(`/api/memory-revisions?limit=300${status ? `&status=${encodeURIComponent(status)}` : ''}`);
+    const p = data.proposals || [];
+    const tabs = `<div class="chip-row" style="margin:6px 0 10px">
+      ${[['','全部'],['open','待决定'],['applied','已生效'],['rejected','已否决'],['withdrawn','已撤回']].map(([key, label]) => `<div class="chip${status === key ? ' on' : ''}" onclick="reopenMemoryRevisions('${key}')">${label}</div>`).join('')}</div>`;
+    const list = p.length ? p.map(x => `<div class="card tap" onclick="openMemoryRevision('${x.id}')">
+      <div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${x.kind === 'rollback' ? '撤销建议' : '修改建议'}</div><span class="tag plain">${esc(memoryRevisionStatus(x.status))}</span></div>
+      <div class="card-desc" style="margin-top:8px">原文：${esc(memoryRevisionExcerpt(x.before?.text))}</div>
+      <div class="card-desc" style="margin-top:4px;color:var(--text)">建议：${esc(memoryRevisionExcerpt(x.proposed_text))}</div>
+      <div class="card-desc" style="margin-top:6px">${esc(fmtTime(x.updated_at))}${x.stale ? ' · 原记忆后来变过，需要重新提议' : ''}</div></div>`).join('') : '<div class="empty">这个分类还没有记录</div>';
+    sheetSet(tabs + list);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+function reopenMemoryRevisions(status) { sheetDrop(); openMemoryRevisions(status); }
+async function openMemoryRevision(id) {
+  sheetLoading('修改详情');
+  try {
+    const p = await rest(`/api/memory-revisions/${encodeURIComponent(id)}`);
+    const open = p.status === 'pending' || p.status === 'discussing';
+    const history = (p.history || []).map(x => `<div class="entry"><div class="entry-head"><span>${esc(x.actor === 'cy' ? '辞' : '棋子')}</span><span>${esc(fmtTime(x.at))}</span></div><div class="entry-body" style="font-size:13px">${esc(x.action)}${x.note ? ` · ${esc(x.note)}` : ''}</div></div>`).join('');
+    sheetSet(`<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><div class="card-title">${p.kind === 'rollback' ? '撤销建议' : '记忆修改'}</div><span class="tag plain">${esc(memoryRevisionStatus(p.status))}</span></div>
+      ${p.stale ? '<div class="err" style="margin-top:10px">原记忆在审议期间变过了。这份提案不能直接套用，请撤回后从最新版重新提出。</div>' : ''}
+      <div class="section-title">修改前</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.before?.text || '')}</div>
+      <div class="section-title">建议版本</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.proposed_text || '')}</div>
+      ${p.reason ? `<div class="section-title">理由</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.reason)}</div>` : ''}
+      ${p.decision_note ? `<div class="section-title">辞的说明</div><div class="entry-body" style="white-space:pre-wrap">${esc(p.decision_note)}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        ${open ? `<button class="btn ghost" onclick="withdrawMemoryRevision('${p.id}')">撤回这份建议</button>` : ''}
+        ${p.status === 'applied' ? `<button class="btn ghost" onclick="openRollbackMemoryRevision('${p.id}')">建议撤销这次修改</button>` : ''}
+      </div><div id="mrd-msg" class="card-desc" style="margin-top:8px"></div></div>
+      ${history ? `<div class="section-title">审议过程</div>${history}` : ''}`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function withdrawMemoryRevision(id) {
+  const n = byId('mrd-msg');
+  try { if (n) n.textContent = '正在撤回…'; await postJSON(`/api/memory-revisions/${id}/withdraw`, { note: '棋子从木屋撤回' }); sheetDrop(); openMemoryRevision(id); }
+  catch (e) { if (n) n.textContent = `没撤回：${e.message}`; }
+}
+function openRollbackMemoryRevision(id) {
+  openSheet('建议撤销修改', `<div class="card"><div class="card-desc">这也只会生成一份新提案，不会直接改记忆。辞仍然可以同意、否决或重新写。</div>
+    <textarea id="mrr-reason" rows="4" maxlength="4000" placeholder="为什么想撤销这次修改？" style="margin-top:10px"></textarea>
+    <button class="btn" style="margin-top:10px" onclick="submitRollbackMemoryRevision('${id}')">交给辞决定</button><div id="mrr-msg" class="card-desc" style="margin-top:8px"></div></div>`);
+}
+async function submitRollbackMemoryRevision(id) {
+  const n = byId('mrr-msg');
+  try { if (n) n.textContent = '正在提交…'; const p = await postJSON(`/api/memory-revisions/${id}/rollback`, { reason: byId('mrr-reason').value.trim() }); sheetSet(`<div class="card"><div class="card-title">撤销建议已经交给辞</div><div class="card-desc" style="margin-top:8px">新提案 ${esc(p.id)}。当前生效版本暂时不变。</div></div>`); }
+  catch (e) { if (n) n.textContent = `没提交上：${e.message}`; }
 }
 async function openFishing() {
   sheetLoading('钓鱼');
@@ -620,7 +684,10 @@ async function openHealth() {
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
 }
 async function postJSON(path, body, method = 'POST') {
-  return rest(path, { method, headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN }, body: JSON.stringify(body || {}) });
+  const response = await fetch(MW.apiUrl(path), { method, headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN }, body: JSON.stringify(body || {}) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
 }
 
 // ---------- 共享随机转盘 ----------
@@ -1605,12 +1672,13 @@ function commitUI() { const t = MW.loadTheme(); Object.assign(t.ui, uiDraft); ui
 function resetAll() { localStorage.removeItem('muwen-theme'); MW.applyTheme(); loadSettings(); }
 
 applyAvatars(); applyIcons(); applyHomeOrder(); loadHome(); CX.init();
-// 从木纹跳过来：#search 直接到搜索页；#chatlog=2026-09-12 直接打开那天的聊天记录
+// 从木纹跳过来：搜索、某天聊天记录，或记忆修改记录。
 (function () {
   const h = location.hash.slice(1); if (!h) return;
   history.replaceState(null, '', location.pathname + location.search);
   if (h === 'search') switchPage('search');
   else if (h.startsWith('chatlog=')) { switchPage('search'); setTimeout(() => openRingDay(h.slice(8)), 50); }
+  else if (h === 'memory-revisions') { switchPage('life'); setTimeout(() => openMemoryRevisions(), 50); }
 })();
 window.switchPage = switchPage; window.closeSheet = closeSheet;
 

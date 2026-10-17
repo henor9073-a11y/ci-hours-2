@@ -1,5 +1,5 @@
 // 木纹前端逻辑。数据全走 MW.mcp（/mcp JSON-RPC）和少量现成 REST。
-const { mcp, rest, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBetween, WEEK, ANCHORS } = MW;
+const { mcp, rest, apiUrl, imageUrl, esc, oneLine, fmtTime, fmtDate, today, moon, daysBetween, WEEK, ANCHORS } = MW;
 MW.applyTheme();
 
 // ---------- 通用 ----------
@@ -90,6 +90,16 @@ const sheetTop = () => sheetStack[sheetStack.length - 1];
 // 异步读完再填：用户这期间已经点返回或者点进别处了，就别往不属于它的那一层里写
 function sheetSetIf(me, html) { if (sheetTop() === me) sheetSet(html); return sheetTop() === me; }
 function sheetSet(html) { const s = sheetTop(); if (s) s.node.innerHTML = html; }
+async function postJSON(path, body, method = 'POST') {
+  const response = await fetch(apiUrl(path), {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN },
+    body: JSON.stringify(body || {})
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
 // 用户最近一次自己动手（滑/点/按键）的时间：延迟滚动定位之前看一眼，别把正在翻的人拽回去
 let sheetTouchedAt = 0;
 ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(ev => document.getElementById('sheet').addEventListener(ev, () => { sheetTouchedAt = Date.now(); }, { passive: true }));
@@ -405,7 +415,8 @@ async function openGrain(id) {
       ${g.pinned ? '<span class="tag">📌 已 pin</span>' : ''}</div>
       <div class="entry-body">${esc(g.text)}</div>
       ${(g.families || []).length ? `<div style="margin-top:6px">${g.families.map(f => `<span class="tag" onclick="openFamily('${esc(f)}')">${esc(f)}</span>`).join('')}</div>` : ''}
-      <div class="entry-head" style="margin-top:10px">访问 ${g.access_count || 0} 次 · 更新 ${esc(fmtDate(g.updated_at))}${g.source_id ? ' · 有溯源' : ''}</div></div>`;
+      <div class="entry-head" style="margin-top:10px">访问 ${g.access_count || 0} 次 · 更新 ${esc(fmtDate(g.updated_at))}${g.source_id ? ' · 有溯源' : ''}</div>
+      ${g.status !== 'archived' ? `<div style="margin-top:12px"><button class="btn ghost" onclick="openMemoryRevisionEditor('${g.id}')">提出修改建议</button></div>` : ''}</div>`;
     if (g.source_id) h += `<div class="card tap" onclick="openRing('${g.source_id}')"><div class="card-title">↩ 看它的年轮原文</div><div class="card-desc">${esc(g.source_id)}</div></div>`;
     if ((r.counterevidence || []).length) {
       h += '<div class="section-title">反证 / 修复</div>' + r.counterevidence.map(c => `<div class="entry" onclick="openGrain('${c.grain.id}')"><div class="entry-head">${esc(c.relation)}</div><div class="entry-body clamp">${esc(c.grain.text)}</div></div>`).join('');
@@ -415,6 +426,31 @@ async function openGrain(id) {
     }
     sheetSet(h);
   } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function openMemoryRevisionEditor(id) {
+  sheetLoading('修改记忆');
+  try {
+    const g = await rest(`/api/grains/${encodeURIComponent(id)}`);
+    sheetSet(`<div class="card"><div class="card-title">修改前</div><div class="entry-body" style="white-space:pre-wrap;margin-top:8px">${esc(g.text)}</div></div>
+      <div class="card"><label class="card-title" for="mr-after">建议改成</label>
+        <textarea id="mr-after" rows="9" maxlength="20000" style="margin-top:8px">${esc(g.text)}</textarea>
+        <label class="card-title" for="mr-reason" style="display:block;margin-top:12px">为什么要改</label>
+        <textarea id="mr-reason" rows="3" maxlength="4000" placeholder="哪一句不准确、希望保留什么……"></textarea>
+        <div class="card-desc" style="margin-top:8px">这里只会生成提案并叫辞来看。辞同意后才会替换；旧版本会自动归档，不会被抹掉。</div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="submitMemoryRevision('${g.id}')">提交给辞</button><button class="btn ghost" onclick="closeSheet()">取消</button></div>
+        <div id="mr-msg" class="card-desc" style="margin-top:8px"></div></div>`);
+  } catch (e) { sheetSet(`<div class="err">${esc(e.message)}</div>`); }
+}
+async function submitMemoryRevision(id) {
+  const message = byId('mr-msg');
+  try {
+    const proposed_text = byId('mr-after').value.trim();
+    const reason = byId('mr-reason').value.trim();
+    if (message) message.textContent = '正在提交…';
+    const p = await postJSON('/api/memory-revisions', { grain_id: id, proposed_text, reason });
+    sheetSet(`<div class="card"><div class="card-title">已经交给辞了</div><div class="card-desc" style="margin-top:8px">提案 ${esc(p.id)}。正式记忆现在还没有改变；辞可以同意、否决，或提出他的版本。</div>
+      <button class="btn ghost" style="margin-top:12px" onclick="location.href='muwu#memory-revisions'">去木屋看修改记录</button></div>`);
+  } catch (e) { if (message) message.textContent = `没提交上：${e.message}`; }
 }
 async function openFamilies() {
   sheetLoading('家族');

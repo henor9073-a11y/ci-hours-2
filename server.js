@@ -235,6 +235,58 @@ app.get('/api/grains/:id', (req, res) => {
   if (!g) return res.status(404).json({ error: '找不到' });
   res.json({ ...g, links: mw.grains.getLinks(g.id) });
 });
+// 网页不能直接改正式记忆，只能提出版本化修改。正式 apply 只开放给辞的 MCP 工具。
+app.get('/api/memory-revisions', (req, res) => {
+  res.json({
+    counts: mw.memoryRevisions.counts(),
+    proposals: mw.memoryRevisions.listProposals({ status: req.query.status || '', limit: Number(req.query.limit) || 200 })
+  });
+});
+app.get('/api/memory-revisions/:id', (req, res) => {
+  const proposal = mw.memoryRevisions.getProposal(req.params.id);
+  if (!proposal) return res.status(404).json({ error: '找不到这份修改提案' });
+  res.json(proposal);
+});
+app.post('/api/memory-revisions', async (req, res) => {
+  try {
+    const proposal = mw.memoryRevisions.createProposal({ ...(req.body || {}), actor: 'nor' });
+    res.json(proposal);
+    await mw.chat.sendSystemEvent(
+      `棋子提出了一份记忆修改建议（${proposal.id}）。`,
+      'memory_revision_proposed',
+      {
+        deliverToCy: true,
+        deliveryKey: `memory_revision:${proposal.id}`,
+        deliveryText: `棋子建议修改一条记忆。提案 id=${proposal.id}。请用 memory_revision_get 查看修改前后和理由，再用 memory_revision_decide 同意、否决或提出你的版本。`,
+        sourceDevice: 'memory_revision'
+      }
+    );
+  } catch (e) { if (!res.headersSent) res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/memory-revisions/:id/update', (req, res) => {
+  try { res.json(mw.memoryRevisions.updateProposal(req.params.id, { ...(req.body || {}), actor: 'nor' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/memory-revisions/:id/withdraw', (req, res) => {
+  try { res.json(mw.memoryRevisions.withdrawProposal(req.params.id, { actor: 'nor', note: (req.body || {}).note || '' })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/memory-revisions/:id/rollback', async (req, res) => {
+  try {
+    const proposal = mw.memoryRevisions.requestRollback(req.params.id, { actor: 'nor', reason: (req.body || {}).reason || '' });
+    res.json(proposal);
+    await mw.chat.sendSystemEvent(
+      `棋子建议撤销一次已经生效的记忆修改（${proposal.id}）。`,
+      'memory_revision_rollback',
+      {
+        deliverToCy: true,
+        deliveryKey: `memory_revision:${proposal.id}`,
+        deliveryText: `棋子建议撤销一次记忆修改。提案 id=${proposal.id}。请用 memory_revision_get 查看，再用 memory_revision_decide 决定。`,
+        sourceDevice: 'memory_revision'
+      }
+    );
+  } catch (e) { if (!res.headersSent) res.status(400).json({ error: String(e.message || e) }); }
+});
 app.get('/api/profiles', (_, res) => res.json({ cy: mw.profiles.getProfile('cy'), nor: mw.profiles.getProfile('nor') }));
 app.get('/api/profiles/:owner/:field/history', (req, res) => {
   try { res.json(mw.profiles.getProfileHistory(req.params.owner, req.params.field)); }
@@ -923,6 +975,28 @@ app.get('/api/history/search', (req, res) => res.json(mw.history.search({
   query: req.query.q, source: req.query.source,
   limit: Math.min(Number(req.query.limit) || 80, 200), skip: Number(req.query.skip) || 0
 })));
+// 换窗、每日总结、自动记忆都读这个同一入口：木屋 + Claude，永远不混入婴儿房。
+app.get('/api/history/main-context', (req, res) => {
+  try {
+    res.json(mw.history.mainContext({
+      hours: Number(req.query.hours) || 22,
+      recent_hours: Number(req.query.recent_hours) || 2,
+      max_messages: Math.min(Number(req.query.max_messages) || 4000, 10000),
+      max_chars: Math.min(Number(req.query.max_chars) || 500000, 1000000)
+    }));
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/history/export', (req, res) => {
+  try {
+    const exported = mw.history.exportDay({ date: req.query.date, source: req.query.source || 'main' });
+    if (req.query.download === '1') {
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.set('Content-Disposition', `attachment; filename="muwu-main-${exported.date}.txt"`);
+      return res.send(exported.content);
+    }
+    res.json(exported);
+  } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 // ---- 原始记录：网页直接粘贴导入 + 关键词搜索 ----
 app.get('/api/transcripts', (req, res) => {
   const q = (req.query.q || '').trim();

@@ -63,7 +63,7 @@ function renderRingHome(recentHtml) {
     body = `<div class="rs-entry-title">查找聊天内容</div>
       <div class="rs-entry">
         <span onclick="openRingCalendar()">日期</span>
-        <span onclick="openRingDay(MW.today())">今天</span>
+        <span onclick="openMainDay(MW.today())">今天</span>
         <span onclick="openRingList()">按条目</span>
       </div>
       <div class="section-title">最近聊过的日子</div>
@@ -73,16 +73,16 @@ function renderRingHome(recentHtml) {
 }
 async function loadRecentDays(me) {
   try {
-    const cd = await rest('/api/rings/chat-dates');
+    const cd = await rest('/api/history/dates');
     const days = Object.keys(cd.dates).sort().reverse().slice(0, 10);
-    const html = days.length ? days.map(ds => `<div class="entry rs-day" onclick="openRingDay('${ds}')">
-        <span>${dayTitle(ds)}</span><span>${cd.dates[ds].count} 段 · ${fmtLen(cd.dates[ds].chars)}</span></div>`).join('')
+    const html = days.length ? days.map(ds => { const count = (cd.dates[ds].muwu || 0) + (cd.dates[ds].claude || 0); return `<div class="entry rs-day" onclick="openMainDay('${ds}')">
+        <span>${dayTitle(ds)}</span><span>${count} 条 · 木屋 + Claude</span></div>`; }).join('')
       : '<div class="empty">还没有聊天记录</div>';
     if (sheetTop() === me && !rsQuery) renderRingHome(html);
   } catch (e) { if (sheetTop() === me && !rsQuery) renderRingHome(`<div class="err">${esc(e.message)}</div>`); }
 }
 function hitRow(h, i) {
-  const who = h.speaker || '';
+  const who = h.speaker || h.sender || '';
   const name = who ? WHO[who] : (h.window_name || '记录');
   // 微信的做法：关键词尽量靠前，前面只留一小截
   let before = oneLine(h.before);
@@ -101,7 +101,7 @@ async function ringSearch(q, more) {
   if (!q) { renderRingHome(); loadRecentDays(me); return; }
   rsBusy = true; renderRingHome();
   try {
-    const r = await rest(`/api/rings/search?q=${encodeURIComponent(q)}&skip=${rsHits.length}&limit=60`);
+    const r = await rest(`/api/history/search?q=${encodeURIComponent(q)}&skip=${rsHits.length}&limit=60`);
     if (rsQuery !== q) return;
     rsHits = rsHits.concat(r.hits); rsTotal = r.total;
   } catch (e) { rsErr = e.message; }
@@ -110,7 +110,7 @@ async function ringSearch(q, more) {
 }
 function openRingHit(i) {
   const h = rsHits[i]; if (!h) return;
-  openRingDay(h.date, { ring: h.ring_id, offset: h.offset, kw: rsQuery });
+  openMainDay(h.date, { id: h.target_id || h.id, kw: rsQuery });
 }
 
 // 按日期查找：从第一条记录那个月一直排到这个月，竖着滚；有记录的日子是深色能点，没有的灰掉
@@ -118,7 +118,7 @@ async function openRingCalendar() {
   sheetLoading('按日期查找');
   const me = sheetTop();
   try {
-    const cd = await rest('/api/rings/chat-dates');
+    const cd = await rest('/api/history/dates');
     if (!cd.first) return sheetSetIf(me, '<div class="empty">还没有聊天记录</div>');
     const t = today();
     let y = +cd.first.slice(0, 4), mo = +cd.first.slice(5, 7);
@@ -134,7 +134,8 @@ async function openRingCalendar() {
         const ds = `${ym}-${String(d).padStart(2, '0')}`;
         if (ds > t) break; // 跟微信一样排到今天为止
         const info = cd.dates[ds];
-        h += `<span class="rc-d${info ? ' has' : ''}${ds === t ? ' today' : ''}"${info ? ` onclick="openRingDay('${ds}')" title="${info.count} 段 · ${fmtLen(info.chars)}"` : ''}><b>${d}</b>${ds === t ? '<i>今天</i>' : ''}</span>`;
+        const count = info ? (info.muwu || 0) + (info.claude || 0) : 0;
+        h += `<span class="rc-d${count ? ' has' : ''}${ds === t ? ' today' : ''}"${count ? ` onclick="openMainDay('${ds}')" title="${count} 条 · 木屋 + Claude"` : ''}><b>${d}</b>${ds === t ? '<i>今天</i>' : ''}</span>`;
       }
       h += '</div>';
       first = false; if (++mo > 12) { mo = 1; y++; }
@@ -146,7 +147,45 @@ async function openRingCalendar() {
   } catch (e) { sheetSetIf(me, `<div class="err">${esc(e.message)}</div>`); }
 }
 
-// 某一天的完整对话，气泡
+// 成年人主聊天日视图：木屋和 Claude 按时间混排；婴儿房永远不在这里。
+async function openMainDay(date, target) {
+  sheetLoading(dayTitle(date));
+  const me = sheetTop();
+  try {
+    if (!ringPrefs) ringPrefs = await MW.loadPrefs().catch(() => ({}));
+    const d = await rest('/api/history/day?date=' + encodeURIComponent(date));
+    if (!sheetSetIf(me, renderMainDay(d, target))) return;
+    const t = byId('rv-target');
+    if (t) setTimeout(() => { if (sheetTop() === me) t.scrollIntoView({ block: 'center' }); }, 60);
+  } catch (e) { sheetSetIf(me, `<div class="err">${esc(e.message)}</div>`); }
+}
+function reopenMainDay(date) { sheetDrop(); openMainDay(date); }
+function renderMainDay(d, target) {
+  let body = '', lastSource = '';
+  const visible = (d.messages || []).filter(m => m.sender === 'nor' || m.sender === 'cy');
+  for (const m of visible) {
+    const source = m.source === 'muwu' ? '木屋' : `Claude${m.window_name ? ` · ${m.window_name}` : ''}`;
+    if (source !== lastSource) { body += `<div class="rv-sep"><span>${esc(source)}</span></div>`; lastSource = source; }
+    const hit = target && target.id === m.id;
+    body += `<div class="rv-time">${esc(m.time || '')}</div><div class="rv-row${m.sender === 'nor' ? ' me' : ''}"${hit ? ' id="rv-target"' : ''}>${ringAvatar(m.sender)}<div class="rv-col${hit ? ' target' : ''}"><div class="rv-bubble">${hit ? highlight(m.text, target.kw) : esc(m.text)}</div></div></div>`;
+  }
+  const exportButton = `<div class="card tap" onclick="downloadMainDay('${d.date}')"><div class="card-title">导出这一天的原始聊天</div><div class="card-desc">木屋 + Claude，保留时间、窗口和说话人；不含婴儿房</div></div>`;
+  return exportButton + (body ? `<div class="rv-list">${body}</div>` : '<div class="empty">这天没有主聊天记录</div>') + mainDayNav(d);
+}
+function downloadMainDay(date) {
+  const a = document.createElement('a');
+  a.href = MW.apiUrl(`/api/history/export?date=${encodeURIComponent(date)}&download=1`);
+  a.download = `木屋主聊天-${date}.txt`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function mainDayNav(d) {
+  return `<div class="rv-nav">
+    ${d.prev_date ? `<button class="btn ghost" onclick="reopenMainDay('${d.prev_date}')">‹ ${+d.prev_date.slice(5, 7)}月${+d.prev_date.slice(8, 10)}日</button>` : '<span></span>'}
+    ${d.next_date ? `<button class="btn ghost" onclick="reopenMainDay('${d.next_date}')">${+d.next_date.slice(5, 7)}月${+d.next_date.slice(8, 10)}日 ›</button>` : '<span></span>'}
+  </div>`;
+}
+
+// Claude 原始条目视图（从“按条目”或具体年轮溯源进入），保留 thinking / 工具折叠。
 async function openRingDay(date, target) {
   sheetLoading(dayTitle(date));
   const me = sheetTop();

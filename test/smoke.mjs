@@ -104,7 +104,7 @@ try {
   await step('tools/list 以醒来流程开头，旧工具还在', async () => {
     const j = await rpc('tools/list', {});
     const names = j.result.tools.map(x => x.name);
-    assert.deepEqual(names.slice(0, 6), ['get_wake_packet', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
+    assert.deepEqual(names.slice(0, 7), ['get_wake_packet', 'get_main_conversation', 'get_summary', 'get_calendar', 'get_handover', 'set_handover', 'get_active_memories']);
     for (const n of ['add_grain', 'recall', 'auto_recall', 'dream', 'search_all', 'save_photo', 'save_claude_image', 'photo_recall', 'analyze_photo', 'add_mood', 'get_memory', 'add_transcript', 'get_state', 'speak', 'add_schedule']) assert.ok(names.includes(n), n);
     assert.equal(new Set(names).size, names.length, '工具名有重复');
   });

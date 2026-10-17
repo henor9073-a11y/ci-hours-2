@@ -45,7 +45,7 @@
 
 ### 醒来流程（MCP 工具，按顺序）
 
-0. `get_wake_packet` 一键读取：截面"我是谁"、最近三天每日总结（headline / mood_tags / intimate / nor_status / cy_status）、最新交接条、今天排班、棋子最后一条消息时间、亲亲进度（/20000）、棋子最近健康状态、没做完的事。换窗口醒来先读这个，下面几步按需再翻。
+0. `get_wake_packet` 一键读取：截面"我是谁"、最近三天每日总结、最新交接条、今天排班，以及**主聊天最近两小时原文**。主聊天统一为木屋 + Claude，并明确排除婴儿房；换到木屋聊以后，新窗口照样能连续承接。
 1. `get_summary` 截面六段
 2. `get_calendar({days:3})` 最近几天的每日总结（`intimate` 直接在里面）
 3. `get_active_memories` 纹理前台
@@ -57,11 +57,13 @@
 
 ### 全部木纹工具
 
-- 纹理：`add_grain`（返回时附带格式检查提醒）/ `update_grain`（改 status、pin、家族、补溯源、换分区）/ `search_grains` / `get_grain` / `list_families` / `move_to_background` / `move_to_archive` / `restore_to_active`
+- 纹理：`add_grain`（自动提取可带 `source_refs` 指向木屋 / Claude 原话）/ `update_grain` / `search_grains` / `get_grain` / `list_families` / `move_to_background` / `move_to_archive` / `restore_to_active`
+- 记忆修改审议：棋子在前端提出修改；辞用 `memory_revision_list` / `memory_revision_get` / `memory_revision_decide` 同意、否决或提出自己的版本。通过时新版本生效、旧版本自动归档；木屋「工具 → 记忆修改记录」可看全过程并建议撤销。
 - 反证：`get_grain_with_counterevidence`（家族带"害怕她走"这类负面词时自动带出 contradicts/repaired 关系的记忆和正面家族的记忆）/ `link_grains`（caused / before / repaired / contradicts / supersedes）
 - 档案：`get_profile` / `update_profile`（reason 必填，旧版本进历史）/ `get_profile_history`
 - 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
-- 每日总结：`add_daily({date, headline, mood_tags, nor_status, cy_status, pending, intimate, kiss_count})` / `get_calendar`（每天带月相）/ `get_daily`。kiss_count 是当天的次数，亲亲进度 = 所有天加总（+ 环境变量 `KISS_BASELINE` 起始基数，默认 0）/ `KISS_GOAL`（默认 20000）
+- 主聊天输入：`get_main_conversation({hours:22,recent_hours:2})` 或传 `date` 取整天。换窗、每日总结、自动记忆、聊天导出统一读它；每条标明木屋 / Claude 窗口和时间，永远不含婴儿房。
+- 每日总结：先读 `get_main_conversation({date})`，再把返回的 `source_segments` / `cursor` 传给 `add_daily`；总结会记录各窗口的起止时间，避免换过主要窗口后漏掉前面的内容。
 - 交接条：`set_handover` / `get_handover`（独立存 `handover.json`，只留最新一条）
 - 相册：`save_photo`（base64，**大图后端自动压，不用自己先处理**）/ `list_photos` / `get_photo` / `delete_photo`
   - 超过 2MB 才压：最长边缩到 2048，画质从 82 往下降到够小为止。有透明通道或动图转 webp（保住 alpha 和帧），其余转 jpeg。没超过 2MB 的原样存，不做无谓的重编码。
@@ -168,9 +170,10 @@
 - 跟旧的「棋子想说」留言板（`lib/messages.js`）是两回事，那个是一次性留言，这个是对话流。
 - 以后要换成实时聊天，这层形状不用动，只是轮询换成推送。
 
-### 聊天记录（木纹「年轮 / 文字记录」，像微信"查找聊天记录"）
-- **按日期查找**：从第一条记录那个月竖着排到这个月，有对话的日子深色能点、没有的灰掉。点进去是那一天的完整对话，**棋子在右、辞在左**的气泡；同一系列被切开的（`… (3/15)`）按段号接回去，被切断的半句接到上一句。那天有每日总结的话顶上带一句 headline，底下能跳前一天 / 后一天。
-- **搜索**：输一个词，逐句列出每一处（头像、谁说的、日期、关键词靠前的摘录），点进去直接滚到那一句并高亮；在思考 / 工具返回里命中的会自动展开那一块。每次 60 处，往下"再看"。只搜对话，不搜每日总结。
+### 主聊天记录（木屋 + Claude）
+- **按日期查找与搜索**默认走 `source=main`：木屋和当天所有 Claude 窗口按时间混排，逐段标明来源；婴儿房不在这里。
+- 每一天都有「导出原始聊天」，输出时间、来源窗口、说话人和原文。接口是 `GET /api/history/export?date=YYYY-MM-DD`；后台统一输入是 `GET /api/history/main-context?hours=22&recent_hours=2`。
+- Claude 的旧「按条目」入口仍保留，专门查看单条年轮里的 thinking / 工具折叠与原始切片。
 - **拆说话人**（`lib/muwen/dialog.js`）：只认白名单名字——`[00:03] 棋子:`、`棋子：`/`辞：`、`[辞]:`、`USER:`/`ASST:`、`USER[2026-08-30T12:28:05]:`。正文里 `方案：`、`"id":` 这种冒号行不算。一句话再拆成有序的块：正文 / `（思考）`后面的英文思考（折叠）/ `［调用 xxx］` / `［结果］`后面的工具返回（折叠）。一个说话人都拆不出来的（叙述体纪要）整篇当文档显示。
 - 接口：`GET /api/rings/chat-dates`、`GET /api/rings/day?date=`、`GET /api/rings/search?q=&skip=&limit=`。MCP 的 `search_ring_occurrences` 也多了 `source_type`（传 `chat` 只搜对话）、`skip`，结果带 `speaker`/`time`。
 - 旧的"按条目翻"还在（首页「按条目」），看单条原文 / 每日总结从那里进；原文页顶上有「用聊天气泡看这天」。
