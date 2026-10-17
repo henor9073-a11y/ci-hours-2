@@ -8,8 +8,11 @@ const HOOK_DIR = path.join(os.homedir(), '.claude', 'hooks');
 const LOG = path.join(HOOK_DIR, 'recall-debug.log');
 const PENDING_DIR = path.join(HOOK_DIR, 'photo-recall-pending');
 const RECENT_FILE = path.join(HOOK_DIR, 'photo-recall-recent.json');
+const SESSION_RECENT_FILE = path.join(HOOK_DIR, 'photo-recall-session-recent.json');
 const LOG_MAX = 2 * 1024 * 1024;
 const RECENT_MS = 30 * 60 * 1000;
+const SESSION_COOLDOWN_MS = 15 * 60 * 1000;
+const PHOTO_EXPLICIT_RE = /照片|图片|相册|截图|影像|合照|自拍|找.{0,5}(?:照片|图片|图)|看.{0,4}(?:照片|图片|图)|长什么样|什么样子/;
 
 function log(message) {
   try {
@@ -38,13 +41,23 @@ function clearPending(sessionId) {
   try { fs.unlinkSync(statePath(sessionId)); } catch {}
 }
 
-function chooseFreshPhotos(photos) {
+function chooseFreshPhotos(photos, { sessionId = '', prompt = '' } = {}) {
   const cutoff = Date.now() - RECENT_MS;
   const recent = readJson(RECENT_FILE, {});
   for (const [id, at] of Object.entries(recent)) if (!Number(at) || Number(at) < cutoff) delete recent[id];
+  const sessionRecent = readJson(SESSION_RECENT_FILE, {});
+  const sessionCutoff = Date.now() - SESSION_COOLDOWN_MS;
+  for (const [id, at] of Object.entries(sessionRecent)) if (!Number(at) || Number(at) < sessionCutoff) delete sessionRecent[id];
+  const explicit = PHOTO_EXPLICIT_RE.test(String(prompt || ''));
+  if (!explicit && sessionId && Number(sessionRecent[sessionId]) >= sessionCutoff) {
+    try { writeJsonAtomic(SESSION_RECENT_FILE, sessionRecent); } catch {}
+    return [];
+  }
   const fresh = (Array.isArray(photos) ? photos : []).filter(photo => photo?.id && !recent[photo.id]).slice(0, 1);
   for (const photo of fresh) recent[photo.id] = Date.now();
+  if (fresh.length && sessionId) sessionRecent[sessionId] = Date.now();
   try { writeJsonAtomic(RECENT_FILE, recent); } catch {}
+  try { writeJsonAtomic(SESSION_RECENT_FILE, sessionRecent); } catch {}
   return fresh;
 }
 
@@ -92,7 +105,7 @@ process.stdin.on('end', async () => {
       signal: AbortSignal.timeout(6500)
     });
     const result = await response.json();
-    const photos = chooseFreshPhotos(result.photos);
+    const photos = chooseFreshPhotos(result.photos, { sessionId, prompt });
     if (photos.length && sessionId) {
       writeJsonAtomic(statePath(sessionId), {
         session_id: sessionId,

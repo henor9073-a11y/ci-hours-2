@@ -861,7 +861,8 @@ app.post('/api/recall', async (req, res) => {
     const cleanQuery = String(query);
     // 图片精选和文本召回并行跑，不让相册多加一整段等待。
     // 只有文本记忆真的命中时才会把图交给钩子，避免每句闲聊都翻相册。
-    const photoTask = include_photos && !mw.recall.isTrivial(cleanQuery)
+    const photoIntent = mw.album.photoRecallIntent(cleanQuery);
+    const photoTask = include_photos && photoIntent.eligible && !mw.recall.isTrivial(cleanQuery)
       ? Promise.race([
         mw.album.recallPhotos(cleanQuery, { limit: Math.max(1, Math.min(Number(photo_limit) || 1, 2)) })
           .catch(error => ({ query: cleanQuery, mode: 'error', warning: String(error.message || error), photos: [] })),
@@ -877,7 +878,8 @@ app.post('/api/recall', async (req, res) => {
       context: context || ''
     });
     const photoResult = await photoTask;
-    const photos = result.memories.length && photoResult
+    // 自动联想仍要求文字记忆也命中；但用户明确说“找照片”时不应因为文字层空手而吞图。
+    const photos = (result.memories.length || photoIntent.explicit) && photoResult
       ? (photoResult.photos || []).map(photo => ({
         id: photo.id,
         date: photo.date || '',
@@ -887,9 +889,9 @@ app.post('/api/recall', async (req, res) => {
       }))
       : [];
     const format = req.query.format || req.body.format;
-    if (format === 'full' || format === 'json') return jsonAscii(res, { ...result, photos });
+    if (format === 'full' || format === 'json') return jsonAscii(res, { ...result, photos, photo_intent: photoIntent });
     const text = mw.recall.formatInjection(result);
-    jsonAscii(res, { text, count: result.memories.length, photos });
+    jsonAscii(res, { text, count: result.memories.length, photos, photo_intent: photoIntent });
   } catch (e) {
     jsonAscii(res, { text: '', count: 0, photos: [], error: String(e.message || e) }, 500); // 失败也给合法 JSON，钩子照样能解
   }

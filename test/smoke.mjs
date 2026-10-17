@@ -397,6 +397,16 @@ try {
     assert.equal(jp.photos.length, 1, JSON.stringify(jp));
     assert.ok(jp.photos[0].id);
     assert.ok(jp.photos[0].caption.includes('摆摊'));
+    // 普通聊天即使命中“摆摊”的文字记忆，也不能每句话都顺手翻相册。
+    const quietPhoto = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊让我觉得很开心', suppress_recent: false, use_agent: false, use_semantic: false, include_photos: true, photo_limit: 1 }) });
+    const jq = await quietPhoto.json();
+    assert.equal(jq.photo_intent.reason, 'ordinary-chat');
+    assert.deepEqual(jq.photos, []);
+    // 明确要看照片时仍然触发。
+    const explicitPhoto = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '找一下摆摊的照片', suppress_recent: false, use_agent: false, use_semantic: false, include_photos: true, photo_limit: 1 }) });
+    const je = await explicitPhoto.json();
+    assert.equal(je.photo_intent.explicit, true);
+    assert.equal(je.photos.length, 1, JSON.stringify(je));
     // format=full 回完整结构（旧名 json 也认）
     const rj = await fetch(`${base}/api/recall?token=${TOKEN}&format=full`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '嗯' }) });
     const jj = await rj.json();
