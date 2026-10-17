@@ -420,12 +420,6 @@
     // 图片撑高了：只有停在底部时补滚
     box.addEventListener('load', e => { if (e.target.tagName === 'IMG' && stick) toBottomNow(); }, true);
     root.querySelector('.cx').addEventListener('click', onClick);
-    root.querySelector('.cx').addEventListener('dblclick', e => {
-      const av = e.target.closest('.cx-av[data-who="cy"]');
-      if (!av) return;
-      e.preventDefault(); e.stopPropagation();
-      patMenu(av);
-    });
     bindLongPress(root.querySelector('.cx'));
     // 长按松手时浏览器还会补一个 click——那一下不能把刚弹出来的菜单关掉
     document.addEventListener('click', e => {
@@ -447,7 +441,7 @@
     const m = item && byId.get(item.dataset.id);
     if (el.dataset.jump) { jumpTo(el.dataset.jump); return; }
     if (el.classList.contains('cx-img')) { viewImage(el.src); return; }
-    if (el.classList.contains('cx-av')) { if (el.dataset.who === 'cy' && !longFired) CX.statusSheet(); return; }
+    if (el.classList.contains('cx-av')) { if (el.dataset.who === 'cy' && !longFired) avatarTap(el); return; }
     const act = el.dataset.act;
     if (act === 'think') {
       openSheet('Thought process', `<div class="cx-sheet-think">${esc(m.thinking)}</div>`);
@@ -520,11 +514,28 @@
       ${canCopy ? `<button onclick="CX.copy('${m.id}')">复制</button>` : ''}
     </div>`);
   }
-  function patMenu(anchor) {
+  let avatarTapAt = 0, avatarTapTimer = null;
+  function avatarTap(anchor) {
+    const at = Date.now();
+    if (avatarTapAt && at - avatarTapAt < 380) {
+      clearTimeout(avatarTapTimer); avatarTapTimer = null; avatarTapAt = 0;
+      patMenu(anchor);
+      return;
+    }
+    avatarTapAt = at;
+    clearTimeout(avatarTapTimer);
+    avatarTapTimer = setTimeout(() => { avatarTapAt = 0; avatarTapTimer = null; CX.statusSheet(); }, 300);
+  }
+  async function patMenu(anchor) {
     const set = $('#cx-set'); if (set) set.hidden = true;
-    const list = pats.length ? pats : [''];
+    try { pats = await rest('/api/chat/pats'); }
+    catch {
+      popAt(anchor, '<div class="cx-pats"><div class="cx-pats-t">拍一拍库暂时没连上</div><button class="cx-pats-edit" onclick="CX.editPats()">去设置里重试 ›</button></div>');
+      return;
+    }
+    const list = pats;
     popAt(anchor, `<div class="cx-pats"><div class="cx-pats-t">拍一拍小辞…</div>
-      ${list.map((p, i) => `<button onclick="CX.pat(${i})">拍了拍 小辞${esc(p)}</button>`).join('')}
+      ${list.length ? list.map((p, i) => `<button onclick="CX.pat(${i})">拍了拍 小辞${esc(p)}</button>`).join('') : '<div class="cx-pats-t">库里还没有动作，先添加一个吧</div>'}
       <button class="cx-pats-edit" onclick="CX.editPats()">编辑拍一拍库 ›</button></div>`);
   }
 

@@ -61,6 +61,12 @@ const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
 app.use(express.json({ limit: '40mb' })); // 相册的原图走 /mcp 的 base64：20MB 上限的图编码后约 27MB，留出余量，
 // 好让超限时报的是 album.js 里那句人话（'先在手机上裁一下'），而不是 express 的 413 HTML。后端会再自动压到 2MB 存
+app.use((req, res, next) => {
+  if (req.path === '/muwu' || req.path === '/muwu.html' || req.path === '/chat.js') {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 // 两个前端：/ = 木纹（记忆），/muwu = 木屋（生活）。共用同一套后端和 /mcp。
 app.get('/muwu', (_, res) => res.sendFile(path.join(__dirname, 'public', 'muwu.html')));
