@@ -39,6 +39,7 @@ import {
 } from './lib/health.js';
 import { getWheels, createWheel, updateWheel, removeWheel, spinWheel, getBoardNotes, createBoardNote, updateBoardNote, archiveBoardNote, restoreBoardNote } from './lib/shared-spaces.js';
 import { getLocationState, updateLocation, addLocationPlace, updateLocationPlace, removeLocationPlace } from './lib/location.js';
+import { getPhoneUsage, ingestPhoneUsage } from './lib/phone-usage.js';
 import {
   getWatchHealth, ingestWatchHealth, getWatchStatus, requestWatchRefresh,
   pendingWatchActions, completeWatchAction
@@ -391,6 +392,13 @@ app.post('/api/location/places/:id/remove', (req, res) => {
   const result = removeLocationPlace(req.params.id);
   if (!result) return res.status(404).json({ error: '找不到这个常用地点' });
   res.json(result);
+});
+
+// ---- iPhone 屏幕使用时间：Sigh 经系统授权后上传当天汇总；与“最近打开 App”脚本分开 ----
+app.get('/api/phone-usage', (req, res) => res.json(getPhoneUsage(String(req.query.date || ''))));
+app.post('/api/phone-usage', (req, res) => {
+  try { res.json(ingestPhoneUsage(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 
 // ---- Apple Watch relay：可由同机 relay 读取，也可由 Mac mini 主动推送一份快照 ----

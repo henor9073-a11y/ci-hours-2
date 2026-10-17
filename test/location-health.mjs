@@ -34,17 +34,27 @@ assert.equal(approximate.current.approximate, true);
 assert.equal(approximate.current.latitude, -37.825);
 
 const snapshot = health.normalizeWatchHealth({
-  latest: { heartRate: { value: 82 }, bloodOxygen: 97 },
-  activity: { stepCount: 6543 }, sleep_summary: { duration_minutes: 431 }
+  latest: { heartRate: { value: 82 }, bloodOxygen: 97, hrv: 48 },
+  activity: { stepCount: 6543, activeEnergy: 312 }, sleep_summary: { duration_minutes: 431 }
 });
 assert.equal(snapshot.heart_rate_bpm, 82);
 assert.equal(snapshot.blood_oxygen_percent, 97);
 assert.equal(snapshot.steps, 6543);
+assert.equal(snapshot.hrv_ms, 48);
+assert.equal(snapshot.active_energy_kcal, 312);
 assert.equal(snapshot.sleep.duration_minutes, 431);
 const disconnected = health.normalizeWatchHealth({ heartRate: null, bloodOxygen: null, steps: null, sleep: null });
 assert.equal(disconnected.heart_rate_bpm, null);
 assert.equal(disconnected.blood_oxygen_percent, null);
 assert.equal(disconnected.steps, null);
+
+const phoneUsage = await import('../lib/phone-usage.js');
+const usage = phoneUsage.ingestPhoneUsage({
+  date: '2026-10-18', total_seconds: 7_200, pickups: 18,
+  apps: [{ name: '木屋', bundle_id: 'com.nor.cy', duration_seconds: 1_800, pickups: 4 }]
+});
+assert.equal(usage.total_seconds, 7_200);
+assert.equal(phoneUsage.getPhoneUsage('2026-10-18').apps[0].name, '木屋');
 
 const vibration = watchCloud.enqueueWatchCommand({
   id: 'relay-vibration-1', type: 'vibrate', pattern: 'heartbeat', message: '在'

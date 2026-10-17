@@ -5,6 +5,15 @@ MW.applyTheme();
 const $ = s => { let top = null; try { top = sheetStack[sheetStack.length - 1]; } catch {} return (top && top.node && top.node.querySelector(s)) || document.querySelector(s); };
 const byId = id => $('#' + CSS.escape(id));
 function fail(n, e) { n.innerHTML = `<div class="err">读不到：${esc(e.message || e)}</div>`; }
+function phoneDuration(seconds) {
+  const minutes = Math.max(0, Math.round(Number(seconds || 0) / 60));
+  return minutes < 60 ? `${minutes} 分钟` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
+}
+function phoneUsageCard(u) {
+  if (!u) return '<div class="empty" style="padding:14px">还没有使用时间；先在 Sigh 的“手机动态”里授权并同步</div>';
+  const apps = (u.apps || []).slice(0, 8).map(a => `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;display:flex;justify-content:space-between;gap:10px"><span>${esc(a.name || a.bundle_id || '未知 App')}</span><span style="color:var(--text-light);font-size:12px;white-space:nowrap">${esc(phoneDuration(a.duration_seconds))}</span></div>`).join('');
+  return `<div class="card"><div style="display:flex;gap:18px;margin-bottom:${apps ? '8px' : '0'}"><div><div class="card-title">${esc(phoneDuration(u.total_seconds))}</div><div class="card-desc">当天总时长</div></div><div><div class="card-title">${esc(u.pickups || 0)}</div><div class="card-desc">拿起次数</div></div></div>${apps}</div>`;
+}
 
 function switchPage(name, node) {
   // 从搜索上下文等抽屉跳页时，旧抽屉不能继续盖在新页面上。
@@ -142,11 +151,11 @@ async function openMoment(owner, date) {
     sheetSet(h);
 
     if (owner === 'nor') {
-      mcp('get_phone_activity', { limit: 20 }).then(r => {
+      Promise.all([mcp('get_phone_activity', { limit: 20 }), rest(`/api/phone-usage?date=${encodeURIComponent(d)}`).catch(() => null)]).then(([r, usage]) => {
         const n = $('#mo-phone'); if (!n) return;
         const list = (Array.isArray(r) ? r : []).filter(x => MW.fmtDate(x.opened_at) === d);
-        n.innerHTML = list.length ? `<div class="card">${list.map(x => `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;display:flex;justify-content:space-between"><span>${esc(x.app_name)}</span><span style="color:var(--text-light);font-size:12px">${esc(fmtTime(x.opened_at).slice(11))}</span></div>`).join('')}</div>`
-          : '<div class="empty" style="padding:14px">今天没有手机记录</div>';
+        n.innerHTML = phoneUsageCard(usage) + (list.length ? `<div class="card" style="margin-top:10px"><div class="card-desc" style="margin-bottom:5px">最近打开记录</div>${list.map(x => `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;display:flex;justify-content:space-between"><span>${esc(x.app_name)}</span><span style="color:var(--text-light);font-size:12px">${esc(fmtTime(x.opened_at).slice(11))}</span></div>`).join('')}</div>`
+          : '');
       }).catch(e => { const n = $('#mo-phone'); if (n) n.innerHTML = `<div class="empty" style="padding:14px">读不到手机活动<br><span style="font-size:12px">${esc(e.message)}</span></div>`; });
     }
     renderOwnerActs($('#mo-acts'), owner, d);
@@ -843,8 +852,12 @@ function openOnePhoto(id) {
 async function openPhone() {
   sheetLoading('手机活动');
   try {
-    const r = await mcp('get_phone_activity', { limit: 30 });
-    sheetSet(Array.isArray(r) && r.length ? r.map(x => `<div class="entry"><div class="entry-head">${esc(fmtTime(x.opened_at))}</div><div class="entry-body">${esc(x.app_name)}</div></div>`).join('') : '<div class="empty">没有数据</div>');
+    const [r, usage] = await Promise.all([
+      mcp('get_phone_activity', { limit: 30 }),
+      rest('/api/phone-usage').catch(() => null)
+    ]);
+    const recent = Array.isArray(r) && r.length ? `<div class="section-title">最近打开</div>${r.map(x => `<div class="entry"><div class="entry-head">${esc(fmtTime(x.opened_at))}</div><div class="entry-body">${esc(x.app_name)}</div></div>`).join('')}` : '<div class="empty">没有最近打开记录</div>';
+    sheetSet(`<div class="section-title">使用时间</div>${phoneUsageCard(usage)}${recent}`);
   } catch (e) { sheetSet(`<div class="empty">读不到手机活动（服务器可能没配 Supabase）<br><span style="font-size:12px">${esc(e.message)}</span></div>`); }
 }
 

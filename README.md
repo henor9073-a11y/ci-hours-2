@@ -505,7 +505,14 @@ MCP 单次调用也会因为返回太大直接报错（实测过：搜一个常�
 REST 对应 `/api/health/cycle`、`/api/health/sleep`、`/api/health/notes`（GET 列表、POST 新增、
 `POST /:id` 改、`POST /:id/remove` 移除）。不需要新的环境变量，Bark 推送复用已有的 `BARK_KEY`。
 
-## 手机活动（辞能看到棋子最近开了什么 app）
+## 手机活动与使用时间
+
+Sigh 在 iOS 26.4+ 上经棋子本人允许后读取系统 Screen Time，当天总使用时长、拿起次数、首次拿起和
+各 App 时长会上传到 `POST /api/phone-usage`，辞用 `get_phone_usage` 读取。数据按天保留最近 120 天；
+这和下面“最近打开过什么 App”的独立脚本是两份数据。首次使用要在 Sigh 的“手机动态”页点“开启使用时间”
+并通过系统的 Face ID 授权；之后 Sigh 回到前台时最多每 15 分钟自动同步一次。
+
+### 最近打开 App
 
 数据存在一个独立的 Supabase 项目里，表叫 `phone_activity`（`id`、`app_name`、`opened_at`，只留最近
 30 条，插入时用 trigger 自动清掉更早的）。开了 RLS：匿名（anon key）能插入，`authenticated` 角色能读。
