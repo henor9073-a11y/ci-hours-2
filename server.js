@@ -584,7 +584,9 @@ app.post('/api/chat/claude-mirror', async (req, res) => {
       sender: 'cy', type: autoSync ? 'text' : 'claude_mirror', content: content.slice(0, 30000),
       thinking: autoSync ? String(b.thinking || '') : '',
       tools: autoSync && Array.isArray(b.tools) ? b.tools : [],
-      reply_to: autoSync ? String(b.reply_to || '') : '',
+      // 自动同步是自然延续当前聊天，不把每一句都渲染成对上一条的引用。
+      // 需要明确引用时仍由辞主动使用 chat_reply 的 reply_to。
+      reply_to: '',
       source_device: autoSync ? 'claude_auto_sync' : 'claude_main_mirror',
       // 这条气泡是 Claude 原始记录在木屋里的实时别名；统一历史仍只保留 Claude 那一份，
       // 防止每日总结、换窗资料和导出把同一句计算两次。

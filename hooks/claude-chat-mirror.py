@@ -4,9 +4,8 @@
 Default mode preserves the old behavior: direct Claude conversations become a
 compact read-only 💭 entry and Muwu-origin turns are ignored. When the shared
 ``auto_sync_reply`` switch is enabled, the server promotes the same payload to
-a normal Muwu bubble. The hook sends the turn once: visible prose, real
-thinking, tool inputs/results and the originating Muwu message id travel in one
-request and are deduplicated by ``mirror_key``.
+a normal Muwu bubble. The hook sends visible prose, real thinking and tool
+inputs/results once; the server deduplicates the turn by ``mirror_key``.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import sys
 from datetime import datetime
 import urllib.error
@@ -83,14 +81,6 @@ def from_muwu(entry: Dict[str, Any]) -> bool:
         return False
     content = (entry.get("message") or {}).get("content")
     return isinstance(content, str) and ('origin="muwu"' in content or 'origin="muwu_call"' in content)
-
-
-def reply_to(entry: Dict[str, Any]) -> str:
-    if not from_muwu(entry):
-        return ""
-    content = str((entry.get("message") or {}).get("content") or "")
-    match = re.search(r'\bmsg_id="([^"]+)"', content)
-    return (match.group(1) if match else "")[:120]
 
 
 def clipped(value: Any, limit: int) -> str:
@@ -233,7 +223,6 @@ def main() -> int:
         "thinking": thinking,
         "tools": tools,
         "from_muwu": from_muwu(prompt),
-        "reply_to": reply_to(prompt),
         "has_chat_reply": has_chat_reply,
     }, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(

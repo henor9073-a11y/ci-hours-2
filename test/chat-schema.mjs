@@ -58,7 +58,7 @@ assert.deepEqual(chat.setSyncSettings({ auto_sync_reply: true }), { auto_sync_re
 const autoReply = await chat.sendMessage({
   sender: 'cy', type: 'text', content: 'Claude 自动同步正文', thinking: '真实思考',
   tools: [{ name: 'Get Calendar', input: '{"days": 3}', result: '三天' }],
-  reply_to: created.id, source_device: 'claude_auto_sync', mirror_key: 'claude-auto-turn-1', mirror_only: true
+  reply_to: '', source_device: 'claude_auto_sync', mirror_key: 'claude-auto-turn-1', mirror_only: true
 });
 const autoReplyRetry = await chat.sendMessage({
   sender: 'cy', type: 'text', content: 'Claude 自动同步正文', mirror_key: 'claude-auto-turn-1', mirror_only: true
@@ -67,7 +67,7 @@ assert.equal(autoReplyRetry.id, autoReply.id, '自动同步同一回合只能落
 assert.equal(autoReply.type, 'text');
 assert.equal(autoReply.thinking, '真实思考');
 assert.equal(autoReply.tools[0].result, '三天');
-assert.equal(autoReply.reply_to, created.id);
+assert.equal(autoReply.reply_to, '', '自动同步默认自然续聊，不逐条引用上一条消息');
 assert.ok(!chat.historyDay(autoReply.date).some(m => m.id === autoReply.id), '自动同步气泡不能和 Claude 原记录重复进入统一历史');
 const autoPending = chat.pendingForCy();
 assert.equal(autoPending.reply_mode, 'auto_sync');
