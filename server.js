@@ -990,7 +990,8 @@ app.get('/api/history/main-context', (req, res) => {
       hours: Number(req.query.hours) || 22,
       recent_hours: Number(req.query.recent_hours) || 2,
       max_messages: Math.min(Number(req.query.max_messages) || 4000, 10000),
-      max_chars: Math.min(Number(req.query.max_chars) || 500000, 1000000)
+      max_chars: Math.min(Number(req.query.max_chars) || 500000, 1000000),
+      now_at: req.query.now_at || undefined
     }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
