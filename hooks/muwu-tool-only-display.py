@@ -133,6 +133,13 @@ def save_cache(path: Path, values: Dict[str, bool]) -> None:
             pass
 
 
+def auto_sync_prompt(entry: Dict[str, Any]) -> bool:
+    """The delivery payload snapshots the active mode, avoiding a display-time network call."""
+    message = entry.get("message") if isinstance(entry, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    return isinstance(content, str) and "【木屋自动同步回复已开启" in content
+
+
 def should_hide(event: Dict[str, Any]) -> bool:
     session_id = str(event.get("session_id") or "")
     turn_id = str(event.get("turn_id") or "")
@@ -146,7 +153,7 @@ def should_hide(event: Dict[str, Any]) -> bool:
         return values[turn_id]
 
     prompt = matching_prompt(transcript_path, turn_id)
-    hidden = is_muwu_prompt(prompt or {})
+    hidden = is_muwu_prompt(prompt or {}) and not auto_sync_prompt(prompt or {})
     values[turn_id] = hidden
     save_cache(path, values)
     return hidden

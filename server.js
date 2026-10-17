@@ -560,8 +560,13 @@ app.post('/api/chat', async (req, res) => {
     res.json(await mw.chat.sendMessage({ ...b, sender: 'nor', thinking: '', tools: [], voice_id: '' }));
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
-// Claude 主窗口的 Stop hook 只把辞在 Claude 端显示的原话镜像进来。
-// 它是只读副本：不再投递给辞，也不进入木屋侧的每日总结/换窗统计。
+// 默认保持旧行为：Claude 原话只是只读 💭。棋子明确打开自动同步后，同一个 Stop hook
+// 把最终正文变成正常气泡，并把该回合已有的 thinking/tools 一起挂上；不再要求 chat_reply。
+app.get('/api/chat/sync-settings', (_, res) => res.json(mw.chat.getSyncSettings()));
+app.post('/api/chat/sync-settings', (req, res) => {
+  try { res.json(mw.chat.setSyncSettings(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 app.post('/api/chat/claude-mirror', async (req, res) => {
   try {
     const route = deliveryRoute(req);
@@ -569,12 +574,24 @@ app.post('/api/chat/claude-mirror', async (req, res) => {
     const b = req.body || {};
     const content = String(b.content || '').trim();
     if (!content) return res.status(400).json({ error: 'content 不能为空' });
+    const autoSync = mw.chat.getSyncSettings().auto_sync_reply === true;
+    const fromMuwu = b.from_muwu === true;
+    // 关闭自动同步时，木屋注入回合仍必须使用原来的 chat_reply，现状完全不变。
+    if (fromMuwu && !autoSync) return res.json({ mirrored: false, mode: 'tool', skipped: 'muwu_turn' });
+    // 开启后若辞仍主动调用了 chat_reply，以工具真正发出的那条为准，Stop 不再复制一遍。
+    if (autoSync && b.has_chat_reply === true) return res.json({ mirrored: false, mode: 'auto_sync', skipped: 'chat_reply_used' });
     const message = await mw.chat.sendMessage({
-      sender: 'cy', type: 'claude_mirror', content: content.slice(0, 30000),
-      source_device: 'claude_main_mirror', mirror_only: true,
+      sender: 'cy', type: autoSync ? 'text' : 'claude_mirror', content: content.slice(0, 30000),
+      thinking: autoSync ? String(b.thinking || '') : '',
+      tools: autoSync && Array.isArray(b.tools) ? b.tools : [],
+      reply_to: autoSync ? String(b.reply_to || '') : '',
+      source_device: autoSync ? 'claude_auto_sync' : 'claude_main_mirror',
+      // 这条气泡是 Claude 原始记录在木屋里的实时别名；统一历史仍只保留 Claude 那一份，
+      // 防止每日总结、换窗资料和导出把同一句计算两次。
+      mirror_only: true,
       mirror_key: String(b.mirror_key || ''), session_id: route.primary_session_id
     });
-    res.json({ mirrored: true, message });
+    res.json({ mirrored: true, mode: autoSync ? 'auto_sync' : 'mirror', message });
   } catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 // Apple Watch 只能上报预先定义好的动作，不能提交任意系统文字。

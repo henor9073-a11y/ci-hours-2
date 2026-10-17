@@ -99,6 +99,7 @@
   let open = false, built = false, timer = null, stick = true;
   let avatars = {}, status = { nor: {}, cy: {} }, pats = [];
   let pendingImages = [], stickerOwner = 'nor', stickerLists = { nor: [], cy: [] };
+  let syncSettings = { auto_sync_reply: false, loaded: false, saving: false };
   let quoting = null;                      // 正在引用的那条
   let expanded = {};                       // 展开了思考/工具的
   let slidePending = {}, slideRaf = 0;
@@ -822,6 +823,8 @@
       box.dataset.kind = 'look'; box.classList.remove('bottom'); box.hidden = false;
       const c = cfg(), t = THEMES[c.theme] || THEMES.sakura, b = bubbleLook(c, t);
       box.innerHTML = `<div class="cx-set-t">聊天外观</div>
+        <div class="cx-set-row"><span>自动同步 Claude 回复</span><button class="cx-tg${syncSettings.auto_sync_reply ? ' on' : ''}" ${syncSettings.saving ? 'disabled' : ''} onclick="CX.setAutoSync(${!syncSettings.auto_sync_reply})"><i></i></button></div>
+        <div class="cx-set-l" style="padding-top:0">关闭时维持工具回复；开启后 Claude 最终正文直接成为木屋消息，语音和表情包仍走工具。</div>
         <div class="cx-set-row"><span>磨砂玻璃</span><button class="cx-tg${c.frost ? ' on' : ''}" onclick="CX.set('frost',${!c.frost})"><i></i></button></div>
         <div class="cx-set-row"><span>显示头像</span><button class="cx-tg${c.avatars ? ' on' : ''}" onclick="CX.set('avatars',${!c.avatars})"><i></i></button></div>
         <div class="cx-set-row"><span>辞的消息框颜色</span><input type="color" value="${b.aiColor}" onchange="CX.set('aiColor',this.value)"></div>
@@ -847,6 +850,25 @@
         <div class="cx-set-t" style="margin-top:18px;padding-top:12px;border-top:1px solid var(--cx-think-bd)">来电设置</div>
         <div id="cx-call-settings"><div class="cx-set-l">读取中…</div></div>`;
       setTimeout(() => window.CALL && CALL.renderSettings('cx-call-settings', true), 0);
+    },
+    async loadSyncSettings(rerender = false) {
+      try {
+        const next = await rest('/api/chat/sync-settings');
+        syncSettings = { auto_sync_reply: next.auto_sync_reply === true, loaded: true, saving: false };
+        if (rerender && $('#cx-set')?.dataset.kind === 'look' && !$('#cx-set').hidden) CX.panel(true);
+      } catch { syncSettings.loaded = true; }
+    },
+    async setAutoSync(on) {
+      if (syncSettings.saving) return;
+      syncSettings.saving = true; CX.panel(true);
+      try {
+        const next = await post('/api/chat/sync-settings', { auto_sync_reply: on });
+        syncSettings = { auto_sync_reply: next.auto_sync_reply === true, loaded: true, saving: false };
+        hint(syncSettings.auto_sync_reply ? '自动同步已开启' : '已恢复工具回复模式');
+      } catch (e) {
+        syncSettings.saving = false; hint('没切换成功：' + e.message);
+      }
+      if ($('#cx-set')?.dataset.kind === 'look' && !$('#cx-set').hidden) CX.panel(true);
     },
     set(k, v) { const c = cfg(); c[k] = v; saveCfg(c); if ($('#cx-set').dataset.kind === 'look') CX.panel(true); },
     // 滑块 oninput 一秒几十次：只改 CSS 变量，而且一帧最多改一次
@@ -899,6 +921,7 @@
     },
     async init() {
       MW.loadPrefs().then(p => { avatars = p; }).catch(() => {});
+      CX.loadSyncSettings();
       await poll(true);
       // init 等请求时用户可能已经进了聊天页；按当前状态设置，不能再叠一个定时器。
       setPollInterval(open ? 5000 : 30000);

@@ -16,8 +16,8 @@
 | `photo-recall-guard.js` | `Stop` | 如果辞漏看了自动召回的图，续回一次要求先调 `get_photo`。最多拦一次，工具断线时不会锁死会话。 |
 | `chat-annotate.py` | `PostToolUse`（matcher `mcp__muwen__chat_reply`） | 辞回木屋消息之后，从会话记录取这一轮真实的 thinking、工具名、脱敏后的操作参数与结果补到那条消息上（棋子点 Used N tools 可展开）。过长结果会截断，静默失败，不记日志。 |
 | `claude-image-to-album.py` | `PostToolUse`（matcher `mcp__muwen__save_claude_image`） | 辞在 Claude 端决定收藏棋子发来的图片后，从当前 session 的原始记录读取最近一张用户图片，存进与木屋共用的相册；不要求模型复制 base64。 |
-| `muwu-tool-only-display.py` | `MessageDisplay` | 木屋文字/语音（`muwu`）和通话（`muwu_call`）回合只在木屋显示工具回复，不再在终端重复显示 assistant 文字。只是隐藏终端渲染，原文仍完整留在当前 session；终端里直接输入的正常对话不受影响。 |
-| `claude-chat-mirror.py` | `Stop` | 主要 Claude 窗口里直接说出的原话只读镜像到木屋 💭；木屋注入回合自动跳过，服务端也按 session 与内容去重，不会让辞重发。 |
+| `claude-chat-mirror.py` | `Stop` | 默认仍把主要 Claude 窗口原话做成只读 💭。棋子打开「自动同步回复」后，同一次 Stop 把最终正文、真实 thinking、工具参数/结果和来源消息 id 一起变成正常木屋气泡；若本轮已经用了 `chat_reply` 就抑制自动副本。 |
+| `muwu-tool-only-display.py` | `MessageDisplay` | 工具回复模式下隐藏木屋注入回合在 Claude 端重复显示的正文；自动同步开启时保留显示。服务端不可达时保守维持旧模式。 |
 
 ## 木屋实时通话（GPD）
 
