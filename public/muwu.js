@@ -1159,7 +1159,7 @@ async function wwRequest(path, method = 'GET', body) {
 function wwAgentOnline(agent) { return !!(agent && agent.seen_at && Date.now() - new Date(agent.seen_at).getTime() < 90_000); }
 function wwStateName(s) { return ({ idle: '空闲，可以换窗', busy: '辞正在回复，暂时等待', offline: '已停止，记录完整', unknown: '正在确认' })[s] || '正在确认'; }
 function wwJobName(s) { return ({ queued: '等待 Mac mini 接单', running: '正在准备', waiting_idle: '等辞说完这一句', validating: '正在校验新窗口', completed: '已完成', failed: '没有完成', cancelled: '已取消' })[s] || s; }
-function wwJobTitle(j) { return j.mode === 'set_wake' ? `${j.wake_enabled ? '打开' : '关闭'}自主苏醒` : j.mode === 'crop' ? (j.preview_only ? '同窗裁剪预览' : '同窗裁剪') : j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : j.mode === 'resume_window' ? '重连窗口' : j.mode === 'interrupt_window' ? '打断主要窗口' : j.mode === 'mcp_reconnect' ? '重连 MCP' : j.mode === 'mcp_reconnect_all' ? '重连全部异常 MCP' : '连续换窗'; }
+function wwJobTitle(j) { return j.mode === 'set_wake' ? `${j.wake_enabled ? '打开' : '关闭'}自主苏醒` : j.mode === 'mcp_set_enabled' ? `${j.mcp_enabled ? '打开' : '关闭'} MCP` : j.mode === 'crop' ? (j.preview_only ? '同窗裁剪预览' : '同窗裁剪') : j.preview_only ? '交接预览' : j.mode === 'fresh' ? '全新窗口' : j.mode === 'secondary' ? '并行窗口' : j.mode === 'set_primary' ? '切换主要窗口' : j.mode === 'stop_window' ? (j.force_stop ? '强行停止窗口' : '停止窗口') : j.mode === 'restore_window' ? '恢复窗口' : j.mode === 'resume_window' ? '重连窗口' : j.mode === 'interrupt_window' ? '打断主要窗口' : j.mode === 'mcp_reconnect' ? '重连 MCP' : j.mode === 'mcp_reconnect_all' ? '重连全部异常 MCP' : '连续换窗'; }
 function wwAge(iso) {
   if (!iso) return '—';
   const n = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
@@ -1213,27 +1213,27 @@ function wwAvatar(speaker) {
 }
 function wwMcpCounts(w) {
   const servers = Array.isArray(w.mcp_servers) ? w.mcp_servers : [];
-  return servers.reduce((out, server) => { out[server.status] = (out[server.status] || 0) + 1; return out; }, { connected: 0, offline: 0, auth: 0, unknown: 0 });
+  return servers.reduce((out, server) => { out[server.status] = (out[server.status] || 0) + 1; return out; }, { connected: 0, offline: 0, auth: 0, unknown: 0, disabled: 0 });
 }
 function wwMcpStatusName(status) {
-  return ({ connected: '已连接', offline: '掉线', auth: '需要登录', unknown: '待确认' })[status] || '待确认';
+  return ({ connected: '已连接', offline: '掉线', auth: '需要登录', unknown: '待确认', disabled: '已关闭' })[status] || '待确认';
 }
 function wwMcpSummary(w) {
   const count = wwMcpCounts(w), total = Object.values(count).reduce((a, b) => a + b, 0);
   if (w.state === 'offline') return '<span class="ww-mcp-muted">窗口已停止，MCP 未运行</span>';
   if (!total && w.mcp_checking) return '<span class="ww-mcp-muted">正在检查 MCP…</span>';
   if (!total) return `<span class="ww-mcp-muted">${esc(w.mcp_error || '这个窗口没有启用 MCP')}</span>`;
-  return `<span class="ww-mcp-chip good">${count.connected} 已连接</span>${count.offline ? `<span class="ww-mcp-chip bad">${count.offline} 掉线</span>` : ''}${count.auth ? `<span class="ww-mcp-chip warn">${count.auth} 需登录</span>` : ''}${count.unknown ? `<span class="ww-mcp-chip">${count.unknown} 待确认</span>` : ''}${w.mcp_checking ? '<span class="ww-mcp-muted">检测中…</span>' : ''}`;
+  return `<span class="ww-mcp-chip good">${count.connected} 已连接</span>${count.disabled ? `<span class="ww-mcp-chip">${count.disabled} 已关闭</span>` : ''}${count.offline ? `<span class="ww-mcp-chip bad">${count.offline} 掉线</span>` : ''}${count.auth ? `<span class="ww-mcp-chip warn">${count.auth} 需登录</span>` : ''}${count.unknown ? `<span class="ww-mcp-chip">${count.unknown} 待确认</span>` : ''}${w.mcp_checking ? '<span class="ww-mcp-muted">检测中…</span>' : ''}`;
 }
 function wwMcpPanel(w, open) {
   const servers = Array.isArray(w.mcp_servers) ? w.mcp_servers : [];
   const checked = w.mcp_checked_at ? `上次检查：${wwAge(w.mcp_checked_at)}` : (w.mcp_checking ? '正在进行第一次检查' : '尚未检查');
-  const abnormal = servers.filter(server => server.status !== 'connected');
+  const abnormal = servers.filter(server => server.enabled !== false && server.status !== 'connected');
   const controlReady = w.control_available === true;
   const controlHint = controlReady ? '' : ' title="安全重连会在这个窗口下次自然恢复后启用"';
   return `<details class="ww-mcp-panel" ${open ? 'open' : ''}><summary><span><b>${esc(w.name || '未命名窗口')}</b><small>${esc(checked)}</small></span><span class="ww-mcp-summary">${wwMcpSummary(w)}</span></summary>
     ${abnormal.length ? `<div class="ww-mcp-tools"><button class="btn ghost" ${controlReady ? '' : 'disabled'}${controlHint} onclick="event.preventDefault();wwMcpAction('${w.session_id}','',true)">重连全部异常 MCP</button>${controlReady ? '' : '<small>安全重连会在窗口下次自然恢复后启用</small>'}</div>` : ''}
-    <div class="ww-mcp-list">${servers.length ? servers.map(server => `<div class="ww-mcp-row"><span class="tool-dot ${server.status === 'connected' ? 'on' : server.status === 'offline' ? 'off' : 'wait'}"></span><div><b>${esc(server.name)}</b><small>${esc(server.kind === 'connector' ? 'Claude 连接器' : server.kind === 'plugin' ? '插件通道' : server.kind === 'stdio' ? '本机 MCP' : server.kind === 'http' ? '网络 MCP' : 'MCP')} · ${esc(server.detail || wwMcpStatusName(server.status))}</small></div><span class="ww-mcp-state ${server.status}">${esc(wwMcpStatusName(server.status))}</span>${server.status !== 'connected' ? `<button class="btn ghost ww-mcp-reconnect" ${controlReady ? '' : 'disabled'}${controlHint} onclick="event.preventDefault();wwMcpAction('${w.session_id}','${encodeURIComponent(server.name)}',false)">${server.status === 'auth' ? '重新授权' : '重连'}</button>` : ''}</div>`).join('') : `<div class="ww-dialog-empty">${esc(w.mcp_error || (w.state === 'offline' ? '窗口已停止，无法检测 MCP。' : '这个窗口没有启用 MCP。'))}</div>`}</div>
+    <div class="ww-mcp-list">${servers.length ? servers.map(server => { const encodedName = encodeURIComponent(server.name).replace(/'/g, '%27'); const enabled = server.enabled !== false && server.status !== 'disabled'; return `<div class="ww-mcp-row"><span class="tool-dot ${!enabled ? 'wait' : server.status === 'connected' ? 'on' : server.status === 'offline' ? 'off' : 'wait'}"></span><div><b>${esc(server.name)}</b><small>${esc(server.kind === 'connector' ? 'Claude 连接器' : server.kind === 'plugin' ? '插件通道' : server.kind === 'stdio' ? '本机 MCP' : server.kind === 'http' ? '网络 MCP' : 'MCP')} · ${esc(server.detail || wwMcpStatusName(server.status))}</small></div><span class="ww-mcp-state ${server.status}">${esc(wwMcpStatusName(server.status))}</span>${enabled && server.status !== 'connected' ? `<button class="btn ghost ww-mcp-reconnect" ${controlReady ? '' : 'disabled'}${controlHint} onclick="event.preventDefault();wwMcpAction('${w.session_id}','${encodedName}',false)">${server.status === 'auth' ? '重新授权' : '重连'}</button>` : '<span></span>'}<label class="ww-switch ww-mcp-switch" title="${enabled ? '关闭' : '打开'} ${esc(server.name)}"><input type="checkbox" ${enabled ? 'checked' : ''} ${controlReady ? '' : 'disabled'} onchange="wwSetMcpEnabled('${w.session_id}','${encodedName}',this.checked,this)"><i></i></label></div>`; }).join('') : `<div class="ww-dialog-empty">${esc(w.mcp_error || (w.state === 'offline' ? '窗口已停止，无法检测 MCP。' : '这个窗口没有启用 MCP。'))}</div>`}</div>
   </details>`;
 }
 function wwDetailHtml(w) {
@@ -1487,6 +1487,24 @@ async function wwMcpAction(sessionId, encodedName, all) {
     wwDetailSessionId = null;
     await wwRefresh(false);
   } catch (e) { alert('没有开始重连：' + e.message); await wwRefresh(false); }
+}
+async function wwSetMcpEnabled(sessionId, encodedName, enabled, input) {
+  const name = decodeURIComponent(encodedName || '');
+  if (input) input.disabled = true;
+  try {
+    await wwRequest('/api/window-workbench/jobs', 'POST', {
+      mode: 'mcp_set_enabled',
+      target_session_id: sessionId,
+      target_mcp_name: name,
+      mcp_enabled: !!enabled
+    });
+    wwDetailSessionId = null;
+    await wwRefresh(false);
+  } catch (e) {
+    if (input) { input.checked = !enabled; input.disabled = false; }
+    alert(`没有${enabled ? '打开' : '关闭'} ${name}：` + e.message);
+    await wwRefresh(false);
+  }
 }
 function wwPreviewBrief(id) {
   if (!id) return;

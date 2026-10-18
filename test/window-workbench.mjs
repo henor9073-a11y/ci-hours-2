@@ -48,7 +48,7 @@ assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 const primaryId = '11111111-1111-4111-8111-111111111111';
 const otherId = '22222222-2222-4222-8222-222222222222';
 const activeId = '44444444-4444-4444-8444-444444444444';
-ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'not_allowed'], current: {
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle', 'not_allowed'], current: {
   session_id: primaryId, model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true,
   wake_last_at: '2026-10-08T10:00:00+11:00', wake_last_check_at: '2026-10-08T10:04:00+11:00',
   wake_mode: 'chase', wake_count_today: 3, wake_next_interval_min: 5,
@@ -66,11 +66,12 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   windows: [
     { session_id: primaryId, name: '主要窗口', model: 'claude-opus-4-6[1m]', is_primary: true, state: 'idle', context_percent: 27.4,
       crop_generation: 2, last_crop_at: '2026-10-08T02:00:00+11:00',
-      control_available: true, control_actions: ['interrupt', 'remote_control', 'mcp_reconnect', 'mcp_reconnect_all'],
+      control_available: true, control_actions: ['interrupt', 'remote_control', 'mcp_reconnect', 'mcp_reconnect_all', 'mcp_enable', 'mcp_disable'],
       mcp_checked_at: '2026-10-05T12:00:00+11:00', mcp_checking: false,
       mcp_servers: [
         { name: 'muwen', kind: 'http', status: 'connected', detail: '已连接' },
         { name: 'GPD', kind: 'connector', status: 'offline', detail: '连接失败 · HTTP 404' },
+        { name: 'moomoo', kind: 'http', status: 'disabled', enabled: false, detail: '已由工具间关闭' },
         { name: '', kind: 'bad', status: 'bad', detail: 'drop me' }
       ] },
     { session_id: otherId, name: 'Opus 5.5', model: 'claude-opus-5-5[1m]', is_primary: false, state: 'offline', context_percent: 18,
@@ -80,11 +81,11 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   ]
 } });
 assert.equal(ww.getWorkbench().agent.current.windows.length, 3);
-assert.deepEqual(ww.getWorkbench().agent.capabilities, ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect']);
+assert.deepEqual(ww.getWorkbench().agent.capabilities, ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle']);
 assert.equal(ww.getWorkbench().agent.current.windows[0].crop_generation, 2);
 assert.equal(ww.getWorkbench().agent.current.windows[0].last_crop_at, '2026-10-08T02:00:00+11:00');
 assert.deepEqual(ww.getWorkbench().agent.current.windows[1].recent_messages.map(x => x.text), ['还在吗']);
-assert.deepEqual(ww.getWorkbench().agent.current.windows[0].mcp_servers.map(x => [x.name, x.status]), [['muwen', 'connected'], ['GPD', 'offline']]);
+assert.deepEqual(ww.getWorkbench().agent.current.windows[0].mcp_servers.map(x => [x.name, x.status, x.enabled]), [['muwen', 'connected', true], ['GPD', 'offline', true], ['moomoo', 'disabled', false]]);
 assert.equal(ww.getWorkbench().agent.current.wake_mode, 'chase');
 assert.equal(ww.getWorkbench().agent.current.wake_count_today, 3);
 assert.equal(ww.getWorkbench().agent.current.watchdog.installed, true);
@@ -189,6 +190,16 @@ ww.cancelJob(reconnectMCP.id);
 const reconnectAll = ww.createJob({ mode: 'mcp_reconnect_all', target_session_id: primaryId });
 assert.equal(reconnectAll.mode, 'mcp_reconnect_all');
 ww.cancelJob(reconnectAll.id);
+const disableMCP = ww.createJob({ mode: 'mcp_set_enabled', target_session_id: primaryId, target_mcp_name: 'muwen', mcp_enabled: false });
+assert.equal(disableMCP.target_mcp_name, 'muwen');
+assert.equal(disableMCP.mcp_enabled, false);
+assert.match(disableMCP.message, /关闭/);
+ww.cancelJob(disableMCP.id);
+const enableMCP = ww.createJob({ mode: 'mcp_set_enabled', target_session_id: primaryId, target_mcp_name: 'moomoo', mcp_enabled: true });
+assert.equal(enableMCP.mcp_enabled, true);
+assert.match(enableMCP.message, /打开/);
+ww.cancelJob(enableMCP.id);
+assert.throws(() => ww.createJob({ mode: 'mcp_set_enabled', target_session_id: primaryId, target_mcp_name: 'muwen' }), /必须明确/);
 assert.throws(() => ww.createJob({ mode: 'mcp_reconnect', target_session_id: primaryId, target_mcp_name: 'missing' }), /不在目标窗口/);
 
 const dailySource = ww.createJob({ mode: 'handoff', older_22h_source: 'daily_export' });

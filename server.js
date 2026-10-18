@@ -908,6 +908,7 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
     res.json(job);
     if (job.status !== 'completed') return;
     const label = job.mode === 'set_wake' ? `自主苏醒已${job.wake_enabled ? '打开' : '关闭'}`
+      : job.mode === 'mcp_set_enabled' ? `${job.target_mcp_name || 'MCP'} 已${job.mcp_enabled ? '打开' : '关闭'}`
       : job.preview_only ? (job.mode === 'crop' ? '同窗裁剪预览生成好了' : '交接预览生成好了')
       : job.mode === 'crop' ? '辞的当前窗口已安全裁剪'
       : job.mode === 'secondary' ? '并行窗口已经打开'
@@ -915,6 +916,7 @@ app.post('/api/window-workbench/agent/jobs/:id/complete', windowAgent, async (re
           : job.mode === 'stop_window' ? '窗口已经停止'
             : job.mode === 'restore_window' ? '窗口已经恢复' : '辞换窗完成';
     const detail = job.mode === 'set_wake' ? '设置已由 Mac mini 执行并重新校验。'
+      : job.mode === 'mcp_set_enabled' ? '这个开关只改变辞的 MCP；你的工具间与后台操作不受影响。'
       : job.preview_only ? '可以在木屋的换窗工作台检查内容了。'
       : job.mode === 'crop' ? 'session ID 没有变，原始记录和裁前备份都保留。'
       : job.mode === 'secondary' ? '主要窗口没有变化，可以在工作台打开新窗口。'

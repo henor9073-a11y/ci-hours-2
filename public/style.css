@@ -650,6 +650,7 @@ body.chat-open > .header { display: none; }
 .ww-mcp-state.connected { color:#4f8f68; background:rgba(111,191,138,.13); }
 .ww-mcp-state.offline { color:#ad5961; background:rgba(212,108,116,.13); }
 .ww-mcp-state.auth { color:#9d7131; background:rgba(205,154,72,.14); }
+.ww-mcp-state.disabled { color:var(--text-light); background:color-mix(in srgb,var(--border) 64%,transparent); }
 .ww-window-hint { margin-top:12px; color:var(--accent); font-size:12px; }
 .ww-window-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid color-mix(in srgb,var(--border) 70%,transparent); }
 .ww-window-actions .ww-open { margin-top:0; }
@@ -711,7 +712,10 @@ body.chat-open > .header { display: none; }
 .ww-session-id button { flex:0 0 auto; border:0; border-radius:8px; padding:4px 7px; background:var(--card); color:var(--accent); font:11px/1.2 inherit; }
 .ww-mcp-tools { display:flex; justify-content:flex-end; padding:9px 13px; border-top:1px solid color-mix(in srgb,var(--border) 56%,transparent); }
 .ww-mcp-tools .btn,.ww-mcp-reconnect { width:auto; min-height:30px; margin:0; padding:5px 9px; font-size:10px; }
-.ww-mcp-row { grid-template-columns:9px minmax(0,1fr) auto auto; }
+.ww-mcp-row { grid-template-columns:9px minmax(0,1fr) auto auto 40px; }
+.ww-mcp-switch { width:40px; height:24px; flex-basis:40px; }
+.ww-mcp-switch i::after { width:18px; height:18px; }
+.ww-mcp-switch input:checked + i::after { transform:translateX(16px); }
 .ww-handoff-options { display:flex; flex-direction:column; gap:10px; margin:2px 0; padding:13px; border:1px solid color-mix(in srgb,var(--border) 76%,transparent); border-radius:15px; background:color-mix(in srgb,var(--primary-light) 28%,transparent); }
 .ww-option-title { color:var(--text-secondary); font-size:12px; font-weight:700; }
 .ww-brief-preview { align-self:flex-start; margin:0 0 3px 102px; }
