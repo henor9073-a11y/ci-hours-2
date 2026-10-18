@@ -101,6 +101,14 @@ app.use((req, res, next) => {
 });
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+// 棋子控制“辞能不能进入完整木屋”的总开关。它只限制辞的 MCP 与消息投递，
+// 不限制棋子自己的 Sigh / 木屋前端，所以关掉以后仍然能在手机上正常整理内容。
+app.get('/api/agent-access', (_, res) => res.json(mw.agentAccess.getAgentAccess()));
+app.post('/api/agent-access', (req, res) => {
+  try { res.json(mw.agentAccess.setAgentAccess(req.body || {}, '棋子·Sigh')); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
 // ---- 私有云备份：Mac mini 每周把本地整库 gzip 再镜像一份到 Supabase Storage ----
 // 入口位于密码中间件之后；Supabase service key 永远只留在 Render 环境里。
 app.get('/api/backups/status', async (req, res) => {
@@ -124,6 +132,15 @@ function deliveryRoute(req) {
     || req.query.session_id
     || (req.body && req.body.session_id);
   return windowWorkbench.deliveryRoute(sessionId);
+}
+
+function agentDeliveryRoute(req) {
+  const route = deliveryRoute(req);
+  if (!route.allowed) return route;
+  if (!mw.agentAccess.deliveryAllowed()) {
+    return { ...route, allowed: false, reason: 'agent_memory_only' };
+  }
+  return route;
 }
 
 function blockedDelivery(route, kind) {
@@ -493,11 +510,11 @@ app.get('/api/nursery/avatar/image', (req, res) => {
 
 // 当前主要 Claude session 的 channel 轮询这一组；family 与 cy_kuri 才会投递给辞。
 app.get('/api/nursery/pending', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   res.json(route.allowed ? mw.nursery.pendingForCy() : blockedDelivery(route, 'chat'));
 });
 app.post('/api/nursery/delivered', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   if (!route.allowed) return res.json({ delivered: 0, blocked: true, reason: route.reason });
   try { res.json(mw.nursery.markDeliveredToCy((req.body || {}).ids || [])); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
@@ -569,7 +586,7 @@ app.post('/api/chat/sync-settings', (req, res) => {
 });
 app.post('/api/chat/claude-mirror', async (req, res) => {
   try {
-    const route = deliveryRoute(req);
+    const route = agentDeliveryRoute(req);
     if (!route.allowed) return res.status(409).json({ mirrored: false, blocked: true, reason: route.reason });
     const b = req.body || {};
     const content = String(b.content || '').trim();
@@ -643,11 +660,11 @@ app.get('/api/watch-events/:event_id/status', (req, res) => {
 });
 // GPD 上的语音频道每几秒来取一次：棋子发的、还没送进辞窗口的消息。送到了回报 delivered（= 已读，两个勾）。
 app.get('/api/chat/pending', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   res.json(route.allowed ? mw.chat.pendingForCy() : blockedDelivery(route, 'chat'));
 });
 app.post('/api/chat/delivered', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   if (!route.allowed) return res.json({ delivered: 0, blocked: true, reason: route.reason });
   try { res.json(mw.chat.markDelivered((req.body || {}).ids || [])); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
@@ -733,11 +750,11 @@ app.post('/api/call/transcribe', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 app.get('/api/call/pending', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   res.json(route.allowed ? mw.calls.pendingForCy() : blockedDelivery(route, 'call'));
 });
 app.post('/api/call/delivered', (req, res) => {
-  const route = deliveryRoute(req);
+  const route = agentDeliveryRoute(req);
   res.json(route.allowed
     ? mw.calls.markDelivered((req.body || {}).ids || [])
     : { ok: false, count: 0, blocked: true, reason: route.reason });

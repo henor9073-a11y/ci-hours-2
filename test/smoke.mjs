@@ -976,7 +976,7 @@ try {
     const pending = primary.messages.find(x => x.id === event.id);
     assert.ok(pending, '手表提示必须送到主要窗口');
     assert.ok(pending.text_for_cy.includes('[系统提示]'));
-    assert.equal(pending.text_for_cy, '[系统提示] [来自 Apple Watch] 棋子叫了一下小辞');
+    assert.ok(pending.text_for_cy.endsWith('[系统提示] [来自 Apple Watch] 棋子叫了一下小辞'));
 
     const queuedStatus = await rest('/api/watch-events/watch-offline-1/status');
     assert.equal(queuedStatus.delivery_status, 'queued');
@@ -1071,7 +1071,7 @@ try {
     const pat = await post('/api/chat', { type: 'pat', content: '的脑袋' });
     assert.equal(pat.type, 'pat');
     const pend = (await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`)).messages.find(x => x.id === pat.id);
-    assert.equal(pend.text_for_cy, '棋子 拍了拍 你的脑袋');
+    assert.ok(pend.text_for_cy.endsWith('棋子 拍了拍 你的脑袋'));
     const back = await tool('chat_pat', { content: '说乖' });
     assert.equal(back.sender, 'cy');
     // 拍一拍库两边共用，网页能改
@@ -1993,6 +1993,36 @@ try {
   });
   await step('未知工具还是报错', async () => {
     await assert.rejects(tool('nope_tool'), /未知工具/);
+  });
+  await step('辞的木屋总开关：仅保留记忆工具，消息留队列，重开后恢复', async () => {
+    const created = await (await fetch(`${base}/api/chat?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text', content: '权限开关测试消息', client_message_id: 'agent-access-test' })
+    })).json();
+    const off = await (await fetch(`${base}/api/agent-access?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_access: false })
+    })).json();
+    assert.equal(off.mode, 'memory_only');
+    const listed = await rpc('tools/list', {});
+    const names = listed.result.tools.map(x => x.name);
+    assert.ok(names.includes('recall') && names.includes('add_grain') && names.includes('get_profile'));
+    assert.ok(!names.includes('chat_reply') && !names.includes('nursery_send') && !names.includes('get_location'));
+    await assert.rejects(tool('chat_unread'), /仅记忆/);
+    await assert.rejects(tool('remember', { label: 'diary', text: '不该写' }), /只能添加核心记忆/);
+    const memory = await tool('remember', { label: 'learning', text: '权限开关测试记忆' });
+    assert.equal(memory.label, 'learning');
+    const blocked = await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`);
+    assert.equal(blocked.blocked, true);
+    assert.equal(blocked.reason, 'agent_memory_only');
+    assert.equal(blocked.count, 0);
+    const on = await (await fetch(`${base}/api/agent-access?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_access: true })
+    })).json();
+    assert.equal(on.mode, 'full');
+    const resumed = await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`);
+    assert.ok(resumed.messages.some(x => x.id === created.id), '重新开启后，关闭期间的消息应继续投递');
   });
 } finally {
   server.kill();

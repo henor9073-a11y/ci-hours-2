@@ -1541,6 +1541,7 @@ const MAIN_PRESETS = ['sakura', 'ocean', 'stone', 'night', 'mist'];
 function toggleMore(id, head) { const b = byId(id); const on = b.style.display === 'none'; b.style.display = on ? '' : 'none'; const l = head.querySelector('.link'); if (l) l.textContent = on ? '收起' : '展开'; }
 function loadSettings() {
   setLoaded = true;
+  renderAgentAccess();
   renderChatThemes();
   renderChatLook();
   renderAvatarMgmt();
@@ -1564,6 +1565,35 @@ function loadSettings() {
     <div style="display:flex;justify-content:space-between"><div class="card-title" style="font-size:14px">${n}</div><span id="sv-${k}" style="font-size:13px;color:var(--text-light)">${t.ui[k]}${unit}</span></div>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${t.ui[k]}" oninput="setUI('${k}',this.value,'${unit}')" onchange="commitUI()" style="width:100%;margin-top:8px"></div>`).join('');
   if (window.CALL) CALL.renderSettings('st-call-settings');
+}
+
+async function renderAgentAccess() {
+  const box = $('#st-agent-access');
+  if (!box) return;
+  try {
+    const a = await rest('/api/agent-access');
+    box.innerHTML = `<div class="ww-setting-card" style="padding:0;border:0;background:none">
+      <div><b>允许辞使用完整木屋</b><span>${a.full_access ? '完整木屋已开启' : '现在只开放记忆库'}</span></div>
+      <label class="ww-switch"><input type="checkbox" ${a.full_access ? 'checked' : ''} onchange="setAgentAccess(this.checked,this)"><i></i></label>
+    </div><div class="card-desc" style="margin-top:10px">${esc(a.description || '')}${a.full_access ? '' : '<br>关闭期间的木屋消息会保留，重新开启后继续投递。'}</div>`;
+  } catch (e) { fail(box, e); }
+}
+
+async function setAgentAccess(enabled, input) {
+  input.disabled = true;
+  try {
+    const r = await fetch(MW.apiUrl('/api/agent-access'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': MW.TOKEN },
+      body: JSON.stringify({ full_access: !!enabled })
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+    await renderAgentAccess();
+  } catch (e) {
+    input.checked = !enabled;
+    input.disabled = false;
+    alert('没切换成功：' + e.message);
+  }
 }
 // 选樱海石夜雾之一：全站换，聊天页也跟着换同一套；选别的（暖灰绿那七套）聊天页不动
 function pickPreset(k) { const t = MW.loadTheme(); t.preset = k; t.custom = {}; MW.saveTheme(t); if (CX.themes[k]) CX.setTheme(k); loadSettings(); }
