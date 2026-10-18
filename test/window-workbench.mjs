@@ -31,9 +31,10 @@ assert.equal(job.status, 'queued');
 assert.equal(job.disable_wake_on_prepare, true);
 assert.match(job.message, /先关闭自主苏醒/);
 assert.equal(job.model, 'claude-opus-4-6[1m]');
-assert.equal(job.handover_contract.raw_dialogue_hours, 22);
+assert.equal(job.handover_contract.raw_dialogue_hours, 46);
 assert.equal(job.handover_contract.recent_context_json_hours, 2);
-assert.equal(job.handover_contract.version, 4);
+assert.equal(job.handover_contract.version, 5);
+assert.equal(job.handover_contract.conversation_endpoint, '/api/history/main-context?hours=48&recent_hours=2');
 assert.equal(job.handover_contract.canonical_conversation_source, 'main');
 assert.deepEqual(job.handover_contract.include_sources, ['muwu', 'claude']);
 assert.deepEqual(job.handover_contract.exclude_sources, ['nursery']);
@@ -109,7 +110,7 @@ assert.equal(claimed.id, job.id);
 assert.equal(claimed.status, 'running');
 assert.match(claimed.message, /先关闭.*自主苏醒/);
 
-ww.updateJob(job.id, { phase: 'summarizing', progress: 52, message: '整理 22 小时', packet_preview: {
+ww.updateJob(job.id, { phase: 'summarizing', progress: 52, message: '整理 46 小时', packet_preview: {
   older_22h: { narrative: '完整原话', records: 12 },
   last_two_hours: { records: 8 }
 } });

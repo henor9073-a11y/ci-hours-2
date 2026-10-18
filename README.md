@@ -62,7 +62,7 @@
 - 反证：`get_grain_with_counterevidence`（家族带"害怕她走"这类负面词时自动带出 contradicts/repaired 关系的记忆和正面家族的记忆）/ `link_grains`（caused / before / repaired / contradicts / supersedes）
 - 档案：`get_profile` / `update_profile`（reason 必填，旧版本进历史）/ `get_profile_history`
 - 年轮：`add_ring` / `search_rings` / `get_ring` / `list_windows`
-- 主聊天输入：`get_main_conversation({hours:22,recent_hours:2})` 或传 `date` 取整天。换窗、每日总结、自动记忆、聊天导出统一读它；每条标明木屋 / Claude 窗口和时间，永远不含婴儿房。
+- 主聊天输入：换窗用 `get_main_conversation({hours:48,recent_hours:2})`，分成前 46 小时原话与最后 2 小时 JSONL；传 `date` 取整天。换窗、每日总结、自动记忆、聊天导出统一读它；每条标明木屋 / Claude 窗口和时间，永远不含婴儿房。
 - 每日总结：先读 `get_main_conversation({date})`，再把返回的 `source_segments` / `cursor` 传给 `add_daily`；总结会记录各窗口的起止时间，避免换过主要窗口后漏掉前面的内容。
 - 交接条：`set_handover` / `get_handover`（独立存 `handover.json`，只留最新一条）
 - 相册：`save_photo`（base64，**大图后端自动压，不用自己先处理**）/ `list_photos` / `get_photo` / `delete_photo`
@@ -121,7 +121,7 @@
 棋子的：今天做了什么 + OOTD（可以配一张照片）+ 备注 + 当天手机使用，手填，辞也能替她改。
 辞的：**只读**——他今天做了什么从笔记／运行日志／每日总结自动来，不给手填的输入框。
 
-存在 `moments.json`，**故意跟每日总结分开**：每日总结是早上 8 点自动跑的、同一天再写一次是整体覆盖，
+存在 `moments.json`，**故意跟每日总结分开**：每日总结在次日 00:30 先导出前一天 00:00–24:00 的原始记录，再自动生成；同一天再写一次是整体覆盖，
 手填的 OOTD 和状态如果塞在那里面会被冲掉。工具是 `get_moment` / `set_moment`，只改传进来的字段。
 
 ### 头像
@@ -172,7 +172,7 @@
 
 ### 主聊天记录（木屋 + Claude）
 - **按日期查找与搜索**默认走 `source=main`：木屋和当天所有 Claude 窗口按时间混排，逐段标明来源；婴儿房不在这里。
-- 每一天都有「导出原始聊天」，输出时间、来源窗口、说话人和原文。接口是 `GET /api/history/export?date=YYYY-MM-DD`；后台统一输入是 `GET /api/history/main-context?hours=22&recent_hours=2`。
+- 每一天都有「导出原始聊天」，输出时间、来源窗口、说话人和原文。接口是 `GET /api/history/export?date=YYYY-MM-DD`；换窗统一输入是 `GET /api/history/main-context?hours=48&recent_hours=2`。
 - 最近一份每日总结的取材范围可以核验：`GET /api/history/pipeline-status` / MCP `get_main_pipeline_status` 会显示来源分段、读取游标和婴儿房排除状态；木屋「工具」也直接显示“已核验 / 来源不完整 / 旧格式无法核验”。
 - Claude 的旧「按条目」入口仍保留，专门查看单条年轮里的 thinking / 工具折叠与原始切片。
 - **拆说话人**（`lib/muwen/dialog.js`）：只认白名单名字——`[00:03] 棋子:`、`棋子：`/`辞：`、`[辞]:`、`USER:`/`ASST:`、`USER[2026-08-30T12:28:05]:`。正文里 `方案：`、`"id":` 这种冒号行不算。一句话再拆成有序的块：正文 / `（思考）`后面的英文思考（折叠）/ `［调用 xxx］` / `［结果］`后面的工具返回（折叠）。一个说话人都拆不出来的（叙述体纪要）整篇当文档显示。
