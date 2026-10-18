@@ -843,6 +843,8 @@ try {
     assert.equal(r.content, '我的卫衣。你穿着我的衣服出门了。', '语音失败不能吞掉文字');
     assert.ok(!r.voice_id);
     assert.equal(r.voice_stream, true);
+    const duplicate = await tool('chat_reply', { content: '我的卫衣。你穿着我的衣服出门了。', voice: true });
+    assert.equal(duplicate.id, r.id, '两分钟内完全相同的木屋语音不能重复落库');
     // 不要语音就当普通回复
     const plain = await tool('chat_reply', { content: '纯文字这条' });
     assert.ok(!plain.warning && !plain.voice_id);
