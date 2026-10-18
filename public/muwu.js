@@ -477,14 +477,17 @@ async function loadToolsCard() {
 async function openTools() {
   sheetLoading('工具');
   try {
-    const [t, revisions] = await Promise.all([
+    const [t, revisions, workbench] = await Promise.all([
       rest('/api/tools/status?fresh=1'),
-      rest('/api/memory-revisions?limit=1').catch(() => ({ counts: {} }))
+      rest('/api/memory-revisions?limit=1').catch(() => ({ counts: {} })),
+      rest('/api/window-workbench').catch(() => null)
     ]); toolsCache = t;
     const groups = {};
     t.items.forEach(x => (groups[x.group] = groups[x.group] || []).push(x));
     const counts = revisions.counts || {};
-    sheetSet(`<div class="card tap" onclick="openMemoryRevisions()"><div style="display:flex;justify-content:space-between;gap:10px"><div><div class="card-title">记忆修改记录</div><div class="card-desc">查看修改前后、审议结果和撤销申请</div></div><span class="tag plain">${counts.open || 0} 待决定</span></div>
+    const mcpWindows = (workbench?.agent?.current?.windows || []).filter(w => !['offline', 'stopped'].includes(w.state) && (w.mcp_servers || []).length);
+    const mcpBlock = mcpWindows.length ? `<div class="section-title">辞当前窗口的 MCP</div>${mcpWindows.map(w => wwMcpPanel(w, !!w.is_primary)).join('')}` : '';
+    sheetSet(mcpBlock + `<div class="card tap" onclick="openMemoryRevisions()"><div style="display:flex;justify-content:space-between;gap:10px"><div><div class="card-title">记忆修改记录</div><div class="card-desc">查看修改前后、审议结果和撤销申请</div></div><span class="tag plain">${counts.open || 0} 待决定</span></div>
       <div class="card-desc" style="margin-top:8px">已生效 ${counts.applied || 0} · 已否决 ${counts.rejected || 0} · 已撤回 ${counts.withdrawn || 0}</div></div>` +
       Object.entries(groups).map(([g, items]) => `<div class="section-title">${esc(g)}</div>` + items.map(x => `<div class="card tool-row">
         <span class="tool-dot ${x.state}"></span>
