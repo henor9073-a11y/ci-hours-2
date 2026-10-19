@@ -2007,9 +2007,10 @@ try {
     assert.equal(active.status, 'active');
     const wake = await rest(`/api/continuity/wake?session_id=${PRIMARY_SESSION}`);
     assert.ok(wake.text.includes(candidate.id) && wake.wake.active.some(item => item.id === candidate.id));
-    await assert.rejects(tool('continuity_commitment_update', { id: candidate.id, action: 'done' }), /evidence_note/);
-    const done = await tool('continuity_commitment_update', { id: candidate.id, action: 'done', evidence_note: '端到端测试已读取苏醒提醒' });
+    await assert.rejects(tool('continuity_commitment_update', { id: candidate.id, action: 'done' }), /evidence_type|evidence_note/);
+    const done = await tool('continuity_commitment_update', { id: candidate.id, action: 'done', evidence_type: 'self_reported', evidence_note: '端到端测试已读取苏醒提醒' });
     assert.equal(done.status, 'done');
+    assert.equal(done.completion_evidence.label, '仅自述');
     const transitions = await rest('/api/continuity/events?type=commitment_transition&limit=20');
     assert.ok(transitions.some(event => event.commitment_id === candidate.id && event.transition.to === 'done'));
   });
@@ -2026,7 +2027,7 @@ try {
     const listed = await rpc('tools/list', {});
     const names = listed.result.tools.map(x => x.name);
     assert.ok(names.includes('recall') && names.includes('add_grain') && names.includes('get_profile'));
-    assert.ok(names.includes('continuity_commitment_list') && names.includes('continuity_commitment_candidate'), '仅记忆模式仍要能看见和更新自己的承诺');
+    assert.ok(names.includes('continuity_commitment_list') && names.includes('continuity_commitment_candidate') && names.includes('continuity_suggestion_decide'), '仅记忆模式仍要能看见和处理自己的承诺建议');
     assert.ok(!names.includes('chat_reply') && !names.includes('nursery_send') && !names.includes('get_location'));
     await assert.rejects(tool('chat_unread'), /仅记忆/);
     await assert.rejects(tool('remember', { label: 'diary', text: '不该写' }), /只能添加核心记忆/);

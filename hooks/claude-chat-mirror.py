@@ -11,15 +11,19 @@ inputs/results once; the server deduplicates the turn by ``mirror_key``.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import contextlib
+import io
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import datetime
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 TAIL_BYTES = 12 * 1024 * 1024
@@ -37,6 +41,77 @@ def log_status(status: str, **fields: Any) -> None:
             handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
     except OSError:
         pass
+
+
+def active_stop_commands(settings_paths: Optional[List[Path]] = None) -> List[str]:
+    """Return enabled Stop commands; Claude does not guarantee their order."""
+    paths = settings_paths or [Path.home() / ".claude" / "settings.json", Path.home() / ".claude" / "settings.local.json"]
+    commands: List[str] = []
+    for settings_path in paths:
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        groups = ((settings.get("hooks") or {}).get("Stop") or []) if isinstance(settings, dict) else []
+        for group in groups if isinstance(groups, list) else []:
+            hooks = group.get("hooks") if isinstance(group, dict) else []
+            for hook in hooks if isinstance(hooks, list) else []:
+                if isinstance(hook, dict) and hook.get("type") == "command" and hook.get("command"):
+                    commands.append(str(hook["command"]))
+    return commands
+
+
+def command_script(command: str, basename: str) -> Optional[Path]:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    for part in parts:
+        path = Path(os.path.expanduser(part))
+        if path.name == basename:
+            return path
+    return None
+
+
+def no_template_violations(script: Path, content: str) -> List[Any]:
+    """Use the active interceptor's own matcher, without running its CLI side effects."""
+    if not script.exists():
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location("muwen_active_no_template_talk", script)
+        if not spec or not spec.loader:
+            return []
+        module = importlib.util.module_from_spec(spec)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            spec.loader.exec_module(module)
+        checker = getattr(module, "find_violations", None) or getattr(module, "check_text", None)
+        if not callable(checker):
+            return []
+        result = checker(content)
+        if isinstance(result, list):
+            return result
+        return [result] if result else []
+    except Exception:
+        return []
+
+
+def known_blocker_reasons(content: str, session_id: str, settings_paths: Optional[List[Path]] = None) -> List[str]:
+    """Preflight known rewriting Stop hooks so mirror order cannot leak a draft."""
+    reasons: List[str] = []
+    for command in active_stop_commands(settings_paths):
+        script = command_script(command, "no-template-talk.py")
+        if script and no_template_violations(script, content):
+            reasons.append("no-template-talk.py")
+        if command_script(command, "photo-recall-guard.js"):
+            key = hashlib.sha256(str(session_id or "unknown").encode("utf-8", "replace")).hexdigest()[:24]
+            pending = Path.home() / ".claude" / "hooks" / "photo-recall-pending" / f"{key}.json"
+            try:
+                state = json.loads(pending.read_text(encoding="utf-8"))
+                if int(state.get("guard_attempts") or 0) < 1:
+                    reasons.append("photo-recall-guard.js")
+            except (OSError, ValueError, TypeError):
+                pass
+    return sorted(set(reasons))
 
 
 def read_event() -> Dict[str, Any]:
@@ -293,9 +368,6 @@ def main() -> int:
     event = read_event()
     # This file is registered only under Stop. Remote Control builds do not all
     # expose hook_event_name consistently, so do not use its absence as a gate.
-    if event.get("stop_hook_active") is True or event.get("stopHookActive") is True:
-        log_status("skipped_stop_hook_active")
-        return 0
     base = str(os.environ.get("MUWEN_URL") or "https://ci-hours-2.onrender.com").rstrip("/")
     token = str(os.environ.get("MUWEN_TOKEN") or "010219")
     session_id = str(event.get("session_id") or event.get("sessionId") or "")
@@ -311,9 +383,18 @@ def main() -> int:
     tools = turn.get("tools") if isinstance(turn.get("tools"), list) else []
     has_chat_reply = turn.get("has_chat_reply") is True
     if not content:
+        # 有过 Stop feedback 但还没有后续 assistant，说明现在只有待废弃草稿。
+        # 这时绝不能退回 event.last_assistant_message，否则 hook 顺序不同会把草稿镜像出去。
+        if turn.get("rewrite_occurred") is True:
+            log_status("waiting_for_rewrite", rewrite_attempts=int(turn.get("rewrite_attempts") or 0))
+            return 0
         content = str(event.get("last_assistant_message") or event.get("lastAssistantMessage") or "").strip()
     if not content:
         log_status("skipped_no_content", has_transcript=bool(transcript_path))
+        return 0
+    blockers = known_blocker_reasons(content, session_id)
+    if blockers:
+        log_status("waiting_for_known_blocker", blockers=blockers)
         return 0
     turn_id = str(event.get("turn_id") or event.get("turnId") or prompt.get("promptId") or "")
     digest = hashlib.sha256((session_id + "\0" + turn_id + "\0" + content).encode("utf-8", "replace")).hexdigest()

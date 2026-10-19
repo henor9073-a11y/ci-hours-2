@@ -112,6 +112,21 @@ process.stdin.on('end', async () => {
     }
   } catch (error) { log(`CALL_CHECK ${error?.name || error?.message || error}`); }
 
+  let continuityText = '';
+  try {
+    const response = await fetch(`${url}/api/continuity/pending`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'x-access-token': token, 'x-muwu-session-id': sessionId },
+      body: JSON.stringify({ session_id: sessionId }),
+      signal: AbortSignal.timeout(2200)
+    });
+    const result = await response.json();
+    if (response.ok) continuityText = String(result.text || '');
+    log(`CONTINUITY_PENDING ${Date.now() - T0}ms chars=${continuityText.length} http=${response.status}`);
+  } catch (error) {
+    log(`CONTINUITY_PENDING_ERR ${Date.now() - T0}ms ${error?.name || error?.message || error}`);
+  }
+
   try {
     const response = await fetch(`${url}/api/recall?token=${encodeURIComponent(token)}`, {
       method: 'POST',
@@ -130,11 +145,12 @@ process.stdin.on('end', async () => {
       });
     } else clearPending(sessionId);
 
-    const output = [result.text || '', photoContext(photos)].filter(Boolean).join('\n');
+    const output = [continuityText, result.text || '', photoContext(photos)].filter(Boolean).join('\n');
     if (output) process.stdout.write(`${output}\n`);
     log(`DONE ${Date.now() - T0}ms ${String(result.text || '').length}chars count=${Number(result.count) || 0} photos=${photos.length} http=${response.status}`);
   } catch (error) {
     clearPending(sessionId);
     log(`ERR ${Date.now() - T0}ms ${error?.name || error?.code || error?.message || error}`);
+    if (continuityText) process.stdout.write(`${continuityText}\n`);
   }
 });

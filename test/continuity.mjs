@@ -7,6 +7,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'muwen-continuity-test-'))
 process.env.DATA_DIR = dataDir;
 delete process.env.MUWEN_CONTINUITY_EVENT_LOG;
 delete process.env.MUWEN_COMMITMENT_TRACKER;
+delete process.env.MUWEN_COMMITMENT_SUGGESTIONS;
 delete process.env.MUWEN_CONTINUITY_CONTENT_MODE;
 
 const continuity = await import('../lib/muwen/continuity.js');
@@ -14,7 +15,12 @@ const continuity = await import('../lib/muwen/continuity.js');
 assert.deepEqual(continuity.featureFlags(), {
   event_log: true,
   commitment_tracker: true,
-  content_mode: 'sanitized_text'
+  commitment_suggestions: true,
+  stable_stance: false,
+  unresolved_conflict: false,
+  shell_detection: false,
+  content_mode: 'sanitized_text',
+  event_log_policy: { retention_days: 30, archive_after_days: 7, max_file_bytes: 10 * 1024 * 1024 }
 });
 
 continuity.recordClaudeTurn({
@@ -33,6 +39,11 @@ continuity.recordToolCall({
   ok: true, duration_ms: 12, session_id: 'session-main'
 });
 
+continuity.recordClaudeTurn({
+  session_id: 'session-main', turn_id: 'turn-suggest', output_message_id: 'a-suggest',
+  user_input: '你会处理吗？', content: '我现在就把部署状态检查清楚。'
+}, { allowed: true, primary_session_id: 'session-main' });
+
 const eventFile = path.join(dataDir, 'continuity-events', `${new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' })}.jsonl`);
 const rawLog = fs.readFileSync(eventFile, 'utf8');
 assert.ok(!rawLog.includes('HIDDEN_CHAIN_MUST_NEVER_BE_LOGGED'), '隐藏思维内容不能进入连续性日志');
@@ -43,6 +54,24 @@ const turnEvent = events.find(event => event.event_type === 'turn_finalized');
 assert.equal(turnEvent.thinking.content_stored, false);
 assert.equal(turnEvent.thinking.chars, 33);
 assert.ok(rawLog.includes('no-template-talk.py'), '只保留 thinking 元数据和规则记录');
+
+const suggested = continuity.listCommitments({ statuses: ['suggested_candidate'] })[0];
+assert.equal(suggested.status, 'suggested_candidate');
+assert.equal(continuity.wakeCommitments().active.length, 0, '系统建议未经确认不能进入 active');
+assert.match(continuity.pendingSuggestionContext({ session_id: 'session-main', mark_presented: true }), /不是已经建立的任务/);
+assert.equal(continuity.pendingSuggestionContext({ session_id: 'session-main', mark_presented: true }), '', '普通回复只提示一次，苏醒仍能看到未决建议');
+const editedSuggestion = continuity.decideSuggestion(suggested.id, {
+  decision: 'modify', commitment: '核验部署状态', next_action: '读取线上状态端点', reason: '把动作写具体'
+});
+assert.equal(editedSuggestion.status, 'suggested_candidate');
+assert.equal(editedSuggestion.confirmation_required, true);
+const suggestionActive = continuity.decideSuggestion(suggested.id, { decision: 'confirm', reason: '我确认承担' });
+assert.equal(suggestionActive.status, 'active');
+const selfReported = continuity.updateCommitment(suggested.id, {
+  action: 'done', evidence_type: 'self_reported', evidence_note: '我已经看过了'
+});
+assert.equal(selfReported.completion_evidence.label, '仅自述');
+assert.equal(selfReported.completion_evidence.verification, 'self_reported_only');
 
 const candidate = continuity.createCandidate({
   original_message: '我答应今天把测试跑完。',
@@ -61,11 +90,12 @@ assert.equal(modified.status, 'candidate');
 const active = continuity.decideCandidate(candidate.id, { decision: 'confirm', reason: '我明确承担' });
 assert.equal(active.status, 'active');
 assert.equal(continuity.wakeCommitments().active[0].id, candidate.id);
-assert.throws(() => continuity.updateCommitment(candidate.id, { action: 'done' }), /evidence_note/);
+assert.throws(() => continuity.updateCommitment(candidate.id, { action: 'done' }), /evidence_type|evidence_note/);
 const done = continuity.updateCommitment(candidate.id, {
-  action: 'done', evidence_note: 'continuity.mjs 已通过', evidence_message_ids: ['u-1']
+  action: 'done', evidence_type: 'message_id', evidence_note: 'continuity.mjs 已通过', evidence_message_ids: ['u-1']
 });
 assert.equal(done.status, 'done');
+assert.equal(done.completion_evidence.type, 'message_id');
 
 const late = continuity.createCandidate({
   original_message: '我答应在过去的时间点完成。',
@@ -75,6 +105,23 @@ continuity.decideCandidate(late.id, { decision: 'confirm' });
 const wake = continuity.wakeCommitments();
 assert.ok(wake.overdue.some(item => item.id === late.id), '到达检查点且无完成证据时应变为 overdue');
 assert.ok(continuity.wakeContextText().includes(late.id), '自主苏醒上下文应优先带上 overdue/active');
+
+const eventsDir = path.join(dataDir, 'continuity-events');
+const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Melbourne' });
+function daysBefore(n) {
+  const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10);
+}
+fs.writeFileSync(path.join(eventsDir, `${daysBefore(8)}.jsonl`), '{"event_type":"old"}\n');
+fs.writeFileSync(path.join(eventsDir, `${daysBefore(3)}.jsonl`), '{"event_type":"archive"}\n');
+process.env.MUWEN_CONTINUITY_EVENT_RETENTION_DAYS = '5';
+process.env.MUWEN_CONTINUITY_EVENT_ARCHIVE_DAYS = '2';
+const cleanup = continuity.cleanupEventLogs({ force: true });
+assert.ok(cleanup.deleted.some(name => name.startsWith(daysBefore(8))));
+assert.ok(cleanup.archived.some(name => name.startsWith(daysBefore(3))));
+assert.ok(fs.existsSync(path.join(eventsDir, `${daysBefore(3)}.jsonl.gz`)));
+process.env.MUWEN_CONTINUITY_EVENT_MAX_BYTES = '1024';
+for (let i = 0; i < 4; i++) continuity.appendEvent({ event_type: 'rotation_test', payload: 'x'.repeat(900), index: i });
+assert.ok(fs.readdirSync(eventsDir).some(name => name.includes('.part-')), '达到单文件上限后应分片轮转');
 
 process.env.MUWEN_COMMITMENT_TRACKER = '0';
 assert.throws(() => continuity.createCandidate({ original_message: 'x', commitment: 'y', next_action: 'z' }), /feature flag/);

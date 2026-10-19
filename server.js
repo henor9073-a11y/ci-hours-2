@@ -53,6 +53,8 @@ import {
   syncPetNest, pendingPetActions, completePetAction
 } from './lib/pet-nest.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROCESS_STARTED_AT = new Date().toISOString();
+const RELEASE_COMMIT = String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || process.env.COMMIT_SHA || 'unknown');
 
 // 木纹：启动时把 ci-hours 的 memory.json 迁进 grains/profiles（只跑一次，旧文件原样保留当备份）
 mw.migrate.migrateIfNeeded();
@@ -680,7 +682,8 @@ app.post('/api/chat/delivered', (req, res) => {
 // 但仍不放进公共页面，也不返回任何隐藏思维内容。
 app.get('/api/continuity/status', (_, res) => res.json({
   flags: mw.continuity.featureFlags(),
-  commitments: mw.continuity.wakeCommitments()
+  commitments: mw.continuity.wakeCommitments(),
+  runtime: { process_started_at: PROCESS_STARTED_AT, release_commit: RELEASE_COMMIT, pid: process.pid }
 }));
 app.get('/api/continuity/events', (req, res) => res.json(mw.continuity.listEvents({
   limit: Number(req.query.limit) || 100,
@@ -694,6 +697,13 @@ app.get('/api/continuity/wake', (req, res) => {
   const route = deliveryRoute(req);
   if (!route.allowed) return res.status(409).json({ text: '', blocked: true, reason: route.reason });
   res.json({ text: mw.continuity.wakeContextText(), wake: mw.continuity.wakeCommitments() });
+});
+app.post('/api/continuity/pending', (req, res) => {
+  const route = deliveryRoute(req);
+  if (!route.allowed) return res.status(409).json({ text: '', blocked: true, reason: route.reason });
+  res.json({
+    text: mw.continuity.pendingSuggestionContext({ session_id: route.primary_session_id || '', mark_presented: true })
+  });
 });
 // GPD 上的钩子在辞调完 chat_reply 后补真实的 thinking / 工具列表
 app.post('/api/chat/annotate', (req, res) => {
