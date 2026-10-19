@@ -73,6 +73,17 @@ const selfReported = continuity.updateCommitment(suggested.id, {
 assert.equal(selfReported.completion_evidence.label, '仅自述');
 assert.equal(selfReported.completion_evidence.verification, 'self_reported_only');
 
+continuity.recordClaudeTurn({
+  session_id: 'session-main', turn_id: 'turn-old-window', output_message_id: 'a-old-window',
+  content: '我答应把旧窗口兼容入口检查完。'
+}, { allowed: true, primary_session_id: 'session-main' });
+const oldWindowSuggestion = continuity.listCommitments({ statuses: ['suggested_candidate'] })
+  .find(item => item.source?.message_id === 'a-old-window');
+const oldWindowRejected = continuity.decideCandidate(oldWindowSuggestion.id, {
+  decision: 'refuse', reason: '这只是测试语句，不构成真实承诺'
+});
+assert.equal(oldWindowRejected.status, 'rejected', '缓存旧工具列表的窗口仍能处理建议候选');
+
 const candidate = continuity.createCandidate({
   original_message: '我答应今天把测试跑完。',
   commitment: '完成连续性机制测试',
