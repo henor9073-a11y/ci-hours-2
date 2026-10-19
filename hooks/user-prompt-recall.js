@@ -86,6 +86,21 @@ process.stdin.on('end', async () => {
 
   const url = process.env.MUWEN_URL || 'https://ci-hours-2.onrender.com';
   const token = process.env.MUWEN_TOKEN || '010219';
+  const isWake = /^(?:\/loop(?:\s|$)|#\s*Autonomous loop tick\b|<<autonomous-loop|\[自动唤醒\])/i.test(prompt.trim());
+  if (isWake) {
+    try {
+      const response = await fetch(`${url}/api/continuity/wake`, {
+        headers: { 'x-access-token': token, 'x-muwu-session-id': sessionId },
+        signal: AbortSignal.timeout(2200)
+      });
+      const result = await response.json();
+      if (response.ok && result.text) process.stdout.write(`${result.text}\n`);
+      log(`CONTINUITY_WAKE ${Date.now() - T0}ms items=${Number(result.wake?.active?.length || 0) + Number(result.wake?.overdue?.length || 0)} http=${response.status}`);
+    } catch (error) {
+      log(`CONTINUITY_WAKE_ERR ${Date.now() - T0}ms ${error?.name || error?.message || error}`);
+    }
+    process.exit(0);
+  }
   try {
     const response = await fetch(`${url}/api/call/pending?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1200) });
     const state = await response.json();

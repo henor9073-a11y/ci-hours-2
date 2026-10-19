@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/memory-cleanup.mjs && node test/memory-revisions.mjs && node test/history-main.mjs && node test/recall-provider.mjs && node test/chat-schema.mjs && node test/nursery.mjs && node test/coupons.mjs && node test/location-health.mjs && node test/window-workbench.mjs && node test/backup-storage.mjs && node test/smoke.mjs"
+    "test": "node test/memory-cleanup.mjs && node test/memory-revisions.mjs && node test/history-main.mjs && node test/recall-provider.mjs && node test/chat-schema.mjs && node test/nursery.mjs && node test/coupons.mjs && node test/location-health.mjs && node test/window-workbench.mjs && node test/continuity.mjs && node test/backup-storage.mjs && node test/smoke.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

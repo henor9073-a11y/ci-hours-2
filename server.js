@@ -586,11 +586,17 @@ app.post('/api/chat/sync-settings', (req, res) => {
 });
 app.post('/api/chat/claude-mirror', async (req, res) => {
   try {
-    const route = agentDeliveryRoute(req);
-    if (!route.allowed) return res.status(409).json({ mirrored: false, blocked: true, reason: route.reason });
+    const baseRoute = deliveryRoute(req);
+    if (!baseRoute.allowed) return res.status(409).json({ mirrored: false, blocked: true, reason: baseRoute.reason });
     const b = req.body || {};
     const content = String(b.content || '').trim();
     if (!content) return res.status(400).json({ error: 'content 不能为空' });
+    // 日志属于连续性/记忆层：即使棋子暂时关闭木屋消息投递，也应记录主窗口最终回合。
+    // recordClaudeTurn 只保存最终可见输出与 thinking 技术元数据，不保存隐藏思维内容。
+    try { mw.continuity.recordClaudeTurn(b, baseRoute); }
+    catch (error) { console.error('continuity turn log failed:', error?.message || error); }
+    const route = agentDeliveryRoute(req);
+    if (!route.allowed) return res.json({ mirrored: false, logged: true, blocked: true, reason: route.reason });
     const autoSync = mw.chat.getSyncSettings().auto_sync_reply === true;
     const fromMuwu = b.from_muwu === true;
     // 关闭自动同步时，木屋注入回合仍必须使用原来的 chat_reply，现状完全不变。
@@ -666,8 +672,28 @@ app.get('/api/chat/pending', (req, res) => {
 app.post('/api/chat/delivered', (req, res) => {
   const route = agentDeliveryRoute(req);
   if (!route.allowed) return res.json({ delivered: 0, blocked: true, reason: route.reason });
-  try { res.json(mw.chat.markDelivered((req.body || {}).ids || [])); }
+  try { res.json(mw.chat.markDelivered((req.body || {}).ids || [], { session_id: route.primary_session_id || '', route: route.reason || 'primary_session' })); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+
+// 行为连续性第一阶段的只读状态。全部位于密码保护之后；日志已经脱敏，
+// 但仍不放进公共页面，也不返回任何隐藏思维内容。
+app.get('/api/continuity/status', (_, res) => res.json({
+  flags: mw.continuity.featureFlags(),
+  commitments: mw.continuity.wakeCommitments()
+}));
+app.get('/api/continuity/events', (req, res) => res.json(mw.continuity.listEvents({
+  limit: Number(req.query.limit) || 100,
+  types: String(req.query.type || '').split(',').map(x => x.trim()).filter(Boolean)
+})));
+app.get('/api/continuity/commitments', (req, res) => res.json(mw.continuity.listCommitments({
+  statuses: String(req.query.status || '').split(',').map(x => x.trim()).filter(Boolean),
+  limit: Number(req.query.limit) || 100
+})));
+app.get('/api/continuity/wake', (req, res) => {
+  const route = deliveryRoute(req);
+  if (!route.allowed) return res.status(409).json({ text: '', blocked: true, reason: route.reason });
+  res.json({ text: mw.continuity.wakeContextText(), wake: mw.continuity.wakeCommitments() });
 });
 // GPD 上的钩子在辞调完 chat_reply 后补真实的 thinking / 工具列表
 app.post('/api/chat/annotate', (req, res) => {

@@ -1994,6 +1994,25 @@ try {
   await step('未知工具还是报错', async () => {
     await assert.rejects(tool('nope_tool'), /未知工具/);
   });
+  await step('行为连续性：候选需确认、苏醒可见、完成需证据', async () => {
+    const candidate = await tool('continuity_commitment_candidate', {
+      original_message: '我答应测试承诺追踪器。',
+      commitment: '完成一次端到端承诺测试',
+      next_action: '检查苏醒提醒',
+      next_wake_check_at: 'next_wake',
+      source_surface: 'test', source_session_id: PRIMARY_SESSION, source_message_id: 'continuity-user-1'
+    });
+    assert.equal(candidate.status, 'candidate');
+    const active = await tool('continuity_commitment_decide', { id: candidate.id, decision: 'confirm' });
+    assert.equal(active.status, 'active');
+    const wake = await rest(`/api/continuity/wake?session_id=${PRIMARY_SESSION}`);
+    assert.ok(wake.text.includes(candidate.id) && wake.wake.active.some(item => item.id === candidate.id));
+    await assert.rejects(tool('continuity_commitment_update', { id: candidate.id, action: 'done' }), /evidence_note/);
+    const done = await tool('continuity_commitment_update', { id: candidate.id, action: 'done', evidence_note: '端到端测试已读取苏醒提醒' });
+    assert.equal(done.status, 'done');
+    const transitions = await rest('/api/continuity/events?type=commitment_transition&limit=20');
+    assert.ok(transitions.some(event => event.commitment_id === candidate.id && event.transition.to === 'done'));
+  });
   await step('辞的木屋总开关：仅保留记忆工具，消息留队列，重开后恢复', async () => {
     const created = await (await fetch(`${base}/api/chat?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2007,6 +2026,7 @@ try {
     const listed = await rpc('tools/list', {});
     const names = listed.result.tools.map(x => x.name);
     assert.ok(names.includes('recall') && names.includes('add_grain') && names.includes('get_profile'));
+    assert.ok(names.includes('continuity_commitment_list') && names.includes('continuity_commitment_candidate'), '仅记忆模式仍要能看见和更新自己的承诺');
     assert.ok(!names.includes('chat_reply') && !names.includes('nursery_send') && !names.includes('get_location'));
     await assert.rejects(tool('chat_unread'), /仅记忆/);
     await assert.rejects(tool('remember', { label: 'diary', text: '不该写' }), /只能添加核心记忆/);
