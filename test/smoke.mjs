@@ -12,6 +12,7 @@ const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'muwen-test-'));
 // 测试进程里也会直接 import lib 模块（语义层那步），让它跟起的服务读同一个数据目录
 process.env.DATA_DIR = DATA;
 const TOKEN = 'testpw';
+const WINDOW_AGENT_TOKEN = 'test-window-agent';
 const PRIMARY_SESSION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SECONDARY_SESSION = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const t = new Date().toISOString();
@@ -52,7 +53,7 @@ fs.writeFileSync(path.join(DATA, 'transcripts.json'), JSON.stringify([
 ]));
 
 const server = spawn(process.execPath, ['server.js'], {
-  env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, ACCESS_PASSWORD: TOKEN, ANTHROPIC_API_KEY: process.env.MUWEN_TEST_REAL_AGENT ? process.env.ANTHROPIC_API_KEY : '' },
+  env: { ...process.env, PORT: String(PORT), DATA_DIR: DATA, ACCESS_PASSWORD: TOKEN, WINDOW_AGENT_TOKEN, ANTHROPIC_API_KEY: process.env.MUWEN_TEST_REAL_AGENT ? process.env.ANTHROPIC_API_KEY : '' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 let serverLog = '';
@@ -77,6 +78,26 @@ async function rpc(method, params) {
 }
 async function tool(name, args = {}) {
   const j = await rpc('tools/call', { name, arguments: args });
+  if (!j.result) throw new Error(`${name}: ${JSON.stringify(j.error)}`);
+  const text = j.result.content[0].text;
+  if (j.result.isError) throw new Error(`${name} 报错：${text}`);
+  try { return JSON.parse(text); } catch { return text; }
+}
+async function backgroundRpc(method, params) {
+  const r = await fetch(`${base}/mcp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-access-token': TOKEN,
+      'x-muwen-background-role': 'daily_pipeline',
+      'x-window-agent-key': WINDOW_AGENT_TOKEN
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params })
+  });
+  return r.json();
+}
+async function backgroundTool(name, args = {}) {
+  const j = await backgroundRpc('tools/call', { name, arguments: args });
   if (!j.result) throw new Error(`${name}: ${JSON.stringify(j.error)}`);
   const text = j.result.content[0].text;
   if (j.result.isError) throw new Error(`${name} 报错：${text}`);
@@ -2042,6 +2063,20 @@ try {
     await assert.rejects(tool('remember', { label: 'diary', text: '不该写' }), /只能添加核心记忆/);
     const memory = await tool('remember', { label: 'learning', text: '权限开关测试记忆' });
     assert.equal(memory.label, 'learning');
+    const wrongBackground = await fetch(`${base}/mcp`, {
+      method: 'POST', headers: {
+        'Content-Type': 'application/json', 'x-access-token': TOKEN,
+        'x-muwen-background-role': 'daily_pipeline', 'x-window-agent-key': 'wrong-key'
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name: 'search_rings', arguments: { limit: 1 } } })
+    }).then(r => r.json());
+    assert.equal(wrongBackground.result.isError, true, '错误的工作台密钥不能伪装成后台');
+    assert.match(wrongBackground.result.content[0].text, /仅记忆/);
+    const backgroundList = await backgroundRpc('tools/list', {});
+    assert.ok(backgroundList.result.tools.some(item => item.name === 'search_rings'));
+    assert.ok(backgroundList.result.tools.some(item => item.name === 'add_daily'));
+    const backgroundRead = await backgroundTool('search_rings', { limit: 1 });
+    assert.ok(Array.isArray(backgroundRead), '每日后台在仅记忆模式下仍可读取年轮');
     const blocked = await rest(`/api/chat/pending?session_id=${PRIMARY_SESSION}`);
     assert.equal(blocked.blocked, true);
     assert.equal(blocked.reason, 'agent_memory_only');
