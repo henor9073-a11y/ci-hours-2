@@ -253,23 +253,75 @@
     });
   }
   const player = new Audio();
-  let playingId = null, playPending = false, playAttempt = 0;
-  function togglePlay(m, bub) {
+  let playingId = null, playPending = false, playPaused = false, playAttempt = 0, playbackQueue = [];
+  function voiceQueueFrom(m) {
+    if (m.sender !== 'cy' || played.has(m.id)) return [m];
+    const start = msgs.findIndex(x => x.id === m.id);
+    if (start < 0) return [m];
+    const seen = new Set();
+    const queue = msgs.slice(start).filter(x => x.sender === 'cy' && isVoice(x) && !played.has(x.id) && !seen.has(x.id) && seen.add(x.id));
+    return queue.length ? queue : [m];
+  }
+  function voiceBubbleFor(id) {
+    return document.querySelector(`.cx-item[data-id="${CSS.escape(id)}"] .cx-vbub`);
+  }
+  function clearPlayingBubble() {
     document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing'));
-    if (playingId === m.id && playPending) return; // 流式音频还在起播，重复点会把前一次 abort 掉
-    if (playingId === m.id && !player.paused) { player.pause(); playingId = null; return; }
+  }
+  function startPlayback(m) {
+    clearPlayingBubble();
     const attempt = ++playAttempt;
     playingId = m.id;
-    playPending = true; bub.classList.add('playing');
+    playPending = true;
+    playPaused = false;
+    const bub = voiceBubbleFor(m.id);
+    if (bub) bub.classList.add('playing');
     player.src = voiceSrc(m);
-    player.play().then(() => { if (attempt !== playAttempt) return; playPending = false; bub.classList.add('playing'); markPlayed(m.id); }).catch(e => {
-      if (attempt !== playAttempt) return; playPending = false; playingId = null;
+    player.play().then(() => {
+      if (attempt !== playAttempt || playingId !== m.id) return;
+      playPending = false;
+      playPaused = false;
+      if (bub) bub.classList.add('playing');
+      markPlayed(m.id);
+    }).catch(e => {
+      if (attempt !== playAttempt) return;
+      playPending = false;
+      playPaused = false;
+      playingId = null;
+      clearPlayingBubble();
       if (e && e.name === 'AbortError') return;
       hint('放不出来：' + (e.message || e));
+      const next = playbackQueue.shift();
+      if (next) startPlayback(next);
     });
   }
-  player.onended = () => { playPending = false; playingId = null; document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
-  player.onpause = () => { document.querySelectorAll('.cx-vbub.playing').forEach(b => b.classList.remove('playing')); };
+  function togglePlay(m, bub) {
+    if (playingId === m.id && playPending) return; // 起播中忽略重复触摸，不能再建第二条播放请求
+    if (playingId === m.id && !player.paused) {
+      player.pause(); playPaused = true; clearPlayingBubble(); return;
+    }
+    if (playingId === m.id && playPaused) {
+      const attempt = ++playAttempt;
+      playPending = true;
+      player.play().then(() => {
+        if (attempt !== playAttempt) return;
+        playPending = false; playPaused = false; bub.classList.add('playing');
+      }).catch(e => {
+        if (attempt !== playAttempt) return;
+        playPending = false; playPaused = false; playingId = null; playbackQueue = [];
+        hint('放不出来：' + (e.message || e));
+      });
+      return;
+    }
+    const queue = voiceQueueFrom(m);
+    playbackQueue = queue.slice(1);
+    startPlayback(queue[0]);
+  }
+  player.onended = () => {
+    playPending = false; playPaused = false; playingId = null; clearPlayingBubble();
+    const next = playbackQueue.shift();
+    if (next) startPlayback(next);
+  };
   function ticks(m) {
     if (m.sender !== 'nor') return '';
     return m.read ? '<span class="cx-tick read" title="辞已读">✓✓</span>' : '<span class="cx-tick" title="已发出">✓</span>';

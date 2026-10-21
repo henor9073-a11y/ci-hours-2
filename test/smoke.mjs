@@ -1350,6 +1350,7 @@ try {
     assert.ok(call.includes('setVoiceDucked(true)') && call.includes('DUCK_VOLUME = .22') && !call.includes('voiceSource.stop()'), '棋子开口时只能压低辞的声音，不能截断当前或后续语音');
     assert.ok(call.includes('transcriptionQueue = transcriptionQueue.then(() => sendRecording(parts, mime))'), '连续检测到的录音必须依次转写，不能并发导致话序颠倒');
     assert.ok(chat.includes('playPending') && chat.includes("e.name === 'AbortError'"), '留言流式语音加载中不能被重复点按 abort，也不能把取消误报成损坏');
+    assert.ok(chat.includes('voiceQueueFrom(m)') && chat.includes('playbackQueue.shift()') && chat.includes('!played.has(x.id)'), '第一次播放未听语音后，应按顺序自动播放后续未听语音');
     assert.ok(chat.includes("m.voice_id ? MW.audioUrl(m.voice_id)") && chat.includes("'准备中'") && chat.includes("m.voice_stream && !m.voice_id"), '辞的语音应后台缓存，准备好后恢复时长并直接播放完整文件');
     const chatBackend = fs.readFileSync(path.join(process.cwd(), 'lib/muwen/chat.js'), 'utf8');
     assert.ok(chatBackend.includes('synthesizeVoiceLater(msg.id)') && chatBackend.includes('ensureVoiceCached') && chatBackend.includes('m.voice_id = voice.id'), 'chat_reply 文字先返回，语音要在后台预生成缓存');
