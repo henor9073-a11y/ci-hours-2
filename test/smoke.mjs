@@ -857,8 +857,15 @@ try {
     fs2.writeFileSync(path2.join(DATA, 'voice-history.json'), JSON.stringify([{ id: 'vtest1', text: '我的卫衣。', filename: 'vtest1.mp3', createdAt: new Date().toISOString() }]));
     // 网页冒充不了辞（这条走的是进程内直接写，模拟 chat_reply 生成成功之后的样子）
     const chatMod = await import('../lib/muwen/chat.js');
-    const posted = await chatMod.sendMessage({ sender: 'cy', type: 'text', content: '带声音的一句', voice_id: 'vtest1' });
+    const posted = await chatMod.sendMessage({ sender: 'cy', type: 'text', content: 'Come closer.', voice_id: 'vtest1' });
     assert.equal(posted.voice_id, 'vtest1');
+    const translated = await chatMod.translateMessage(posted.id, { generate: async options => {
+      assert.equal(options.user, 'Come closer.');
+      return { data: { translation: '靠近一点。' }, provider: 'test', model: 'test-translator' };
+    } });
+    assert.equal(translated.translation_zh, '靠近一点。');
+    const cachedTranslation = await chatMod.translateMessage(posted.id, { generate: async () => { throw new Error('缓存未命中'); } });
+    assert.equal(cachedTranslation.translation_zh, '靠近一点。', '翻译应按原文缓存，展开时不能重复调用模型');
     const audio = await fetch(`${base}/api/voice/vtest1/audio?token=${TOKEN}`);
     assert.equal(audio.status, 200);
     assert.equal(audio.headers.get('content-type'), 'audio/mpeg');
@@ -870,6 +877,7 @@ try {
     const js = await (await fetch(`${base}/chat.js?token=${TOKEN}`)).text();
     assert.ok(js.includes('cx-tts') && js.includes('m.voice_id'), 'chat.js 该渲染语音播放器');
     assert.ok(js.includes('cx-voice-text'), '辞的语音要有转文字');
+    assert.ok(js.includes('data-act="translate"') && js.includes("post('/api/chat/translate'"), '辞的语音转写下方要能按需展开中文译文');
   });
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const heartbeat = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {

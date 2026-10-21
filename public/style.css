@@ -398,6 +398,10 @@ body.chat-open > .header { display: none; }
 .cx-vt-btn { border: 1px solid var(--cx-think-bd); background: var(--cx-think-bg); color: var(--cx-name); border-radius: 12px; font-size: 12px; padding: 4px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .cx-voice-text { margin-top: 4px; background: var(--cx-ai); border-radius: 12px; padding: 8px 12px; font-size: var(--cx-font); line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-width: 100%; box-sizing: border-box; }
 .cx-row.me .cx-voice-text { background: var(--cx-me); }
+.cx-vtranslate-actions { margin-top: 7px; display: flex; justify-content: flex-start; }
+.cx-vtranslate-btn { border: 0; background: none; color: var(--cx-name); padding: 2px 0; font: 600 11px/1.3 inherit; cursor: pointer; }
+.cx-vtranslate-btn:disabled { opacity: .55; cursor: wait; }
+.cx-translation { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--cx-think-bd); color: var(--cx-text); }
 .cx-quote.out { background: var(--cx-think-bg); border-radius: 8px; padding: 4px 8px 4px 9px; margin-bottom: 4px; }
 .cx-native { background: none; border: none; color: var(--cx-name); font-size: 13px; font-family: inherit; display: flex; align-items: center; gap: 6px; padding: 3px 2px; cursor: pointer; }
 .cx-native b { font-weight: 400; font-size: 15px; opacity: .7; }

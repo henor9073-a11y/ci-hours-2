@@ -746,6 +746,10 @@ app.post('/api/chat/transcribe', async (req, res) => {
     res.json({ text: await transcribeAudio(buf, mime || 'audio/webm') });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
+app.post('/api/chat/translate', async (req, res) => {
+  try { res.json(await mw.chat.translateMessage((req.body || {}).id)); }
+  catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
 app.get('/api/chat/search', (req, res) => res.json(mw.chat.searchChat({ q: req.query.q, limit: Math.min(Number(req.query.limit) || 60, 200), skip: Number(req.query.skip) || 0 })));
 app.get('/api/chat/context', (req, res) => {
   const c = mw.chat.contextOf(String(req.query.id || ''), Math.min(Number(req.query.n) || 8, 40));

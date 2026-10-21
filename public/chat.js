@@ -115,7 +115,8 @@
   function sigOf(m) {
     return JSON.stringify([
       m.read, m.starred, m.transcript_status, m.transcript, m.has_image,
-      m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote, m.action, m.mirror_key
+      m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote, m.action, m.mirror_key,
+      m.translation_zh, m.translation_status, m.translation_source_hash
     ]);
   }
 
@@ -231,11 +232,14 @@
   function voiceRowHtml(m, isAi) {
     const dur = m.duration || durCache[m.id] || 0;
     const open = !!expanded['v' + m.id];
+    const translationOpen = !!expanded['tr' + m.id];
     const dot = isAi && !played.has(m.id) ? '<i class="cx-vdot"></i>' : '';
+    const translation = isAi ? `<div class="cx-vtranslate-actions"><button class="cx-vtranslate-btn" data-act="translate">${translationOpen ? '收起译文' : '翻译'}</button></div>
+      <div class="cx-translation"${translationOpen ? '' : ' hidden'}>${esc(m.translation_zh || '')}</div>` : '';
     return `<div class="cx-vrow">
         <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : m.voice_stream && !m.voice_id ? '准备中' : '…'}</span></div>
         <button class="cx-vt-btn" data-act="vt">${open ? '收起' : '转文字'}</button>${dot}
-      </div><div class="cx-voice-text"${open ? '' : ' hidden'}>${esc(voiceText(m))}</div>`;
+      </div><div class="cx-voice-text"${open ? '' : ' hidden'}><div>${esc(voiceText(m))}</div>${translation}</div>`;
   }
   // 辞的语音回复不知道多长：读一下音频头拿时长，拿到了回填条的长度
   function probeDurations(scope) {
@@ -522,6 +526,25 @@
       t.hidden = !t.hidden; el.textContent = t.hidden ? '转文字' : '收起';
       expanded['v' + m.id] = !t.hidden;
       if (!t.hidden && stick) toBottomNow();
+    } else if (act === 'translate') {
+      const translation = el.closest('.cx-voice-text').querySelector('.cx-translation');
+      if (!translation.hidden) {
+        translation.hidden = true; el.textContent = '翻译'; expanded['tr' + m.id] = false; return;
+      }
+      if (m.translation_zh) {
+        translation.textContent = m.translation_zh; translation.hidden = false;
+        el.textContent = '收起译文'; expanded['tr' + m.id] = true;
+        if (stick) toBottomNow();
+        return;
+      }
+      if (el.disabled) return;
+      el.disabled = true; el.textContent = '翻译中…';
+      post('/api/chat/translate', { id: m.id }, 1).then(updated => {
+        Object.assign(m, updated); expanded['tr' + m.id] = true; repaintRow(m);
+        if (stick) toBottomNow();
+      }).catch(error => {
+        el.disabled = false; el.textContent = '翻译'; hint('翻译失败：' + error.message);
+      });
     } else if (act === 'play' && !longFired) {
       togglePlay(m, el);
     }
