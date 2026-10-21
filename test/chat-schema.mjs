@@ -53,8 +53,23 @@ assert.equal(mirrorRetry.id, mirror.id, '同一轮 Claude 原话只能镜像一�
 assert.ok(!chat.historyDay(mirror.date).some(m => m.id === mirror.id), 'Claude 镜像不能重复进入木屋历史导出');
 assert.ok(!chat.searchChat({ q: '只读的 Claude 原话' }).hits.some(m => m.id === mirror.id), 'Claude 镜像不能成为第二份搜索结果');
 
-assert.deepEqual(chat.getSyncSettings(), { auto_sync_reply: false }, '自动同步必须默认关闭，保持现状');
-assert.deepEqual(chat.setSyncSettings({ auto_sync_reply: true }), { auto_sync_reply: true });
+assert.deepEqual(chat.getSyncSettings(), {
+  auto_sync_reply: false,
+  claude_mirror_enabled: true
+}, '自动回复默认关闭，但 Claude 💭 默认继续同步以保持现状');
+assert.deepEqual(chat.setSyncSettings({ auto_sync_reply: true }), {
+  auto_sync_reply: true,
+  claude_mirror_enabled: true
+});
+assert.deepEqual(chat.setSyncSettings({ claude_mirror_enabled: false }), {
+  auto_sync_reply: true,
+  claude_mirror_enabled: false
+}, 'Claude 💭 开关不能改变自动回复开关');
+assert.deepEqual(chat.setSyncSettings({ auto_sync_reply: false }), {
+  auto_sync_reply: false,
+  claude_mirror_enabled: false
+}, '自动回复开关不能重新打开 Claude 💭');
+chat.setSyncSettings({ auto_sync_reply: true, claude_mirror_enabled: true });
 const autoReply = await chat.sendMessage({
   sender: 'cy', type: 'text', content: 'Claude 自动同步正文', thinking: '真实思考',
   tools: [{ name: 'Get Calendar', input: '{"days": 3}', result: '三天' }],

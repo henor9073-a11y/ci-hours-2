@@ -99,7 +99,12 @@
   let open = false, built = false, timer = null, stick = true;
   let avatars = {}, status = { nor: {}, cy: {} }, pats = [];
   let pendingImages = [], stickerOwner = 'nor', stickerLists = { nor: [], cy: [] };
-  let syncSettings = { auto_sync_reply: false, loaded: false, saving: false };
+  let syncSettings = {
+    auto_sync_reply: false,
+    claude_mirror_enabled: true,
+    loaded: false,
+    saving: false
+  };
   let quoting = null;                      // 正在引用的那条
   let expanded = {};                       // 展开了思考/工具的
   let slidePending = {}, slideRaf = 0;
@@ -825,6 +830,8 @@
       box.innerHTML = `<div class="cx-set-t">聊天外观</div>
         <div class="cx-set-row"><span>自动同步 Claude 回复</span><button class="cx-tg${syncSettings.auto_sync_reply ? ' on' : ''}" ${syncSettings.saving ? 'disabled' : ''} onclick="CX.setAutoSync(${!syncSettings.auto_sync_reply})"><i></i></button></div>
         <div class="cx-set-l" style="padding-top:0">关闭时维持工具回复；开启后 Claude 最终正文直接成为木屋消息，语音和表情包仍走工具。</div>
+        <div class="cx-set-row"><span>同步 Claude 发言提示 💭</span><button class="cx-tg${syncSettings.claude_mirror_enabled ? ' on' : ''}" ${syncSettings.saving ? 'disabled' : ''} onclick="CX.setClaudeMirrorSync(${!syncSettings.claude_mirror_enabled})"><i></i></button></div>
+        <div class="cx-set-l" style="padding-top:0">关闭后不再收录新的“辞在 Claude 里说了一句话”；不影响自动同步回复、思考或工具记录。</div>
         <div class="cx-set-row"><span>磨砂玻璃</span><button class="cx-tg${c.frost ? ' on' : ''}" onclick="CX.set('frost',${!c.frost})"><i></i></button></div>
         <div class="cx-set-row"><span>显示头像</span><button class="cx-tg${c.avatars ? ' on' : ''}" onclick="CX.set('avatars',${!c.avatars})"><i></i></button></div>
         <div class="cx-set-row"><span>辞的消息框颜色</span><input type="color" value="${b.aiColor}" onchange="CX.set('aiColor',this.value)"></div>
@@ -840,7 +847,7 @@
         <div class="cx-set-row"><span>系统提示颜色</span><input type="color" value="${c.systemColor || t.time}" onchange="CX.set('systemColor',this.value)"></div>
         <div class="cx-set-l">系统提示字号 <span id="cx-v-systemFontSize">${c.systemFontSize}</span>px</div>
         <input type="range" min="9" max="20" value="${c.systemFontSize}" oninput="CX.slide('systemFontSize',this.value)">
-        <div class="cx-set-row"><span>显示 Claude 原话 💭</span><button class="cx-tg${c.showClaudeMirror ? ' on' : ''}" onclick="CX.set('showClaudeMirror',${!c.showClaudeMirror})"><i></i></button></div>
+        <div class="cx-set-row"><span>本机显示历史 Claude 提示 💭</span><button class="cx-tg${c.showClaudeMirror ? ' on' : ''}" onclick="CX.set('showClaudeMirror',${!c.showClaudeMirror})"><i></i></button></div>
         <div class="cx-set-l">背景图</div>
         <label class="cx-file">选图片<input type="file" accept="image/*" hidden onchange="CX.bg(this)"></label>
         ${c.bg ? `<span class="cx-clear" onclick="CX.set('bg','')">清除</span>` : ''}
@@ -854,7 +861,12 @@
     async loadSyncSettings(rerender = false) {
       try {
         const next = await rest('/api/chat/sync-settings');
-        syncSettings = { auto_sync_reply: next.auto_sync_reply === true, loaded: true, saving: false };
+        syncSettings = {
+          auto_sync_reply: next.auto_sync_reply === true,
+          claude_mirror_enabled: next.claude_mirror_enabled !== false,
+          loaded: true,
+          saving: false
+        };
         if (rerender && $('#cx-set')?.dataset.kind === 'look' && !$('#cx-set').hidden) CX.panel(true);
       } catch { syncSettings.loaded = true; }
     },
@@ -863,8 +875,30 @@
       syncSettings.saving = true; CX.panel(true);
       try {
         const next = await post('/api/chat/sync-settings', { auto_sync_reply: on });
-        syncSettings = { auto_sync_reply: next.auto_sync_reply === true, loaded: true, saving: false };
+        syncSettings = {
+          auto_sync_reply: next.auto_sync_reply === true,
+          claude_mirror_enabled: next.claude_mirror_enabled !== false,
+          loaded: true,
+          saving: false
+        };
         hint(syncSettings.auto_sync_reply ? '自动同步已开启' : '已恢复工具回复模式');
+      } catch (e) {
+        syncSettings.saving = false; hint('没切换成功：' + e.message);
+      }
+      if ($('#cx-set')?.dataset.kind === 'look' && !$('#cx-set').hidden) CX.panel(true);
+    },
+    async setClaudeMirrorSync(on) {
+      if (syncSettings.saving) return;
+      syncSettings.saving = true; CX.panel(true);
+      try {
+        const next = await post('/api/chat/sync-settings', { claude_mirror_enabled: on });
+        syncSettings = {
+          auto_sync_reply: next.auto_sync_reply === true,
+          claude_mirror_enabled: next.claude_mirror_enabled !== false,
+          loaded: true,
+          saving: false
+        };
+        hint(syncSettings.claude_mirror_enabled ? 'Claude 发言提示同步已开启' : 'Claude 发言提示同步已关闭');
       } catch (e) {
         syncSettings.saving = false; hint('没切换成功：' + e.message);
       }

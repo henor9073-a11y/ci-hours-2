@@ -599,12 +599,18 @@ app.post('/api/chat/claude-mirror', async (req, res) => {
     catch (error) { console.error('continuity turn log failed:', error?.message || error); }
     const route = agentDeliveryRoute(req);
     if (!route.allowed) return res.json({ mirrored: false, logged: true, blocked: true, reason: route.reason });
-    const autoSync = mw.chat.getSyncSettings().auto_sync_reply === true;
+    const syncSettings = mw.chat.getSyncSettings();
+    const autoSync = syncSettings.auto_sync_reply === true;
     const fromMuwu = b.from_muwu === true;
     // 关闭自动同步时，木屋注入回合仍必须使用原来的 chat_reply，现状完全不变。
     if (fromMuwu && !autoSync) return res.json({ mirrored: false, mode: 'tool', skipped: 'muwu_turn' });
     // 开启后若辞仍主动调用了 chat_reply，以工具真正发出的那条为准，Stop 不再复制一遍。
     if (autoSync && b.has_chat_reply === true) return res.json({ mirrored: false, mode: 'auto_sync', skipped: 'chat_reply_used' });
+    // 💭 只读提示有自己的共享开关。它只管“Claude 里说了一句话”，不能误伤
+    // 自动同步回复：autoSync 开启时最终正文仍应进入木屋正常气泡。
+    if (!autoSync && syncSettings.claude_mirror_enabled === false) {
+      return res.json({ mirrored: false, mode: 'mirror', skipped: 'mirror_disabled' });
+    }
     const message = await mw.chat.sendMessage({
       sender: 'cy', type: autoSync ? 'text' : 'claude_mirror', content: content.slice(0, 30000),
       thinking: autoSync ? String(b.thinking || '') : '',
