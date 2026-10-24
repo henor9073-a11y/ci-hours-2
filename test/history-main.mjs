@@ -55,6 +55,14 @@ assert.doesNotMatch(exported.content, /婴儿房隔离唯一句/);
 
 assert.equal(history.search({ query: '婴儿房隔离唯一句' }).total, 0);
 assert.ok(history.search({ query: '木屋主聊天唯一句' }).total >= 1);
+const allSearch = history.search({ query: '唯一句', source: 'all' });
+assert.ok(allSearch.hits.some(hit => hit.source === 'muwu'));
+assert.ok(allSearch.hits.some(hit => hit.source === 'nursery'));
+for (const hit of allSearch.hits) {
+  for (const key of ['id', 'target_id', 'source', 'date', 'at', 'sender', 'before', 'match', 'after']) {
+    assert.equal(typeof hit[key], 'string', `search hit ${key} 必须稳定返回字符串`);
+  }
+}
 
 const daily = rings.addDaily({
   date, headline: '统一主聊天测试',
