@@ -116,7 +116,7 @@
     return JSON.stringify([
       m.read, m.starred, m.transcript_status, m.transcript, m.has_image,
       m.content, m.thinking, m.tools, m.voice_id, m.voice_stream, m.duration, m.quote, m.action, m.mirror_key,
-      m.translation_zh, m.translation_status, m.translation_source_hash
+      m.translation_zh, m.translation_status, m.translation_source_hash, m.voice_tone
     ]);
   }
 
@@ -239,7 +239,14 @@
     return `<div class="cx-vrow">
         <div class="cx-bubble ${isAi ? 'ai' : 'mine'} cx-vbub${m.type === 'voice' ? '' : ' cx-tts'}" data-act="play" style="width:${voiceWidth(dur)}px">${WAVE}<span class="cx-vdur">${dur ? dur + '″' : m.voice_stream && !m.voice_id ? '准备中' : '…'}</span></div>
         <button class="cx-vt-btn" data-act="vt">${open ? '收起' : '转文字'}</button>${dot}
-      </div><div class="cx-voice-text"${open ? '' : ' hidden'}><div>${esc(voiceText(m))}</div>${translation}</div>`;
+      </div>${toneLineHtml(m, isAi)}<div class="cx-voice-text"${open ? '' : ' hidden'}><div>${esc(voiceText(m))}</div>${translation}</div>`;
+  }
+  // 她自己的语音下面一小行语气（Mac mini 上 hervoice 听出来的）
+  function toneLineHtml(m, isAi) {
+    const t = m.voice_tone;
+    if (isAi || m.type !== 'voice' || !t) return '';
+    const parts = [t.emotion ? `听起来：${t.emotion}` : '', t.tone || ''].filter(Boolean);
+    return parts.length ? `<div class="cx-tone">${esc(parts.join(' · '))}</div>` : '';
   }
   // 辞的语音回复不知道多长：读一下音频头拿时长，拿到了回填条的长度
   function probeDurations(scope) {

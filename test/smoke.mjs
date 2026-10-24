@@ -978,6 +978,25 @@ try {
     assert.ok(pv, '转文字失败的语音也要送');
     assert.ok(pv.text_for_cy.includes('语音') && pv.text_for_cy.includes('转文字失败'), pv.text_for_cy);
   });
+  await step('语气（hervoice）：Mac mini 写回语气，辞看到的那句带上；棋子标的情绪存下来', async () => {
+    const v = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'voice', voice_base64: Buffer.from('fake-audio').toString('base64'), voice_mime: 'audio/webm', duration: 3 }) })).json();
+    const textMsg = await (await fetch(`${base}/api/chat?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'text', content: '不是语音' }) })).json();
+    const jpost = (p, body) => fetch(`${base}${p}?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const tr = await jpost(`/api/chat/${v.id}/tone`, { tone: '音高比平时偏低、停顿比平时多', tags: ['累', '委屈', '难过', '多余的'], hint: '像是撑了一天', confidence: 0.8 });
+    assert.equal(tr.status, 200);
+    const toned = await tr.json();
+    assert.deepEqual(toned.voice_tone.tags, ['累', '委屈', '难过'], '最多三个标签');
+    assert.equal(toned.voice_tone.emotion, '累、委屈、难过');
+    const { textForCy } = await import('../lib/muwen/chat.js');
+    const said = textForCy(toned, []);
+    assert.ok(said.includes('音高比平时偏低') && said.includes('听起来：累、委屈、难过（像是撑了一天）'), said);
+    assert.equal((await jpost(`/api/chat/${textMsg.id}/tone`, { tone: 'x' })).status, 404, '只收棋子的语音');
+    const lr = await jpost(`/api/chat/${v.id}/voice-label`, { tags: ['累'], intensity: 2, text_wrong: true, note: '其实在笑' });
+    assert.equal((await lr.json()).voice_label.note, '其实在笑');
+    const items = await rest('/api/voice-tone/items?labeled=1');
+    const it = items.find(x => x.id === v.id);
+    assert.ok(it && it.voice_label.tags[0] === '累' && it.voice_tone.tone, JSON.stringify(it));
+  });
   await step('Apple Watch：固定动作显示系统小字，只投递主要窗口', async () => {
     const invalid = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

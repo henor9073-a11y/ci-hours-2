@@ -396,6 +396,7 @@ body.chat-open > .header { display: none; }
 @keyframes cxWave2 { 0%, 66% { opacity: 0; } 67%, 100% { opacity: 1; } }
 .cx-vdot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; flex-shrink: 0; }
 .cx-vt-btn { border: 1px solid var(--cx-think-bd); background: var(--cx-think-bg); color: var(--cx-name); border-radius: 12px; font-size: 12px; padding: 4px 10px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.cx-tone { font-size: 10px; color: var(--cx-time); margin-top: 3px; text-align: right; letter-spacing: .2px; }
 .cx-voice-text { margin-top: 4px; background: var(--cx-ai); border-radius: 12px; padding: 8px 12px; font-size: var(--cx-font); line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-width: 100%; box-sizing: border-box; }
 .cx-row.me .cx-voice-text { background: var(--cx-me); }
 .cx-vtranslate-actions { margin-top: 7px; display: flex; justify-content: flex-start; }

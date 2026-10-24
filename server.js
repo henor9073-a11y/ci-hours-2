@@ -724,6 +724,20 @@ app.post('/api/chat/star', (req, res) => {
   if (!m) return res.status(404).json({ error: '找不到这条消息' });
   res.json(m);
 });
+// 语气（hervoice）：Mac mini 听完写回来；标注：棋子在 Sigh 里给自己的语音选当时真实的情绪
+app.post('/api/chat/:id/tone', (req, res) => {
+  const m = mw.chat.setVoiceTone(String(req.params.id || ''), req.body || {});
+  if (!m) return res.status(404).json({ error: '找不到这条棋子的语音' });
+  res.json(m);
+});
+app.post('/api/chat/:id/voice-label', (req, res) => {
+  const m = mw.chat.setVoiceLabel(String(req.params.id || ''), req.body || {});
+  if (!m) return res.status(404).json({ error: '找不到这条棋子的语音' });
+  res.json(m);
+});
+app.get('/api/voice-tone/items', (req, res) => res.json(mw.chat.voiceToneItems({
+  limit: Number(req.query.limit) || 200, labeledOnly: req.query.labeled === '1'
+})));
 // 状态文字：网页只能改棋子的（辞的由 MCP 的 set_status 改）
 app.get('/api/chat/status', (_, res) => res.json(mw.chat.getStatus()));
 app.post('/api/chat/status', (req, res) => {
@@ -792,8 +806,24 @@ app.post('/api/call/transcribe', async (req, res) => {
     if (!buf.length) return res.status(400).json({ error: '没有音频' });
     const { transcribeAudio } = await import('./lib/voice.js');
     const text = await transcribeAudio(buf, b.mime || 'audio/webm');
-    const event = text ? mw.calls.say('nor', text, 'voice') : null; res.json({ text, event });
+    const event = text ? mw.calls.say('nor', text, 'voice') : null;
+    if (event) keepCallAudio(event.id, buf, b.mime || 'audio/webm');
+    res.json({ text, event });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+// 通话里棋子每一段的录音：只放内存、10 分钟就扔、最多 40 段，给 Mac mini 听语气用，不落盘
+const CALL_AUDIO_TTL_MS = 10 * 60 * 1000, CALL_AUDIO_MAX = 40;
+const callAudio = new Map();
+function keepCallAudio(id, buf, mime) {
+  const t = Date.now();
+  for (const [k, v] of callAudio) if (t - v.at > CALL_AUDIO_TTL_MS) callAudio.delete(k);
+  callAudio.set(id, { buf, mime, at: t });
+  while (callAudio.size > CALL_AUDIO_MAX) callAudio.delete(callAudio.keys().next().value);
+}
+app.get('/api/call/nor-audio/:eventId', (req, res) => {
+  const a = callAudio.get(req.params.eventId);
+  if (!a || Date.now() - a.at > CALL_AUDIO_TTL_MS) return res.status(404).json({ error: '这段录音已经不在了' });
+  res.type(a.mime.split(';')[0] || 'audio/webm').send(a.buf);
 });
 app.get('/api/call/pending', (req, res) => {
   const route = agentDeliveryRoute(req);
