@@ -11,7 +11,7 @@ const watchCloud = await import('../lib/watch-cloud.js');
 const petNest = await import('../lib/pet-nest.js');
 
 const home = location.addLocationPlace({
-  name: '家', latitude: -37.8136, longitude: 144.9631, radius_m: 250
+  name: '家', latitude: -37.8136, longitude: 144.9631, radius_m: 100
 });
 assert.equal(home.name, '家');
 
@@ -23,8 +23,38 @@ assert.equal(state.current.status, '在家');
 assert.equal(state.current.place_id, home.id);
 
 state = await location.updateLocation({
+  latitude: -37.8125, longitude: 144.9631, accuracy_m: 22,
+  speed: 0, locality: 'Melbourne', observed_at: '2026-10-08T00:02:00+11:00'
+});
+assert.equal(state.current.status, '在家');
+assert.equal(state.current.place_id, home.id);
+assert.equal(state.changed_place, false);
+
+state = await location.updateLocation({
+  latitude: -37.825, longitude: 144.975, accuracy_m: 1_414,
+  speed: 0, locality: 'Docklands', observed_at: '2026-10-08T00:04:00+11:00'
+});
+assert.equal(state.ignored, 'poor_accuracy');
+assert.equal(state.current.place_id, home.id);
+
+state = await location.updateLocation({
+  latitude: -37.825, longitude: 144.975, accuracy_m: 25,
+  speed: 8, locality: 'Melbourne', observed_at: '2026-10-08T00:03:00+11:00'
+});
+assert.equal(state.ignored, 'stale_or_duplicate');
+assert.equal(state.current.place_id, home.id);
+
+state = await location.updateLocation({
   latitude: -37.825, longitude: 144.975, accuracy_m: 25,
   speed: 8, locality: 'Melbourne', observed_at: '2026-10-08T00:15:00+11:00'
+});
+assert.equal(state.current.status, '在家');
+assert.equal(state.changed_place, false);
+assert.equal(state.transition_pending.count, 1);
+
+state = await location.updateLocation({
+  latitude: -37.8251, longitude: 144.9751, accuracy_m: 24,
+  speed: 8, locality: 'Melbourne', observed_at: '2026-10-08T00:16:00+11:00'
 });
 assert.equal(state.current.status, '在路上');
 assert.equal(state.changed_place, true);
