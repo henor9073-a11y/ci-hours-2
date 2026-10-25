@@ -191,9 +191,13 @@ assert.equal(promote.model, 'claude-opus-5-5[1m]');
 ww.cancelJob(promote.id);
 assert.throws(() => ww.createJob({ mode: 'set_primary', target_session_id: '33333333-3333-4333-8333-333333333333' }), /不在 Mac mini/);
 
-const secondary = ww.createJob({ mode: 'secondary', model: 'claude-opus-5-5[1m]', source_session_id: primaryId });
+const secondary = ww.createJob({
+  mode: 'secondary', model: 'claude-opus-5-5[1m]', source_session_id: primaryId,
+  target_name: '小辞10.25 · 5.5'
+});
 assert.equal(secondary.mode, 'secondary');
 assert.equal(secondary.source_session_id, primaryId);
+assert.equal(secondary.target_name, '小辞10.25 · 5.5');
 ww.cancelJob(secondary.id);
 
 assert.throws(() => ww.createJob({ mode: 'stop_window', target_session_id: primaryId }), /主要窗口不能停止/);
