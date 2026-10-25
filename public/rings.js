@@ -75,8 +75,8 @@ async function loadRecentDays(me) {
   try {
     const cd = await rest('/api/history/dates');
     const days = Object.keys(cd.dates).sort().reverse().slice(0, 10);
-    const html = days.length ? days.map(ds => { const count = (cd.dates[ds].muwu || 0) + (cd.dates[ds].claude || 0); return `<div class="entry rs-day" onclick="openMainDay('${ds}')">
-        <span>${dayTitle(ds)}</span><span>${count} 条 · 木屋 + Claude</span></div>`; }).join('')
+    const html = days.length ? days.map(ds => { const count = (cd.dates[ds].muwu || 0) + (cd.dates[ds].call || 0) + (cd.dates[ds].claude || 0); return `<div class="entry rs-day" onclick="openMainDay('${ds}')">
+        <span>${dayTitle(ds)}</span><span>${count} 条 · 木屋 + 电话 + Claude</span></div>`; }).join('')
       : '<div class="empty">还没有聊天记录</div>';
     if (sheetTop() === me && !rsQuery) renderRingHome(html);
   } catch (e) { if (sheetTop() === me && !rsQuery) renderRingHome(`<div class="err">${esc(e.message)}</div>`); }
@@ -134,8 +134,8 @@ async function openRingCalendar() {
         const ds = `${ym}-${String(d).padStart(2, '0')}`;
         if (ds > t) break; // 跟微信一样排到今天为止
         const info = cd.dates[ds];
-        const count = info ? (info.muwu || 0) + (info.claude || 0) : 0;
-        h += `<span class="rc-d${count ? ' has' : ''}${ds === t ? ' today' : ''}"${count ? ` onclick="openMainDay('${ds}')" title="${count} 条 · 木屋 + Claude"` : ''}><b>${d}</b>${ds === t ? '<i>今天</i>' : ''}</span>`;
+        const count = info ? (info.muwu || 0) + (info.call || 0) + (info.claude || 0) : 0;
+        h += `<span class="rc-d${count ? ' has' : ''}${ds === t ? ' today' : ''}"${count ? ` onclick="openMainDay('${ds}')" title="${count} 条 · 木屋 + 电话 + Claude"` : ''}><b>${d}</b>${ds === t ? '<i>今天</i>' : ''}</span>`;
       }
       h += '</div>';
       first = false; if (++mo > 12) { mo = 1; y++; }
@@ -147,7 +147,7 @@ async function openRingCalendar() {
   } catch (e) { sheetSetIf(me, `<div class="err">${esc(e.message)}</div>`); }
 }
 
-// 成年人主聊天日视图：木屋和 Claude 按时间混排；婴儿房永远不在这里。
+// 成年人主聊天日视图：木屋、电话和 Claude 按时间混排；婴儿房永远不在这里。
 async function openMainDay(date, target) {
   sheetLoading(dayTitle(date));
   const me = sheetTop();
@@ -164,12 +164,12 @@ function renderMainDay(d, target) {
   let body = '', lastSource = '';
   const visible = (d.messages || []).filter(m => m.sender === 'nor' || m.sender === 'cy');
   for (const m of visible) {
-    const source = m.source === 'muwu' ? '木屋' : `Claude${m.window_name ? ` · ${m.window_name}` : ''}`;
+    const source = m.source === 'muwu' ? '木屋' : m.source === 'call' ? '木屋电话' : `Claude${m.window_name ? ` · ${m.window_name}` : ''}`;
     if (source !== lastSource) { body += `<div class="rv-sep"><span>${esc(source)}</span></div>`; lastSource = source; }
     const hit = target && target.id === m.id;
     body += `<div class="rv-time">${esc(m.time || '')}</div><div class="rv-row${m.sender === 'nor' ? ' me' : ''}"${hit ? ' id="rv-target"' : ''}>${ringAvatar(m.sender)}<div class="rv-col${hit ? ' target' : ''}"><div class="rv-bubble">${hit ? highlight(m.text, target.kw) : esc(m.text)}</div></div></div>`;
   }
-  const exportButton = `<div class="card tap" onclick="downloadMainDay('${d.date}')"><div class="card-title">导出这一天的原始聊天</div><div class="card-desc">木屋 + Claude，保留时间、窗口和说话人；不含婴儿房</div></div>`;
+  const exportButton = `<div class="card tap" onclick="downloadMainDay('${d.date}')"><div class="card-title">导出这一天的原始聊天</div><div class="card-desc">木屋 + 电话转写 + Claude，保留时间、窗口和说话人；不含婴儿房和通话音频</div></div>`;
   return exportButton + (body ? `<div class="rv-list">${body}</div>` : '<div class="empty">这天没有主聊天记录</div>') + mainDayNav(d);
 }
 function downloadMainDay(date) {

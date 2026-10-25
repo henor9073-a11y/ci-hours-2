@@ -1169,7 +1169,7 @@ app.get('/api/rings/search', (req, res) => {
     radius: 60
   }));
 });
-// 木屋 + Claude 的统一历史时间线。日期入口和关键词入口都落到同一个 day reader，
+// 木屋 + 电话转写 + Claude 的统一历史时间线。日期入口和关键词入口都落到同一个 day reader，
 // 只是在前端传入的初始 target 不同。
 app.get('/api/history/dates', (req, res) => res.json(mw.history.dates({ source: req.query.source })));
 app.get('/api/history/day', (req, res) => {
@@ -1180,7 +1180,7 @@ app.get('/api/history/search', (req, res) => res.json(mw.history.search({
   query: req.query.q, source: req.query.source,
   limit: Math.min(Number(req.query.limit) || 80, 200), skip: Number(req.query.skip) || 0
 })));
-// 换窗、每日总结、自动记忆都读这个同一入口：木屋 + Claude，永远不混入婴儿房。
+// 换窗、每日总结、自动记忆都读这个同一入口：木屋 + 电话转写 + Claude，永远不混入婴儿房。
 app.get('/api/history/main-context', (req, res) => {
   try {
     res.json(mw.history.mainContext({

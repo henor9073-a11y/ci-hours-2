@@ -38,10 +38,10 @@ assert.match(job.message, /先关闭自主苏醒/);
 assert.equal(job.model, 'claude-opus-4-6[1m]');
 assert.equal(job.handover_contract.raw_dialogue_hours, 46);
 assert.equal(job.handover_contract.recent_context_json_hours, 2);
-assert.equal(job.handover_contract.version, 5);
+assert.equal(job.handover_contract.version, 6);
 assert.equal(job.handover_contract.conversation_endpoint, '/api/history/main-context?hours=48&recent_hours=2');
 assert.equal(job.handover_contract.canonical_conversation_source, 'main');
-assert.deepEqual(job.handover_contract.include_sources, ['muwu', 'claude']);
+assert.deepEqual(job.handover_contract.include_sources, ['muwu', 'call', 'claude']);
 assert.deepEqual(job.handover_contract.exclude_sources, ['nursery']);
 assert.ok(job.handover_contract.pipeline_consumers.includes('daily_summary'));
 assert.equal(job.handover_contract.include_daily_summary, true);
@@ -175,13 +175,25 @@ const customRecipe = ww.createJob({
     daily_summaries: [{ date: '2026-10-20' }, { date: '2026-10-18' }],
     raw_ranges: [{
       from: '2026-10-20T00:00:00+11:00', to: '2026-10-21T12:00:00+11:00',
-      sources: ['muwu', 'claude', 'nursery']
+      sources: ['muwu', 'call', 'claude', 'nursery']
     }]
   }
 });
 assert.deepEqual(customRecipe.context_recipe.daily_summaries.map(item => item.date), ['2026-10-20', '2026-10-18']);
-assert.deepEqual(customRecipe.context_recipe.raw_ranges[0].sources, ['muwu', 'claude']);
+assert.deepEqual(customRecipe.context_recipe.raw_ranges[0].sources, ['muwu', 'call', 'claude']);
 ww.cancelJob(customRecipe.id);
+const legacyPhoneRecipe = ww.createJob({
+  mode: 'secondary', source_session_id: otherId,
+  context_recipe: {
+    mode: 'custom',
+    raw_ranges: [{
+      from: '2026-10-20T00:00:00+11:00', to: '2026-10-20T12:00:00+11:00',
+      sources: ['muwu', 'claude']
+    }]
+  }
+});
+assert.deepEqual(legacyPhoneRecipe.context_recipe.raw_ranges[0].sources, ['muwu', 'call', 'claude']);
+ww.cancelJob(legacyPhoneRecipe.id);
 assert.throws(() => ww.createJob({ mode: 'handoff', context_recipe: { mode: 'custom' } }), /至少/);
 
 const promote = ww.createJob({ mode: 'set_primary', target_session_id: otherId });
