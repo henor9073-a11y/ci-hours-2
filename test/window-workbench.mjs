@@ -16,6 +16,10 @@ assert.equal(first.active_job, null);
 assert.equal(first.choices.models[0].id, 'claude-opus-4-6[1m]');
 assert.ok(first.choices.models.every(model => model.id.endsWith('[1m]')));
 assert.deepEqual(first.choices.crop_profiles.map(profile => profile.id), ['normal', 'economy', 'extreme']);
+assert.deepEqual(first.choices.handover_templates.map(template => template.id), [
+  'one-summary-22h', 'two-summaries-22h', 'one-summary-46h',
+  'three-summaries', 'summaries-only', 'raw-only'
+]);
 assert.ok(first.choices.crop_profiles.every(profile => /原话.*承接资料/.test(profile.detail)));
 assert.deepEqual(first.choices.models.map(model => model.id), [
   'claude-opus-4-6[1m]',
@@ -145,6 +149,38 @@ ww.cancelJob(cropPreview.id);
 const defaultCrop = ww.createJob({ mode: 'crop', preview_only: true, crop_profile: 'not-allowed' });
 assert.equal(defaultCrop.crop_profile, 'normal');
 ww.cancelJob(defaultCrop.id);
+
+const nonPrimaryCrop = ww.createJob({ mode: 'crop', target_session_id: activeId, preview_only: true, crop_profile: 'economy' });
+assert.equal(nonPrimaryCrop.target_session_id, activeId);
+assert.equal(nonPrimaryCrop.source_session_id, activeId);
+ww.cancelJob(nonPrimaryCrop.id);
+
+const templateRecipe = ww.createJob({
+  mode: 'handoff', source_session_id: activeId, preview_only: true,
+  context_recipe: { mode: 'template', template_id: 'two-summaries-22h' }
+});
+assert.equal(templateRecipe.source_session_id, activeId);
+assert.equal(templateRecipe.context_recipe.template_id, 'two-summaries-22h');
+assert.equal(templateRecipe.context_recipe.daily_summaries.length, 2);
+assert.equal(templateRecipe.context_recipe.raw_ranges[0].hours, 22);
+assert.deepEqual(templateRecipe.context_recipe.exclude_sources, ['nursery']);
+ww.cancelJob(templateRecipe.id);
+
+const customRecipe = ww.createJob({
+  mode: 'secondary', source_session_id: otherId,
+  context_recipe: {
+    mode: 'custom',
+    daily_summaries: [{ date: '2026-10-20' }, { date: '2026-10-18' }],
+    raw_ranges: [{
+      from: '2026-10-20T00:00:00+11:00', to: '2026-10-21T12:00:00+11:00',
+      sources: ['muwu', 'claude', 'nursery']
+    }]
+  }
+});
+assert.deepEqual(customRecipe.context_recipe.daily_summaries.map(item => item.date), ['2026-10-20', '2026-10-18']);
+assert.deepEqual(customRecipe.context_recipe.raw_ranges[0].sources, ['muwu', 'claude']);
+ww.cancelJob(customRecipe.id);
+assert.throws(() => ww.createJob({ mode: 'handoff', context_recipe: { mode: 'custom' } }), /至少/);
 
 const promote = ww.createJob({ mode: 'set_primary', target_session_id: otherId });
 assert.equal(promote.mode, 'set_primary');
