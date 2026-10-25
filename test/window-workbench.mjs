@@ -153,6 +153,7 @@ ww.cancelJob(defaultCrop.id);
 const nonPrimaryCrop = ww.createJob({ mode: 'crop', target_session_id: activeId, preview_only: true, crop_profile: 'economy' });
 assert.equal(nonPrimaryCrop.target_session_id, activeId);
 assert.equal(nonPrimaryCrop.source_session_id, activeId);
+assert.equal(nonPrimaryCrop.disable_wake_on_prepare, false);
 ww.cancelJob(nonPrimaryCrop.id);
 
 const templateRecipe = ww.createJob({
