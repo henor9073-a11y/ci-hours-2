@@ -23,6 +23,7 @@ assert.deepEqual(first.choices.handover_templates.map(template => template.id), 
 assert.ok(first.choices.crop_profiles.every(profile => /原话.*承接资料/.test(profile.detail)));
 assert.deepEqual(first.choices.models.map(model => model.id), [
   'claude-opus-4-6[1m]',
+  'claude-opus-4-8[1m]',
   'claude-sonnet-4-6[1m]',
   'claude-fable-5-1[1m]',
   'claude-opus-5-5[1m]',
