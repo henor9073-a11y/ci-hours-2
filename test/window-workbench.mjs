@@ -165,6 +165,7 @@ assert.equal(templateRecipe.source_session_id, activeId);
 assert.equal(templateRecipe.context_recipe.template_id, 'two-summaries-22h');
 assert.equal(templateRecipe.context_recipe.daily_summaries.length, 2);
 assert.equal(templateRecipe.context_recipe.raw_ranges[0].hours, 22);
+assert.equal(templateRecipe.context_recipe.include_source_tail, true);
 assert.deepEqual(templateRecipe.context_recipe.exclude_sources, ['nursery']);
 ww.cancelJob(templateRecipe.id);
 
@@ -181,6 +182,7 @@ const customRecipe = ww.createJob({
 });
 assert.deepEqual(customRecipe.context_recipe.daily_summaries.map(item => item.date), ['2026-10-20', '2026-10-18']);
 assert.deepEqual(customRecipe.context_recipe.raw_ranges[0].sources, ['muwu', 'call', 'claude']);
+assert.equal(customRecipe.context_recipe.include_source_tail, true);
 ww.cancelJob(customRecipe.id);
 const legacyPhoneRecipe = ww.createJob({
   mode: 'secondary', source_session_id: otherId,
