@@ -94,10 +94,6 @@ const XINCHAO_DRIVES = [
   ['curiosity', '好奇'], ['boredom', '无聊'], ['duty', '野心'], ['reflection', '反思'],
   ['grieve', '难过'], ['anger', '愤怒'], ['favored', '偏爱']
 ];
-function xinchaoLevel(value) {
-  const n = Math.max(0, Math.min(1, Number(value) || 0));
-  return n < .2 ? '静' : n < .4 ? '淡' : n < .6 ? '有' : n < .8 ? '涨' : '涌';
-}
 function paintXinchao(s) {
   const n = $('#h-xinchao'); if (!n) return;
   if (!s || !s.available) {
@@ -110,7 +106,8 @@ function paintXinchao(s) {
   const meta = s.online ? `${esc(s.emotion?.label || '平静')} · ${esc(awake)} · ${updated}` : `暂时离线 · 最后同步 ${updated}`;
   const drives = XINCHAO_DRIVES.map(([key, label]) => {
     const value = Math.max(0, Math.min(1, Number(s.drives?.[key]) || 0));
-    return `<div class="xinchao-drive"><div><span>${label}</span><b>${xinchaoLevel(value)}</b></div><i><em style="width:${Math.round(value * 100)}%"></em></i></div>`;
+    const percent = (value * 100).toFixed(1);
+    return `<div class="xinchao-drive"><div><span>${label}</span><b>${percent}%</b></div><i><em style="width:${percent}%"></em></i></div>`;
   }).join('');
   n.innerHTML = `<div class="xinchao-head"><b>辞此刻的心潮</b><span>${meta}</span></div><div class="xinchao-grid">${drives}</div>`;
 }
