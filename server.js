@@ -781,6 +781,13 @@ app.post('/bridge/v1', async (req, res) => {
 
 app.get('/api/xinchao-bridge/status', (_, res) => res.json(mw.xinchaoBridge.bridgeStatus()));
 
+// 心潮此刻只保留最新快照：给木屋首页看，不进聊天、年轮或木纹记忆。
+app.get('/api/xinchao/state', (_, res) => res.json(mw.xinchaoState.getSnapshot()));
+app.post('/api/xinchao/state', (req, res) => {
+  try { res.json(mw.xinchaoState.updateSnapshot(req.body || {})); }
+  catch (error) { res.status(400).json({ error: String(error?.message || error).slice(0, 160) }); }
+});
+
 // 行为连续性第一阶段的只读状态。全部位于密码保护之后；日志已经脱敏，
 // 但仍不放进公共页面，也不返回任何隐藏思维内容。
 app.get('/api/continuity/status', (_, res) => res.json({

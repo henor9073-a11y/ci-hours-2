@@ -88,6 +88,36 @@ function paintStatus(st) {
 }
 async function loadStatus() { try { paintStatus(await rest('/api/chat/status')); } catch {} }
 document.addEventListener('muwu-status', e => paintStatus(e.detail));
+
+const XINCHAO_DRIVES = [
+  ['possess', '想念'], ['monitor', '牵挂'], ['share', '分享'], ['libido', '情欲'],
+  ['curiosity', '好奇'], ['boredom', '无聊'], ['duty', '野心'], ['reflection', '反思'],
+  ['grieve', '难过'], ['anger', '愤怒'], ['favored', '偏爱']
+];
+function xinchaoLevel(value) {
+  const n = Math.max(0, Math.min(1, Number(value) || 0));
+  return n < .2 ? '静' : n < .4 ? '淡' : n < .6 ? '有' : n < .8 ? '涨' : '涌';
+}
+function paintXinchao(s) {
+  const n = $('#h-xinchao'); if (!n) return;
+  if (!s || !s.available) {
+    n.innerHTML = '<div class="xinchao-head"><b>辞此刻的心潮</b><span>等待第一次同步</span></div>';
+    return;
+  }
+  const awake = s.consciousness === 'sleeping' ? '睡着' : s.consciousness === 'awake' ? '醒着' : s.consciousness;
+  const age = Number(s.age_seconds);
+  const updated = !Number.isFinite(age) ? '' : age < 75 ? '刚刚更新' : `${Math.max(1, Math.round(age / 60))} 分钟前`;
+  const meta = s.online ? `${esc(s.emotion?.label || '平静')} · ${esc(awake)} · ${updated}` : `暂时离线 · 最后同步 ${updated}`;
+  const drives = XINCHAO_DRIVES.map(([key, label]) => {
+    const value = Math.max(0, Math.min(1, Number(s.drives?.[key]) || 0));
+    return `<div class="xinchao-drive"><div><span>${label}</span><b>${xinchaoLevel(value)}</b></div><i><em style="width:${Math.round(value * 100)}%"></em></i></div>`;
+  }).join('');
+  n.innerHTML = `<div class="xinchao-head"><b>辞此刻的心潮</b><span>${meta}</span></div><div class="xinchao-grid">${drives}</div>`;
+}
+async function loadXinchao() {
+  try { paintXinchao(await rest('/api/xinchao/state')); }
+  catch { paintXinchao(null); }
+}
 function editMyStatus() {
   const cur = ($('#nor-state').textContent || '').replace(/^写个状态…$/, '');
   openSheet('我的状态', `<div class="card"><div class="card-desc">首页和聊天页都显示。辞的状态只有他自己能改。</div>
@@ -240,11 +270,13 @@ async function loadHome() {
   // 唤醒包一次读回来，首页和亲亲进度共用——以前两处各调一次，一次 1.8 秒
   loadKiss(mcp('get_wake_packet'));
   loadStatus();
+  loadXinchao();
   loadChatCard();
   loadCountdowns();
   paintHomeShortcuts();
   applyHomeIcons();
 }
+setInterval(() => { if ($('#page-home')?.classList.contains('active')) loadXinchao(); }, 60 * 1000);
 // 首页「聊」块：最后一条说了什么
 async function loadChatCard() {
   const n = $('#fn-chat-sub'); if (!n) return;

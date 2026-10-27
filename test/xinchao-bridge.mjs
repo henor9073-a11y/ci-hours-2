@@ -9,6 +9,7 @@ process.env.XINCHAO_BRIDGE_ACK_POLL_MS = '25';
 
 const bridge = await import('../lib/muwen/xinchao-bridge.js');
 const chat = await import('../lib/muwen/chat.js');
+const state = await import('../lib/muwen/xinchao-state.js');
 
 const envelope = {
   protocol: 'xinchao-runtime-wake/1',
@@ -39,5 +40,18 @@ assert.equal(bridge.bridgeStatus().delivered, 1);
 
 assert.throws(() => bridge.validateEnvelope({ ...envelope, reason: 'unknown' }, headers), /unsupported reason/);
 assert.throws(() => bridge.validateEnvelope(envelope, { ...headers, 'x-xinchao-delivery-id': 'wrong' }), /mismatch/);
+
+const snapshot = state.updateSnapshot({
+  consciousness: 'awake',
+  emotion: { label: '好奇', valence: 0.7, arousal: 0.6 },
+  drives: { possess: 0.51, monitor: 0.62, curiosity: 2, unknown: 0.9 }
+});
+assert.equal(snapshot.available, true);
+assert.equal(snapshot.online, true);
+assert.equal(snapshot.drives.possess, 0.51);
+assert.equal(snapshot.drives.monitor, 0.62);
+assert.equal(snapshot.drives.curiosity, 1, '数值必须钳在 0...1');
+assert.equal(snapshot.drives.unknown, undefined, '只保存公开的心潮维度');
+assert.equal(state.getSnapshot(new Date(Date.now() + 6 * 60 * 1000)).online, false, '旧快照必须显示离线');
 
 console.log('xinchao bridge tests passed');

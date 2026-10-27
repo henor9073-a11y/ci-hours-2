@@ -454,6 +454,16 @@ body.chat-open > .header { display: none; }
 .avatar.big { width: 68px; height: 68px; font-size: 20px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
 .couple-status { font-size: 12px; color: var(--text-secondary); max-width: 120px; text-align: center; line-height: 1.4; }
 .couple-status.me { cursor: pointer; border-bottom: 1px dashed var(--border); padding-bottom: 1px; }
+.xinchao-card { margin-top: 8px; padding: 15px 16px 14px; }
+.xinchao-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.xinchao-head b { font-size: 14px; }
+.xinchao-head span { font-size: 11px; color: var(--text-light); text-align: right; }
+.xinchao-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 8px; margin-top: 13px; }
+.xinchao-drive { min-width: 0; }
+.xinchao-drive > div { display: flex; justify-content: space-between; gap: 4px; color: var(--text-secondary); font-size: 11px; }
+.xinchao-drive b { color: var(--accent); font-weight: 600; }
+.xinchao-drive i { display: block; height: 3px; margin-top: 4px; border-radius: 3px; overflow: hidden; background: var(--accent-light); }
+.xinchao-drive em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--primary),var(--accent)); }
 .date-card { text-align: center; padding: 18px 20px 16px; margin-top: 8px; }
 .date-main { font-size: 21px; font-weight: 700; letter-spacing: 1px; }
 .date-info { display: flex; justify-content: center; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); flex-wrap: wrap; }
