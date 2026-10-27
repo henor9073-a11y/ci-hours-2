@@ -757,6 +757,30 @@ app.post('/api/chat/delivered', (req, res) => {
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
 
+// 心潮动态桥：Mac mini 上的 Runtime Bridge 把耐久队列中的信号投到这里。
+// 这一入口沿用全站密码鉴权；只有主要 Claude 窗口真的确认收到了，才返回严格 ACK。
+app.post('/bridge/v1', async (req, res) => {
+  const route = agentDeliveryRoute(req);
+  if (!route.allowed) {
+    return res.status(503).json({ accepted: false, reason: route.reason || 'primary_session_unavailable' });
+  }
+  try {
+    const envelope = mw.xinchaoBridge.validateEnvelope(req.body || {}, req.headers);
+    await mw.xinchaoBridge.enqueueEnvelope(envelope);
+    const status = await mw.xinchaoBridge.waitForDelivery(envelope.deliveryId);
+    if (status.status !== 'delivered') {
+      return res.status(503).json({ accepted: false, deliveryId: envelope.deliveryId, reason: 'main_session_pending' });
+    }
+    res.json({ accepted: true, deliveryId: envelope.deliveryId });
+  } catch (error) {
+    const message = String(error?.message || error);
+    const clientError = /protocol|deliveryId|envelope|reason|message|empty|large|invalid|unsupported/i.test(message);
+    res.status(clientError ? 400 : 500).json({ accepted: false, error: message.slice(0, 160) });
+  }
+});
+
+app.get('/api/xinchao-bridge/status', (_, res) => res.json(mw.xinchaoBridge.bridgeStatus()));
+
 // 行为连续性第一阶段的只读状态。全部位于密码保护之后；日志已经脱敏，
 // 但仍不放进公共页面，也不返回任何隐藏思维内容。
 app.get('/api/continuity/status', (_, res) => res.json({
