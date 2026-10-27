@@ -62,7 +62,10 @@ server.stderr.on('data', d => { serverLog += d; });
 
 const base = `http://127.0.0.1:${PORT}`;
 async function waitUp() {
-  for (let i = 0; i < 50; i++) {
+  // Codex 的受限工作区第一次冷读 node_modules 偶尔会超过 10 秒；这里等的是
+  // “服务是否启动”，不是业务超时。给冷启动足够余量，正常机器仍会在首个成功探测后立即继续。
+  const deadline = Date.now() + Number(process.env.MUWEN_SMOKE_STARTUP_TIMEOUT_MS || 120000);
+  while (Date.now() < deadline) {
     try { const r = await fetch(`${base}/health`); if (r.ok) return; } catch {}
     await new Promise(r => setTimeout(r, 200));
   }

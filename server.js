@@ -78,8 +78,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 
 // 放在密码校验前面，让 OPTIONS 预检请求不会被密码卡住。
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, x-window-agent-key, x-muwu-session-id');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, x-window-agent-key, x-muwu-session-id, x-external-api-key');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -110,6 +110,79 @@ app.post('/api/agent-access', (req, res) => {
   try { res.json(mw.agentAccess.setAgentAccess(req.body || {}, '棋子·Sigh')); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }
 });
+
+// ---- 外部模型区：与木屋、木纹、工作台并列的第四个独立数据域 ----
+// Sigh 的请求属于棋子本人，不受“辞访问记录”开关限制；那个开关只约束 MCP 里的辞。
+function externalError(res, error, status = 400) {
+  res.status(status).json({ error: String(error.message || error) });
+}
+app.get('/api/external-space/catalog', (_, res) => res.json({
+  providers: mw.externalSpace.providers(), mcps: mw.externalSpace.mcpCatalog()
+}));
+app.get('/api/external-space/windows', (req, res) => {
+  try { res.json(mw.externalSpace.listWindows({ deleted: req.query.deleted === '1' || req.query.deleted === 'true' })); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows', (req, res) => {
+  try { res.json(mw.externalSpace.createWindow(req.body || {}, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.get('/api/external-space/windows/:id', (req, res) => {
+  try { res.json(mw.externalSpace.getWindow(req.params.id, { includeDeleted: req.query.deleted === '1', includeMessages: true })); }
+  catch (e) { externalError(res, e, 404); }
+});
+app.patch('/api/external-space/windows/:id', (req, res) => {
+  try { res.json(mw.externalSpace.updateWindow(req.params.id, req.body || {}, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/prompt', (req, res) => {
+  try { res.json(mw.externalSpace.updatePrompt(req.params.id, req.body?.prompt, '棋子·Sigh', req.body?.note || '')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/prompt/rollback', (req, res) => {
+  try { res.json(mw.externalSpace.rollbackPrompt(req.params.id, req.body?.version, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/lock', (req, res) => {
+  try { res.json(mw.externalSpace.setLock(req.params.id, true, '棋子·Sigh', req.body?.reason || '')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/unlock', (req, res) => {
+  try { res.json(mw.externalSpace.setLock(req.params.id, false, '棋子·Sigh', req.body?.reason || '')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/emergency-unlock', (req, res) => {
+  try { res.json(mw.externalSpace.setLock(req.params.id, false, '棋子·故障恢复', req.body?.reason || '辞当前不可用', true)); }
+  catch (e) { externalError(res, e); }
+});
+app.delete('/api/external-space/windows/:id', (req, res) => {
+  try { res.json(mw.externalSpace.softDeleteWindow(req.params.id, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/restore', (req, res) => {
+  try { res.json(mw.externalSpace.restoreWindow(req.params.id, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.put('/api/external-space/windows/:id/mcps', (req, res) => {
+  try { res.json(mw.externalSpace.setWindowMCPs(req.params.id, req.body?.mcp_ids || [], '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/memories', (req, res) => {
+  try { res.json(mw.externalSpace.addMemory(req.params.id, req.body?.text, '棋子·Sigh', 'manual')); }
+  catch (e) { externalError(res, e); }
+});
+app.delete('/api/external-space/windows/:id/memories/:memoryId', (req, res) => {
+  try { res.json(mw.externalSpace.removeMemory(req.params.id, req.params.memoryId, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.post('/api/external-space/windows/:id/messages', async (req, res) => {
+  // 外部模型密钥可以只保存在 Sigh 钥匙串里：每次请求经 HTTPS 临时带来，
+  // 不写 JSON、不写审计、不返回前端；服务端环境变量仍可作为无人值守的后备配置。
+  const apiKey = String(req.headers['x-external-api-key'] || '');
+  try { res.json(await mw.externalSpace.sendMessage(req.params.id, req.body?.text, '棋子', { apiKey })); }
+  catch (e) { externalError(res, e, 502); }
+});
+app.get('/api/external-space/audit', (req, res) => res.json(mw.externalSpace.auditLog(req.query.limit)));
 
 // ---- 私有云备份：Mac mini 每周把本地整库 gzip 再镜像一份到 Supabase Storage ----
 // 入口位于密码中间件之后；Supabase service key 永远只留在 Render 环境里。
