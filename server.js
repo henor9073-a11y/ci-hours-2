@@ -573,6 +573,26 @@ app.post('/api/nursery/read', (req, res) => {
 app.get('/api/nursery/diary', (req, res) => {
   res.json(mw.nursery.diary({ limit: Number(req.query.limit) || 60 }));
 });
+app.get('/api/nursery/activity', (_, res) => {
+  try { res.json(mw.nursery.getActivity()); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/nursery/reading-notes', (req, res) => {
+  try { res.json(mw.nursery.readingNotes({ limit: Number(req.query.limit) || 120 })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/nursery/games', (req, res) => {
+  try { res.json(mw.nursery.listGames({ status: String(req.query.status || ''), limit: Number(req.query.limit) || 60 })); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/nursery/games/:id/respond', (req, res) => {
+  try { res.json(mw.nursery.respondGame(req.params.id, 'nor', String((req.body || {}).response || ''))); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/nursery/games/:id/play', (req, res) => {
+  try { res.json(mw.nursery.playGame(req.params.id, 'nor', String((req.body || {}).content || ''))); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
 app.post('/api/nursery/avatar', (req, res) => {
   try { res.json(mw.nursery.saveAvatar(req.body || {})); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }

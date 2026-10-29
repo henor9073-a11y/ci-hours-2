@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "books": [
+    { "id": "dragon-soup", "title": "不会喷火的龙", "file": "stories/dragon-soup.md", "tags": ["龙", "做饭", "帮助"], "level": "short" },
+    { "id": "chestnut-rain", "title": "小栗子和一滴雨", "file": "stories/chestnut-rain.md", "tags": ["雨", "旅行", "好奇"], "level": "short" },
+    { "id": "moon-bread", "title": "狐狸的月亮面包", "file": "stories/moon-bread.md", "tags": ["狐狸", "月亮", "分享"], "level": "short" },
+    { "id": "little-lantern", "title": "怕黑的小灯笼", "file": "stories/little-lantern.md", "tags": ["夜晚", "勇气", "朋友"], "level": "short" },
+    { "id": "ant-seed", "title": "蚂蚁和睡着的种子", "file": "stories/ant-seed.md", "tags": ["种子", "等待", "春天"], "level": "short" }
+  ]
+}
