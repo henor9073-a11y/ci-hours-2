@@ -366,6 +366,9 @@ def current_turn(entries: List[Dict[str, Any]], event: Dict[str, Any]) -> Dict[s
 
 def main() -> int:
     event = read_event()
+    if os.environ.get("MUWU_PARALLEL_RECALL_ONLY") == "1":
+        log_status("skipped_parallel_recall_only")
+        return 0
     # This file is registered only under Stop. Remote Control builds do not all
     # expose hook_event_name consistently, so do not use its absence as a gate.
     base = str(os.environ.get("MUWEN_URL") or "https://ci-hours-2.onrender.com").rstrip("/")

@@ -13,6 +13,7 @@ const LOG_MAX = 2 * 1024 * 1024;
 const RECENT_MS = 30 * 60 * 1000;
 const SESSION_COOLDOWN_MS = 15 * 60 * 1000;
 const PHOTO_EXPLICIT_RE = /照片|图片|相册|截图|影像|合照|自拍|找.{0,5}(?:照片|图片|图)|看.{0,4}(?:照片|图片|图)|长什么样|什么样子/;
+const PARALLEL_RECALL_ONLY = process.env.MUWU_PARALLEL_RECALL_ONLY === '1';
 
 function log(message) {
   try {
@@ -88,6 +89,7 @@ process.stdin.on('end', async () => {
   const token = process.env.MUWEN_TOKEN || '010219';
   const isWake = /^(?:\/loop(?:\s|$)|#\s*Autonomous loop tick\b|<<autonomous-loop|\[自动唤醒\])/i.test(prompt.trim());
   if (isWake) {
+    if (PARALLEL_RECALL_ONLY) process.exit(0);
     try {
       const response = await fetch(`${url}/api/continuity/wake`, {
         headers: { 'x-access-token': token, 'x-muwu-session-id': sessionId },
@@ -101,30 +103,32 @@ process.stdin.on('end', async () => {
     }
     process.exit(0);
   }
-  try {
-    const response = await fetch(`${url}/api/call/pending?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1200) });
-    const state = await response.json();
-    const status = String(state.call?.status || state.call?.state || '').toLowerCase();
-    if (state.call && !['ended', 'rejected', 'missed', 'cancelled', 'canceled', 'failed'].includes(status)) {
-      clearPending(sessionId);
-      log(`SKIP_CALL ${status || 'active'}`);
-      process.exit(0);
-    }
-  } catch (error) { log(`CALL_CHECK ${error?.name || error?.message || error}`); }
-
   let continuityText = '';
-  try {
-    const response = await fetch(`${url}/api/continuity/pending`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'x-access-token': token, 'x-muwu-session-id': sessionId },
-      body: JSON.stringify({ session_id: sessionId }),
-      signal: AbortSignal.timeout(2200)
-    });
-    const result = await response.json();
-    if (response.ok) continuityText = String(result.text || '');
-    log(`CONTINUITY_PENDING ${Date.now() - T0}ms chars=${continuityText.length} http=${response.status}`);
-  } catch (error) {
-    log(`CONTINUITY_PENDING_ERR ${Date.now() - T0}ms ${error?.name || error?.message || error}`);
+  if (!PARALLEL_RECALL_ONLY) {
+    try {
+      const response = await fetch(`${url}/api/call/pending?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(1200) });
+      const state = await response.json();
+      const status = String(state.call?.status || state.call?.state || '').toLowerCase();
+      if (state.call && !['ended', 'rejected', 'missed', 'cancelled', 'canceled', 'failed'].includes(status)) {
+        clearPending(sessionId);
+        log(`SKIP_CALL ${status || 'active'}`);
+        process.exit(0);
+      }
+    } catch (error) { log(`CALL_CHECK ${error?.name || error?.message || error}`); }
+
+    try {
+      const response = await fetch(`${url}/api/continuity/pending`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'x-access-token': token, 'x-muwu-session-id': sessionId },
+        body: JSON.stringify({ session_id: sessionId }),
+        signal: AbortSignal.timeout(2200)
+      });
+      const result = await response.json();
+      if (response.ok) continuityText = String(result.text || '');
+      log(`CONTINUITY_PENDING ${Date.now() - T0}ms chars=${continuityText.length} http=${response.status}`);
+    } catch (error) {
+      log(`CONTINUITY_PENDING_ERR ${Date.now() - T0}ms ${error?.name || error?.message || error}`);
+    }
   }
 
   try {
@@ -132,7 +136,7 @@ process.stdin.on('end', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ query: prompt, include_photos: true, photo_limit: 1 }),
-      signal: AbortSignal.timeout(6500)
+      signal: AbortSignal.timeout(15000)
     });
     const result = await response.json();
     const photos = chooseFreshPhotos(result.photos, { sessionId, prompt });
