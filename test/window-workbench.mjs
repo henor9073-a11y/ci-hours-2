@@ -38,7 +38,7 @@ assert.match(job.message, /先关闭自主苏醒/);
 assert.equal(job.model, 'claude-opus-4-6[1m]');
 assert.equal(job.handover_contract.raw_dialogue_hours, 46);
 assert.equal(job.handover_contract.recent_context_json_hours, 2);
-assert.equal(job.handover_contract.version, 6);
+assert.equal(job.handover_contract.version, 7);
 assert.equal(job.handover_contract.conversation_endpoint, '/api/history/main-context?hours=48&recent_hours=2');
 assert.equal(job.handover_contract.canonical_conversation_source, 'main');
 assert.deepEqual(job.handover_contract.include_sources, ['muwu', 'call', 'claude']);

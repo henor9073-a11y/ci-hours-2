@@ -1221,14 +1221,27 @@ function wwPacket(p) {
       <div class="card-desc">${validation.uuid_chain_valid ? '完整回合、工具配对和记录链均已通过检查。' : '候选记录仍需检查。'}执行前会再备份；失败会恢复原记录和同一个 session。</div>
     </div>`;
   }
-  const daily = p.daily_summary || {};
+  const dailies = Array.isArray(p.daily_summaries) && p.daily_summaries.length
+    ? p.daily_summaries : (p.daily_summary ? [p.daily_summary] : []);
   const older = p.older_22h || {};
   const recent = p.last_two_hours || {};
+  const rawHours = older.coverage_hours == null ? null : Number(older.coverage_hours);
+  const rawTitle = rawHours == null ? '所选原始记录' : `${rawHours.toFixed(rawHours % 1 ? 1 : 0)} 小时原始记录`;
+  const recentCount = Number(recent.terminal_records ?? recent.records ?? 0);
+  const canonicalCount = recent.canonical_records == null ? null : Number(recent.canonical_records);
+  const summaryHtml = dailies.length ? dailies.map(daily => `
+    <div class="ww-packet-sec"><b>${esc(daily.date || '日期待确认')} · 每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '这一天没有正式每日总结')}</div></div>`).join('')
+    : '<div class="ww-packet-sec"><b>未选择每日总结</b></div>';
+  const rawPolicy = older.content_policy === 'selected_visible_dialogue'
+    ? '含所选来源的双方对话原文'
+    : `只含对话、thinking 和重要工具调用${older.thinking_blocks != null ? ` · thinking ${Number(older.thinking_blocks)}` : ''}${older.important_tool_calls != null ? ` · 重要工具 ${Number(older.important_tool_calls)}` : ''}`;
+  const rawSource = older.source === 'daily_export' ? '每日导出（仅对话）'
+    : older.source === 'custom_recipe' ? '资料篮（统一记录 + 来源窗口补齐）' : '主要窗口';
   return `<div class="ww-packet">
     <div class="ww-packet-title">换窗简报</div>
-    <div class="ww-packet-sec"><b>${esc(daily.date || '日期待确认')} · 每日总结</b><div class="ww-pre">${esc(daily.body || daily.headline || '这一天没有正式每日总结')}</div></div>
-    <div class="ww-packet-sec"><b>前 46 小时精选原始记录</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><span>只含对话、thinking 和重要工具调用${older.thinking_blocks != null ? ` · thinking ${Number(older.thinking_blocks)}` : ''}${older.important_tool_calls != null ? ` · 重要工具 ${Number(older.important_tool_calls)}` : ''}</span><span>来源：${older.source === 'daily_export' ? '每日导出（仅对话）' : '主要窗口'}${older.coverage_hours != null ? ` · 覆盖 ${Number(older.coverage_hours).toFixed(1)} 小时` : ''}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
-    <div class="ww-packet-sec"><b>最后 2 小时 JSONL</b><span>${Number(recent.records || 0)} 条完整记录 · ${esc(fmtTime(recent.from || ''))} — ${esc(fmtTime(recent.to || ''))}</span></div>
+    ${summaryHtml}
+    <div class="ww-packet-sec"><b>${esc(rawTitle)}</b><span>${Number(older.records || 0)} 条 · ${esc(fmtTime(older.from || ''))} — ${esc(fmtTime(older.to || ''))}</span><span>${rawPolicy}</span><span>来源：${rawSource}</span><div class="ww-pre">${esc(older.narrative || '这段时间没有新的有效对话。')}</div></div>
+    <div class="ww-packet-sec"><b>最后 2 小时 JSONL</b><span>${recentCount} 条来源窗口完整记录 · ${esc(fmtTime(recent.from || ''))} — ${esc(fmtTime(recent.to || ''))}</span>${canonicalCount === 0 && recentCount > 0 ? '<span class="ww-warn">统一记录仍在同步；已直接从来源窗口补齐最后 2 小时。</span>' : ''}</div>
   </div>`;
 }
 function wwSection(key, title, body, count = null) {
