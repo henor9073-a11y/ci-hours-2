@@ -1284,7 +1284,7 @@ function wwMcpPanel(w, open) {
 }
 function wwDetailHtml(w) {
   const messages = Array.isArray(w.recent_messages) ? w.recent_messages.slice(-10) : [];
-  const pct = w.context_percent == null ? '—' : Math.round(Number(w.context_percent)) + '%';
+  const pct = w.context_percent == null ? '—' : `${w.context_estimated ? '约 ' : ''}${Math.round(Number(w.context_percent))}%`;
   return `<div class="ww-modal-shade" onclick="wwCloseDetails()"><section class="ww-dialog" role="dialog" aria-modal="true" aria-label="${esc(w.name || '窗口')}详情" onclick="event.stopPropagation()">
     <header class="ww-dialog-head"><div><span>${esc(w.name || '未命名窗口')} · ${esc(wwStateName(w.state))}</span><h3>窗口详情</h3></div><button type="button" aria-label="关闭详情" onclick="wwCloseDetails()">×</button></header>
     <div class="ww-dialog-session"><span>${esc(w.model || '模型未知')}</span><span>context ${pct}</span><span>${messages.length} 条</span><span>${Number(w.crop_generation || 0) ? `已裁剪 ${Number(w.crop_generation)} 次` : '未裁剪'}</span>${w.last_crop_at ? `<span>上次裁剪 ${esc(fmtTime(w.last_crop_at))}</span>` : ''}</div>
@@ -1321,7 +1321,7 @@ function wwWindowCard(w, locked, historical, forceStopAvailable) {
   return `<div class="card ww-window ${w.is_primary ? 'primary' : ''}" role="button" tabindex="0" onclick="wwOpenDetails('${w.session_id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();wwOpenDetails('${w.session_id}')}">
     <div class="ww-head"><div><span class="tool-dot ${w.state === 'offline' ? 'off' : 'on'}"></span><b>${esc(w.name || '未命名窗口')}</b>${w.is_primary ? '<span class="tag">主要</span>' : ''}${Number(w.crop_generation || 0) ? `<span class="tag plain">裁过 ${Number(w.crop_generation)} 次</span>` : ''}</div><span class="tag plain">${esc(wwStateName(w.state))}</span></div>
     <div class="ww-window-model">${esc(w.model || '模型未知')} · ${w.thinking_display === 'none' ? '不显示思考' : '思考摘要'}</div>
-    <div class="ww-window-context"><span>context ${pct == null ? '—' : Math.round(pct) + '%'}</span><div class="ww-meter"><i style="width:${pct || 0}%"></i></div></div>
+    <div class="ww-window-context"><span>context ${pct == null ? '—' : `${w.context_estimated ? '约 ' : ''}${Math.round(pct)}%`}</span><div class="ww-meter"><i style="width:${pct || 0}%"></i></div></div>
     <div class="ww-mcp-inline">${wwMcpSummary(w)}</div>
     <div class="ww-session-id"><span>会话：${esc(w.session_id)}</span><button type="button" onclick="event.stopPropagation();wwCopySession('${w.session_id}',this)">复制</button></div>
     <div class="ww-meta"><span>${source}</span><span>创建：${esc(fmtTime(w.created_at || ''))}</span><span>最近活动：${wwAge(w.last_activity_at)}</span><span>消息：${w.message_count == null ? '—' : Number(w.message_count)}</span><span>记录：${w.transcript_bytes == null ? '—' : Math.max(1, Math.round(Number(w.transcript_bytes) / 1024)) + ' KB'}</span></div>
@@ -1401,7 +1401,7 @@ function wwRender(data, node) {
   if (!cropProfiles.some(x => x.id === wwDraft.crop_profile) && cropProfiles[0]) wwDraft.crop_profile = cropProfiles[0].id;
   const status = `<div class="ww-status card">
     <div class="ww-head"><div><span class="tool-dot ${online ? 'on' : 'off'}"></span><b>Mac mini ${online ? '在线' : '暂时没报到'}</b></div><span class="tag plain">${esc(c.state ? wwStateName(c.state) : '等待状态')}</span></div>
-    <div class="ww-context"><div><strong>${c.context_percent == null ? '—' : Math.round(c.context_percent) + '%'}</strong><span>当前 context</span></div><div class="ww-meter"><i style="width:${Math.max(0, Math.min(100, c.context_percent || 0))}%"></i></div></div>
+    <div class="ww-context"><div><strong>${c.context_percent == null ? '—' : `${c.context_estimated ? '约 ' : ''}${Math.round(c.context_percent)}%`}</strong><span>${c.context_estimated ? '换窗后估算 context' : '当前 context'}</span></div><div class="ww-meter"><i style="width:${Math.max(0, Math.min(100, c.context_percent || 0))}%"></i></div></div>
     <div class="ww-meta"><span>模型：${esc(c.model || '—')}</span><span>会话：${c.session_id ? esc(c.session_id.slice(0, 8)) + '…' : '—'}</span><span>最近活动：${wwAge(c.last_activity_at)}</span><span>主力苏醒：${c.wake_enabled ? '已开启' : '未开启'}</span></div>
     ${c.remote_url ? `<a class="ww-open" href="${esc(c.remote_url)}" target="_blank" rel="noopener">打开辞现在的窗口 ›</a>` : ''}</div>`;
   let h = wwTabs(data);
