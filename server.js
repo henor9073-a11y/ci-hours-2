@@ -218,6 +218,15 @@ function agentDeliveryRoute(req) {
   return route;
 }
 
+function backgroundAgentDeliveryRoute() {
+  const route = windowWorkbench.primaryDeliveryRoute();
+  if (!route.allowed) return route;
+  if (!mw.agentAccess.deliveryAllowed()) {
+    return { ...route, allowed: false, reason: 'agent_memory_only' };
+  }
+  return route;
+}
+
 function blockedDelivery(route, kind) {
   const base = { blocked: true, reason: route.reason };
   return kind === 'call'
@@ -780,7 +789,9 @@ app.post('/api/chat/delivered', (req, res) => {
 // 心潮动态桥：Mac mini 上的 Runtime Bridge 把耐久队列中的信号投到这里。
 // 这一入口沿用全站密码鉴权；只有主要 Claude 窗口真的确认收到了，才返回严格 ACK。
 app.post('/bridge/v1', async (req, res) => {
-  const route = agentDeliveryRoute(req);
+  // The runtime bridge is an authenticated backend, not a Claude window.  It
+  // has no caller session id; always resolve the currently marked primary.
+  const route = backgroundAgentDeliveryRoute();
   if (!route.allowed) {
     return res.status(503).json({ accepted: false, reason: route.reason || 'primary_session_unavailable' });
   }

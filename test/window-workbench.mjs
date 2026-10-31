@@ -111,6 +111,9 @@ assert.deepEqual(ww.deliveryRoute(primaryId), {
 assert.equal(ww.deliveryRoute(activeId).allowed, false);
 assert.equal(ww.deliveryRoute(activeId).reason, 'not_primary');
 assert.equal(ww.deliveryRoute('').reason, 'session_required');
+assert.deepEqual(ww.primaryDeliveryRoute(), {
+  allowed: true, requested_session_id: '', primary_session_id: primaryId, reason: null
+});
 const claimed = ww.claimJob('mini');
 assert.equal(claimed.id, job.id);
 assert.equal(claimed.status, 'running');
@@ -323,6 +326,9 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   ]
 } });
 assert.equal(ww.deliveryRoute('').reason, 'session_required');
+assert.deepEqual(ww.primaryDeliveryRoute(), {
+  allowed: true, requested_session_id: '', primary_session_id: primaryId, reason: null
+});
 
 // Every session that was actually marked primary gets a dated tenure. This is
 // the source of truth used by the daily transcript exporter; secondary windows
