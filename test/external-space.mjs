@@ -5,6 +5,7 @@ import assert from 'assert';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'external-space-test-'));
 process.env.DEEPSEEK_API_KEY = 'test-key-never-sent';
+process.env.OPENAI_API_KEY = '';
 process.env.DEEPSEEK_MODEL = 'deepseek-reasoner';
 process.env.EXTERNAL_SPACE_MEMORY_INTERVAL = '99';
 process.env.EXTERNAL_MCP_SERVERS_JSON = '[]';
@@ -56,6 +57,15 @@ assert.ok(requestBody.tools.some(item => item.function.name === 'remember_in_thi
 assert.equal(requestAuthorization, 'Bearer device-key-never-stored');
 assert.equal(JSON.stringify(external.getWindow(window.id)).includes('device-key-never-stored'), false);
 assert.equal(external.searchWindows('整理回答')[0].window_id, window.id);
+
+const legacyAuto = external._test.normalizeMemory({ text: '旧的第三人称自动摘要', source: 'auto_summary' });
+assert.equal(legacyAuto.recallable, false);
+assert.equal(legacyAuto.perspective, 'legacy_unverified');
+const summaryPrompt = external._test.buildAutoSummaryPrompt({ ...window, memories: [] }, [reply.user, reply.assistant]);
+assert.match(summaryPrompt[0].content, /第一人称“我”/);
+assert.match(summaryPrompt[0].content, /evidence_message_ids/);
+assert.match(summaryPrompt[1].content, new RegExp(reply.user.id));
+assert.equal(summaryPrompt[1].content.includes(reply.assistant.reasoning), false);
 
 let memory = external.addMemory(window.id, '棋子偏好先看结论再看细节', '棋子', 'manual', {
   kind: 'preference', importance: 5, source_message_ids: [reply.user.id]
