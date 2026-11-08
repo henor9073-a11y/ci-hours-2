@@ -80,6 +80,18 @@ for (const hit of allSearch.hits) {
   }
 }
 
+for (let index = 0; index < 125; index++) {
+  await chat.sendMessage({ sender: index % 2 ? 'cy' : 'nor', content: `分页测试共同词 ${String(index).padStart(3, '0')}`, source_device: 'test' });
+}
+const firstSearchPage = history.search({ query: '分页测试共同词', source: 'muwu', limit: 60 });
+const secondSearchPage = history.search({ query: '分页测试共同词', source: 'muwu', limit: 60, skip: 60 });
+const lastSearchPage = history.search({ query: '分页测试共同词', source: 'muwu', limit: 60, skip: 120 });
+assert.equal(firstSearchPage.total, 125);
+assert.equal(firstSearchPage.hits.length, 60);
+assert.equal(secondSearchPage.hits.length, 60);
+assert.equal(lastSearchPage.hits.length, 5);
+assert.equal(new Set([...firstSearchPage.hits, ...secondSearchPage.hits, ...lastSearchPage.hits].map(hit => hit.id)).size, 125);
+
 const daily = rings.addDaily({
   date, headline: '统一主聊天测试',
   source_segments: context.source_segments,
