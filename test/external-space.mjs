@@ -57,6 +57,33 @@ assert.equal(requestAuthorization, 'Bearer device-key-never-stored');
 assert.equal(JSON.stringify(external.getWindow(window.id)).includes('device-key-never-stored'), false);
 assert.equal(external.searchWindows('整理回答')[0].window_id, window.id);
 
+let memory = external.addMemory(window.id, '棋子偏好先看结论再看细节', '棋子', 'manual', {
+  kind: 'preference', importance: 5, source_message_ids: [reply.user.id]
+});
+assert.equal(memory.kind, 'preference');
+assert.equal(memory.importance, 5);
+memory = external.updateMemory(window.id, memory.id, { pinned: true, importance: 4 }, '棋子');
+assert.equal(memory.pinned, true);
+assert.equal(memory.importance, 4);
+
+const mediaReply = await external.sendMessage(window.id, {
+  text: '看看这张图',
+  reply_to: reply.assistant.id,
+  client_message_id: 'client-media-1',
+  attachments: [{
+    kind: 'image', mime: 'image/png', filename: 'tiny.png',
+    data_base64: Buffer.from('not-a-real-png-but-safe-for-storage').toString('base64')
+  }]
+}, '棋子', { apiKey: 'device-key-never-stored' });
+assert.equal(mediaReply.user.type, 'image');
+assert.equal(mediaReply.user.quote.id, reply.assistant.id);
+assert.equal('path' in mediaReply.user.attachments[0], false);
+assert.match(String(requestBody.messages.at(-1).content), /当前模型 .* 不支持直接读取图片/);
+const attachment = external.getWindow(window.id).messages.find(item => item.id === mediaReply.user.id).attachments[0];
+assert.equal('path' in attachment, false);
+assert.ok(external.mediaRef(window.id, mediaReply.user.id, attachment.id)?.path);
+assert.equal(external.setMessageStar(window.id, mediaReply.assistant.id, true).starred, true);
+
 const messageCountBeforeFailure = external.getWindow(window.id).messages.length;
 globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: '临时失败 device-key-never-stored' } }), {
   status: 503, headers: { 'Content-Type': 'application/json' }

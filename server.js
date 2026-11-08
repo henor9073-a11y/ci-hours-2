@@ -168,7 +168,11 @@ app.put('/api/external-space/windows/:id/mcps', (req, res) => {
   catch (e) { externalError(res, e); }
 });
 app.post('/api/external-space/windows/:id/memories', (req, res) => {
-  try { res.json(mw.externalSpace.addMemory(req.params.id, req.body?.text, '棋子·Sigh', 'manual')); }
+  try { res.json(mw.externalSpace.addMemory(req.params.id, req.body?.text, '棋子·Sigh', 'manual', req.body || {})); }
+  catch (e) { externalError(res, e); }
+});
+app.patch('/api/external-space/windows/:id/memories/:memoryId', (req, res) => {
+  try { res.json(mw.externalSpace.updateMemory(req.params.id, req.params.memoryId, req.body || {}, '棋子·Sigh')); }
   catch (e) { externalError(res, e); }
 });
 app.delete('/api/external-space/windows/:id/memories/:memoryId', (req, res) => {
@@ -179,10 +183,33 @@ app.post('/api/external-space/windows/:id/messages', async (req, res) => {
   // 外部模型密钥可以只保存在 Sigh 钥匙串里：每次请求经 HTTPS 临时带来，
   // 不写 JSON、不写审计、不返回前端；服务端环境变量仍可作为无人值守的后备配置。
   const apiKey = String(req.headers['x-external-api-key'] || '');
-  try { res.json(await mw.externalSpace.sendMessage(req.params.id, req.body?.text, '棋子', { apiKey })); }
+  try { res.json(await mw.externalSpace.sendMessage(req.params.id, req.body || {}, '棋子', { apiKey })); }
   catch (e) { externalError(res, e, 502); }
 });
+app.post('/api/external-space/windows/:id/messages/:messageId/star', (req, res) => {
+  try { res.json(mw.externalSpace.setMessageStar(req.params.id, req.params.messageId, req.body?.on !== false, '棋子·Sigh')); }
+  catch (e) { externalError(res, e); }
+});
+app.get('/api/external-space/windows/:id/media/:messageId/:attachmentId', (req, res) => {
+  try {
+    const media = mw.externalSpace.mediaRef(req.params.id, req.params.messageId, req.params.attachmentId);
+    if (!media) return res.status(404).json({ error: '找不到这个附件' });
+    res.setHeader('Cache-Control', 'private, max-age=604800');
+    res.setHeader('Content-Type', media.mime);
+    fs.createReadStream(media.path).pipe(res);
+  } catch (e) { externalError(res, e, 404); }
+});
 app.get('/api/external-space/audit', (req, res) => res.json(mw.externalSpace.auditLog(req.query.limit)));
+
+// Sigh 首页首屏只走一次往返；旧的细分接口继续保留，便于局部刷新与滚动升级。
+app.get('/api/mobile/bootstrap', (_, res) => res.json({
+  version: 1,
+  server_at: new Date().toISOString(),
+  status: mw.chat.getStatus(),
+  countdowns: mw.countdowns.getCountdowns(),
+  preferences: mw.prefs.getPrefs(),
+  xinchao: mw.xinchaoState.getSnapshot()
+}));
 
 // ---- 私有云备份：Mac mini 每周把本地整库 gzip 再镜像一份到 Supabase Storage ----
 // 入口位于密码中间件之后；Supabase service key 永远只留在 Render 环境里。
