@@ -62,6 +62,10 @@
     const t = c && c.accepted_at ? Date.parse(c.accepted_at) : 0; if (!t) return '00:00';
     const s = Math.max(0, Math.floor((Date.now() - t) / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   };
+  const ownerLabel = c => {
+    if (!c || !c.owner_window_name) return '小辞';
+    return `${c.owner_window_name}${c.owner_model_label ? ' · ' + c.owner_model_label : ''}`;
+  };
   async function avatar() { const p = await loadPrefs().catch(() => ({})); return p.avatar_cy ? imageUrl(p.avatar_cy) : ''; }
   function buttons(active) {
     return active ? `<div class="call-actions"><button class="call-btn normal${muted ? ' on' : ''}" onclick="CALL.mute()">${muted ? '取消静音' : '静音'}</button><button class="call-btn hang" onclick="CALL.act('hangup')">挂断</button><button class="call-btn normal" onclick="CALL.minimize()">缩小</button></div>` : '';
@@ -73,13 +77,13 @@
     const outgoing = c.status === 'ringing' && c.caller === 'nor';
     if (minimized) {
       layer.hidden = true; mini.hidden = false;
-      mini.innerHTML = `<div onclick="CALL.expand()"><b>小辞 · ${outgoing ? '等待接听' : incoming ? '来电等待' : elapsed(c)}</b><span>${esc(subtitle.at(-1) || (incoming ? '点击接听' : '正在通话'))}</span></div><button onclick="CALL.mute()">${muted ? '已静音' : '静音'}</button><button onclick="CALL.act('hangup')">挂断</button>`;
+      mini.innerHTML = `<div onclick="CALL.expand()"><b>${esc(ownerLabel(c))} · ${outgoing ? '等待接听' : incoming ? '来电等待' : elapsed(c)}</b><span>${esc(subtitle.at(-1) || (incoming ? '点击接听' : '正在通话'))}</span></div><button onclick="CALL.mute()">${muted ? '已静音' : '静音'}</button><button onclick="CALL.act('hangup')">挂断</button>`;
       return;
     }
     mini.hidden = true; layer.hidden = false; const av = await avatar();
     const status = incoming ? '小辞来电' : outgoing ? '正在呼叫小辞…' : c.status === 'reconnecting' ? '正在重新连接…' : elapsed(c);
     layer.innerHTML = `<div class="call-bg"></div><div class="call-screen"><div class="call-time" data-call-time>${status}</div>
-      <div class="call-avatar">${av ? `<img src="${av}" alt="">` : '辞'}</div><div class="call-name">小辞</div>
+      <div class="call-avatar">${av ? `<img src="${av}" alt="">` : '辞'}</div><div class="call-name">${esc(ownerLabel(c))}</div>
       <button type="button" class="call-sound-toggle${audioUnlocked ? ' on' : ''}" aria-pressed="${audioUnlocked}">${audioUnlocked ? '声音已开启' : '提前开启声音'}</button>
       <div class="call-subtitles"${needsAudioUnlock ? ' role="button" aria-label="开启声音"' : ''}>${subtitle.length ? subtitle.slice(-3).map(x => `<div>${esc(x)}</div>`).join('') : `<div class="quiet">${incoming ? '在自动挂断前都可以接听' : outgoing ? '等他接听…' : '正在听…'}</div>`}${needsAudioUnlock ? '<button type="button" class="call-unlock">开启声音</button>' : ''}</div>
       ${incoming ? `<div class="call-actions incoming"><button class="call-btn hang" onclick="CALL.act('reject')">拒绝</button><button class="call-btn accept" onclick="CALL.act('accept')">接听</button><button class="call-btn normal" onclick="CALL.minimize()">等待</button></div>` : outgoing ? `<div class="call-actions"><button class="call-btn hang" onclick="CALL.act('hangup')">取消</button><button class="call-btn normal" onclick="CALL.minimize()">缩小</button></div>` : buttons(true)}</div>`;
@@ -199,12 +203,16 @@
     document.body.appendChild(wrap);
   }
   const CALL = {
-    confirmDial() {
+    async confirmDial() {
+      let targets = [];
+      try { targets = (await rest('/api/call/targets')).targets || []; }
+      catch (e) { alert('暂时取不到在线窗口：' + e.message); return; }
+      if (!targets.length) { alert('现在没有在线窗口可以接听'); return; }
       const wrap=document.createElement('div'); wrap.className='call-dial-confirm';
-      wrap.innerHTML=`<div class="call-dial-card"><div class="call-dial-title">给小辞打电话？</div><div class="call-dial-sub">选择拨通后才会开始呼叫</div><div><button class="dial" onclick="CALL.dial();this.closest('.call-dial-confirm').remove()">拨通</button><button onclick="this.closest('.call-dial-confirm').remove()">退出</button></div></div>`;
+      wrap.innerHTML=`<div class="call-dial-card"><div class="call-dial-title">给哪个窗口打电话？</div><div class="call-dial-sub">接通后整通电话都会留在所选窗口</div><label class="call-target-label">当前在线 <select id="call-target-select">${targets.map(t=>`<option value="${esc(t.session_id)}"${t.is_primary?' selected':''}>${esc(t.display_label)}${t.is_primary?'（主要）':''}</option>`).join('')}</select></label><div><button class="dial" onclick="CALL.dial(document.getElementById('call-target-select').value);this.closest('.call-dial-confirm').remove()">拨通</button><button onclick="this.closest('.call-dial-confirm').remove()">退出</button></div></div>`;
       document.body.appendChild(wrap);
     },
-    async dial() { unlockAudio(); try { await post('/api/call/start'); minimized = false; poll(); } catch(e) { alert(e.message); } },
+    async dial(sessionId) { unlockAudio(); try { await post('/api/call/start', { session_id: sessionId }); minimized = false; poll(); } catch(e) { alert(e.message); } },
     async act(action) { try { if (action === 'accept') unlockAudio(); await post('/api/call/action', { action }); if (action === 'accept') minimized = false; poll(); } catch(e) { alert(e.message); } },
     enableSound() { unlockAudio(); },
     unlockAndReplay() { needsAudioUnlock = false; const cy=[...(state&&state.events||[])].reverse().find(e=>e.type==='utterance'&&e.by==='cy'); if(cy) play(cy.id); else { unlockAudio(); paint(); } },

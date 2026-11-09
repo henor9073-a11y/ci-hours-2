@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
-// Memory-only MCP surface for parallel Claude windows.
+// Memory + call MCP surface for parallel Claude windows.
 //
 // The main Claude window keeps the full Muwu MCP. Parallel windows use this
-// proxy so they can recall shared memory and inspect recalled photos without
-// receiving or sending cabin chat, calls, notifications, or other main-window
-// interactions.
+// proxy so they can recall shared memory, inspect recalled photos and own a
+// phone call without receiving cabin chat or other main-window interactions.
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -30,6 +29,12 @@ const ALLOWED = new Set([
   'auto_recall',
   'get_photo',
   'photo_recall',
+  'call_start',
+  'call_status',
+  'call_accept',
+  'call_reject',
+  'call_say',
+  'call_end',
 ])
 
 let requestId = 0
@@ -73,7 +78,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
   if (!ALLOWED.has(name)) {
     return {
       isError: true,
-      content: [{ type: 'text', text: `并行窗口只开放记忆召回；不能使用 ${name || '这个工具'}。` }],
+      content: [{ type: 'text', text: `并行窗口只开放记忆召回、照片与属于自己的通话；不能使用 ${name || '这个工具'}。` }],
     }
   }
   try {

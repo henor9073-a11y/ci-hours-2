@@ -86,6 +86,16 @@ async function tool(name, args = {}) {
   if (j.result.isError) throw new Error(`${name} 报错：${text}`);
   try { return JSON.parse(text); } catch { return text; }
 }
+async function toolForSession(sessionId, name, args = {}) {
+  const r = await fetch(`${base}/mcp`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-access-token': TOKEN, 'x-muwu-session-id': sessionId },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name, arguments: args } })
+  });
+  const j = await r.json();
+  const text = j.result?.content?.[0]?.text || '';
+  if (!j.result || j.result.isError) throw new Error(`${name} 报错：${text || JSON.stringify(j.error)}`);
+  try { return JSON.parse(text); } catch { return text; }
+}
 async function backgroundRpc(method, params) {
   const r = await fetch(`${base}/mcp`, {
     method: 'POST',
@@ -905,7 +915,7 @@ try {
   });
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const heartbeat = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
       body: JSON.stringify({ agent_id: 'test-mini', current: {
         session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
         windows: [
@@ -919,23 +929,29 @@ try {
     let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
     assert.equal(calls.pauseMs(), 800); assert.equal(settings.endPause, 'fast');
     assert.equal(settings.tokenMode, 'economy');
-    const c = calls.start('nor'); assert.equal(c.status, 'ringing');
-    assert.ok(calls.pendingForCy().events.some(e => e.type === 'ringing'));
+    const targets = await rest('/api/call/targets');
+    assert.equal(targets.routing_version, 2);
+    assert.deepEqual(targets.targets.map(target => target.session_id), [PRIMARY_SESSION, SECONDARY_SESSION]);
+    const secondaryOwner = targets.targets.find(target => target.session_id === SECONDARY_SESSION);
+    const c = calls.start('nor', { owner: secondaryOwner, initiatedVia: 'user_ui' }); assert.equal(c.status, 'ringing');
+    assert.equal(c.owner_session_id, SECONDARY_SESSION);
+    assert.ok(calls.pendingForCy(SECONDARY_SESSION).events.some(e => e.type === 'ringing'));
     assert.equal((await rest('/api/call/pending')).blocked, true, '没声明 session 的旧频道必须关闭');
-    assert.equal((await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`)).events.length, 0, '副窗口不能领取来电');
-    const primaryCall = await rest(`/api/call/pending?session_id=${PRIMARY_SESSION}`);
-    const ringing = primaryCall.events.find(e => e.type === 'ringing');
-    assert.ok(ringing, '主要窗口应领取来电');
+    const secondaryCall = await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`);
+    const ringing = secondaryCall.events.find(e => e.type === 'ringing');
+    assert.ok(ringing, '所选副窗口应领取来电');
+    assert.equal((await rest(`/api/call/pending?session_id=${PRIMARY_SESSION}`)).events.length, 0, '主要窗口不能抢走副窗口的电话');
     const blockedCallAck = await (await fetch(`${base}/api/call/delivered?token=${TOKEN}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': SECONDARY_SESSION },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-muwu-session-id': PRIMARY_SESSION },
       body: JSON.stringify({ ids: [ringing.id] })
     })).json();
-    assert.equal(blockedCallAck.blocked, true, '副窗口不能替主要窗口确认来电');
-    assert.ok((await rest(`/api/call/pending?session_id=${PRIMARY_SESSION}`)).events.some(e => e.id === ringing.id), '副窗口确认不能吞掉主要窗口来电');
-    calls.action('cy', 'accept');
+    assert.equal(blockedCallAck.blocked, true, '主要窗口不能替副窗口确认来电');
+    assert.ok((await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`)).events.some(e => e.id === ringing.id), '其他窗口确认不能吞掉归属窗口来电');
+    calls.action('cy', 'accept', { sessionId: SECONDARY_SESSION });
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
-    assert.deepEqual(await tool('call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
+    assert.deepEqual(await toolForSession(SECONDARY_SESSION, 'call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
+    await assert.rejects(toolForSession(PRIMARY_SESSION, 'call_say', { content: '抢电话' }), /属于另一个窗口/);
     calls.action('nor', 'hangup');
     assert.equal(calls.history(1)[0].status, 'ended');
     const callBubble = calls.history(1)[0];
@@ -944,13 +960,15 @@ try {
     assert.ok(savedCall, '通话结束后该写进聊天时间线');
     assert.equal(savedCall.sender, 'nor', '通话气泡归拨号的人');
     assert.equal(savedCall.read, true, '通话记录不能再作为新留言触发辞回复');
+    assert.equal(savedCall.call_owner_session_id, SECONDARY_SESSION);
+    assert.equal(savedCall.call_owner_window_name, '在线副窗口');
     assert.match(savedCall.content, /^通话时长 \d{2}:\d{2}$/);
-    const endedPending = calls.pendingForCy().events.find(e => e.type === 'ended');
+    const endedPending = calls.pendingForCy(SECONDARY_SESSION).events.find(e => e.type === 'ended');
     assert.ok(endedPending && endedPending.delivered_to_cy === false, '挂断后 ended 仍要交给辞');
-    calls.markDelivered([endedPending.id]);
-    assert.ok(!calls.pendingForCy().events.some(e => e.id === endedPending.id), '辞收到 ended 后应标记完成');
+    calls.markDelivered([endedPending.id], SECONDARY_SESSION);
+    assert.ok(!calls.pendingForCy(SECONDARY_SESSION).events.some(e => e.id === endedPending.id), '辞收到 ended 后应标记完成');
     settings = calls.updateSettings({ allowIncoming: false, endPause: 'standard' });
-    assert.equal(calls.start('cy').reason, 'incoming_disabled');
+    assert.equal(calls.start('cy', { owner: secondaryOwner, initiatedVia: 'claude_window' }).reason, 'incoming_disabled');
     calls.updateSettings({ allowIncoming: true });
   });
   await step('木屋聊天：送进辞窗口（pending→delivered=两个勾）、网页冒充不了辞', async () => {

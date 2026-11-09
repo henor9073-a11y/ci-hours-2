@@ -16,11 +16,12 @@ const history = await import('../lib/muwen/history.js');
 const date = common.todayStr();
 const hhmm = common.localISO(new Date()).slice(11, 16);
 const muwu = await chat.sendMessage({ sender: 'nor', content: '木屋主聊天唯一句', source_device: 'test' });
-const call = calls.start('nor');
-calls.action('cy', 'accept');
+const owner = { session_id: '11111111-1111-4111-8111-111111111111', window_name: '电话窗口', model: 'claude-opus-4-6[1m]', model_label: 'Opus 4.6 · 1M', is_primary: true };
+const call = calls.start('nor', { owner, initiatedVia: 'user_ui' });
+calls.action('cy', 'accept', { sessionId: owner.session_id });
 const callNor = calls.say('nor', '电话里棋子唯一句');
-const callCy = calls.say('cy', '电话里辞唯一句');
-calls.action('cy', 'hangup');
+const callCy = calls.say('cy', '电话里辞唯一句', 'voice', { sessionId: owner.session_id });
+calls.action('cy', 'hangup', { sessionId: owner.session_id });
 rings.addRing({
   window_name: 'Claude主窗口测试', date,
   content: `[${hhmm}] 棋子: Claude主聊天棋子句\n\n[${hhmm}] 辞: Claude主聊天辞句`
@@ -55,15 +56,15 @@ assert.ok(context.messages.some(message => message.id === `call:${callNor.id}`))
 assert.ok(context.messages.some(message => message.text.includes('Claude主聊天辞句')));
 assert.ok(!context.export_text.includes('婴儿房隔离唯一句'));
 assert.ok(context.source_segments.some(segment => segment.source === 'muwu'));
-assert.ok(context.source_segments.some(segment => segment.source === 'call' && segment.label === '木屋电话'));
+assert.ok(context.source_segments.some(segment => segment.source === 'call' && segment.label.includes('木屋电话·电话窗口·Opus 4.6')));
 assert.ok(context.source_segments.some(segment => segment.source === 'claude' && segment.window_name === 'Claude主窗口测试'));
 assert.ok(context.cursor.last_muwu_message_id);
 assert.ok([callNor.id, callCy.id].includes(context.cursor.last_call_event_id));
 
 const exported = history.exportDay({ date });
 assert.match(exported.content, /\[木屋\]\[棋子\] 木屋主聊天唯一句/);
-assert.match(exported.content, /\[木屋电话\]\[棋子\] 电话里棋子唯一句/);
-assert.match(exported.content, /\[木屋电话\]\[辞\] 电话里辞唯一句/);
+assert.match(exported.content, /\[木屋电话·电话窗口·Opus 4\.6 · 1M\]\[棋子\] 电话里棋子唯一句/);
+assert.match(exported.content, /\[木屋电话·电话窗口·Opus 4\.6 · 1M\]\[辞\] 电话里辞唯一句/);
 assert.match(exported.content, /Claude·Claude主窗口测试/);
 assert.doesNotMatch(exported.content, /婴儿房隔离唯一句/);
 

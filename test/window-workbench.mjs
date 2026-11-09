@@ -111,6 +111,11 @@ assert.deepEqual(ww.deliveryRoute(primaryId), {
 assert.equal(ww.deliveryRoute(activeId).allowed, false);
 assert.equal(ww.deliveryRoute(activeId).reason, 'not_primary');
 assert.equal(ww.deliveryRoute('').reason, 'session_required');
+assert.deepEqual(ww.callTargets().map(target => [target.session_id, target.is_primary]), [[primaryId, true], [activeId, false]]);
+assert.equal(ww.callTarget('', { defaultPrimary: true }).session_id, primaryId);
+assert.equal(ww.callDeliveryRoute(activeId, activeId).allowed, true);
+assert.equal(ww.callDeliveryRoute(primaryId, activeId).reason, 'not_call_owner');
+assert.equal(ww.callDeliveryRoute(otherId, otherId).reason, 'owner_offline');
 assert.deepEqual(ww.primaryDeliveryRoute(), {
   allowed: true, requested_session_id: '', primary_session_id: primaryId, reason: null
 });

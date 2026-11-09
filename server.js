@@ -245,6 +245,20 @@ function agentDeliveryRoute(req) {
   return route;
 }
 
+function callAgentDeliveryRoute(req) {
+  if (!mw.calls.sessionRoutingEnabled()) return agentDeliveryRoute(req);
+  const sessionId = req.headers['x-muwu-session-id']
+    || req.query.session_id
+    || (req.body && req.body.session_id);
+  const ownerSessionId = mw.calls.getState().call?.owner_session_id;
+  const route = windowWorkbench.callDeliveryRoute(sessionId, ownerSessionId);
+  if (!route.allowed) return route;
+  if (!mw.agentAccess.deliveryAllowed()) {
+    return { ...route, allowed: false, reason: 'agent_memory_only' };
+  }
+  return route;
+}
+
 function backgroundAgentDeliveryRoute() {
   const route = windowWorkbench.primaryDeliveryRoute();
   if (!route.allowed) return route;
@@ -957,9 +971,19 @@ app.post('/api/coupons/:id/revoke', async (req, res) => {
 // ---- 持续通话：网页与 GPD 上当前 Claude Code session 之间的状态桥 ----
 app.get('/api/call/state', (req, res) => res.json(mw.calls.getState({ since: req.query.since || '' })));
 app.get('/api/call/history', (req, res) => res.json(mw.calls.history(Number(req.query.limit) || 50)));
+app.get('/api/call/targets', (_, res) => res.json({
+  routing_version: mw.calls.sessionRoutingEnabled() ? 2 : 1,
+  targets: windowWorkbench.callTargets()
+}));
 app.get('/api/call/settings', (_, res) => res.json(mw.calls.getSettings()));
 app.post('/api/call/settings', (req, res) => res.json(mw.calls.updateSettings(req.body || {})));
-app.post('/api/call/start', (req, res) => { try { res.json(mw.calls.start('nor')); } catch (e) { res.status(409).json({ error: String(e.message || e) }); } });
+app.post('/api/call/start', (req, res) => {
+  try {
+    const target = windowWorkbench.callTarget((req.body || {}).session_id, { defaultPrimary: true });
+    if (mw.calls.sessionRoutingEnabled() && !target) throw new Error('没有可接听的在线窗口');
+    res.json(mw.calls.start('nor', { owner: target || {}, initiatedVia: 'user_ui' }));
+  } catch (e) { res.status(409).json({ error: String(e.message || e) }); }
+});
 app.post('/api/call/action', (req, res) => { try { res.json(mw.calls.action('nor', (req.body || {}).action)); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
 app.post('/api/call/say', (req, res) => { try { res.json(mw.calls.say('nor', (req.body || {}).text, (req.body || {}).source || 'voice')); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
 app.post('/api/call/transcribe', async (req, res) => {
@@ -988,13 +1012,13 @@ app.get('/api/call/nor-audio/:eventId', (req, res) => {
   res.type(a.mime.split(';')[0] || 'audio/webm').send(a.buf);
 });
 app.get('/api/call/pending', (req, res) => {
-  const route = agentDeliveryRoute(req);
-  res.json(route.allowed ? mw.calls.pendingForCy() : blockedDelivery(route, 'call'));
+  const route = callAgentDeliveryRoute(req);
+  res.json(route.allowed ? mw.calls.pendingForCy(route.requested_session_id) : blockedDelivery(route, 'call'));
 });
 app.post('/api/call/delivered', (req, res) => {
-  const route = agentDeliveryRoute(req);
+  const route = callAgentDeliveryRoute(req);
   res.json(route.allowed
-    ? mw.calls.markDelivered((req.body || {}).ids || [])
+    ? mw.calls.markDelivered((req.body || {}).ids || [], route.requested_session_id)
     : { ok: false, count: 0, blocked: true, reason: route.reason });
 });
 app.get('/api/call/audio/:eventId', async (req, res) => {
