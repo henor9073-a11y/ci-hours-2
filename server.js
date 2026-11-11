@@ -1123,7 +1123,17 @@ function windowAgent(req, res, next) {
   if (!windowAgentAllowed(req)) return res.status(403).json({ error: '不是已登记的 Mac mini' });
   next();
 }
-app.get('/api/window-workbench', (_, res) => res.json(windowWorkbench.getWorkbench()));
+// 整包默认不再带 history 里每条 job 的 packet_preview（加 ?include=packet_preview 拿回旧行为）；
+// 单条 job 的完整内容走 /jobs/:id，Sigh 的使用量圆环只走 /usage。
+app.get('/api/window-workbench', (req, res) => res.json(windowWorkbench.getWorkbench({
+  include: String(req.query.include || '').split(',').map(x => x.trim()).filter(Boolean)
+})));
+app.get('/api/window-workbench/usage', (_, res) => res.json(windowWorkbench.getUsage()));
+app.get('/api/window-workbench/jobs/:id', (req, res) => {
+  const job = windowWorkbench.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: '找不到这次换窗' });
+  res.json(job);
+});
 app.post('/api/window-workbench/jobs', (req, res) => {
   try { res.json(windowWorkbench.createJob(req.body || {})); }
   catch (e) { res.status(400).json({ error: String(e.message || e) }); }

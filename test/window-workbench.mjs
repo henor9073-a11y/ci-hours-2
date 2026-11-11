@@ -132,9 +132,25 @@ const done = ww.completeJob(job.id, { message: '预览好了', result: { preview
 assert.equal(done.status, 'completed');
 assert.equal(done.progress, 100);
 assert.equal(ww.getWorkbench().active_job, null);
-assert.equal(ww.getWorkbench().history[0].packet_preview.older_22h.narrative, '完整原话');
-assert.equal(ww.getWorkbench().history[0].packet_preview.last_two_hours.records, 8);
+// history 默认不带交接预览，只留一个“有预览”的标记；要完整内容用 include 或 getJob。
+assert.equal(ww.getWorkbench().history[0].packet_preview, undefined);
+assert.equal(ww.getWorkbench().history[0].has_packet_preview, true);
+const withPreview = ww.getWorkbench({ include: ['packet_preview'] });
+assert.equal(withPreview.history[0].packet_preview.older_22h.narrative, '完整原话');
+assert.equal(withPreview.history[0].packet_preview.last_two_hours.records, 8);
+assert.equal(ww.getJob(job.id).packet_preview.last_two_hours.records, 8);
+assert.equal(ww.getJob(job.id).has_packet_preview, true);
+assert.equal(ww.getJob('nope'), null);
 assert.equal(ww.getWorkbench().choices.briefs[0].id, job.id);
+// digest 在写入时算好存下，getWorkbench 直接读
+assert.match(ww.getJob(job.id).packet_digest, /^[0-9a-f]{64}$/);
+assert.equal(ww.getWorkbench().choices.briefs[0].digest, ww.getJob(job.id).packet_digest);
+// 轻量用量接口只回 agent.current 里的几个字段
+const usage = ww.getUsage();
+assert.equal(usage.usage.plan_label, 'Max (5x)');
+assert.equal(usage.session_id, primaryId);
+assert.equal(usage.windows, undefined);
+assert.ok(!('history' in usage));
 
 const fresh = ww.createJob({ mode: 'fresh', preview_only: false });
 assert.equal(fresh.mode, 'fresh');

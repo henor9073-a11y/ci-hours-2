@@ -1172,6 +1172,22 @@ let wwDraft = {
 };
 let wwView = 'windows';
 const wwOpenHistory = new Set();
+// 工作台整包里的历史记录默认不带交接预览（省掉几 MB）；展开某一条时再按 id 单独取，取过的留在这里。
+const wwJobCache = new Map();
+function wwJobFull(job) {
+  if (!job) return job;
+  if (job.packet_preview) return job;
+  const full = wwJobCache.get(job.id);
+  return full ? { ...job, packet_preview: full.packet_preview } : job;
+}
+function wwLoadJobDetail(job) {
+  if (!job || job.packet_preview || !job.has_packet_preview || wwJobCache.has(job.id)) return;
+  wwRequest(`/api/window-workbench/jobs/${encodeURIComponent(job.id)}`).then(full => {
+    wwJobCache.set(job.id, full);
+    const target = byId('ww-h-' + job.id);
+    if (target && target.isConnected && wwOpenHistory.has(job.id)) target.innerHTML = wwHistoryDetail(full);
+  }).catch(() => {});
+}
 const wwSectionOpen = new Map([
   ['working', true], ['stopped', false]
 ]);
@@ -1385,11 +1401,12 @@ function wwResultSummary(job) {
   return `<div class="ww-result-grid">${rows.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
 }
 function wwHistoryDetail(job) {
+  job = wwJobFull(job);
   return `<div class="ww-history-detail">${job.error ? `<div class="err">${esc(job.error)}</div>` : ''}
     ${job.message ? `<div class="card-desc">${esc(job.message)}</div>` : ''}
     ${wwResultSummary(job)}
     ${(job.steps || []).length ? `<div class="ww-steps">${job.steps.map(s => `<div><span>${esc(fmtTime(s.at).slice(11))}</span>${esc(s.message)}</div>`).join('')}</div>` : ''}
-    ${job.packet_preview ? wwPacket(job.packet_preview) : ''}</div>`;
+    ${job.packet_preview ? wwPacket(job.packet_preview) : job.has_packet_preview ? '<div class="card-desc">正在读取当时的简报…</div>' : ''}</div>`;
 }
 function wwRender(data, node) {
   if (!node || !node.isConnected) return;
@@ -1452,6 +1469,7 @@ function wwRender(data, node) {
     h += `<div class="ww-page-intro"><b>最近所有操作</b><span>裁窗可查看留下的范围，换窗可展开当时的完整简报。</span></div>`;
     h += history.length ? history.map(j => {
       const open = wwOpenHistory.has(j.id);
+      if (open) wwLoadJobDetail(j);
       return `<div class="entry ww-history"><div class="entry-head"><b>${wwJobTitle(j)}</b><span class="tag plain">${esc(wwJobName(j.status))}</span></div><div class="card-desc">${esc(fmtTime(j.requested_at))} · ${esc(j.model || '')}</div><button class="link ww-history-toggle" onclick="wwHistory(event,'${j.id}')">${open ? '收起操作详情⌃' : '查看操作详情 ›'}</button><div id="ww-h-${j.id}">${open ? wwHistoryDetail(j) : ''}</div></div>`;
     }).join('') : '<div class="card"><div class="card-desc">还没有操作记录。</div></div>';
   }
@@ -1587,6 +1605,7 @@ function wwHistory(event, id) {
   if (!job || !target) return;
   if (wwOpenHistory.has(id)) wwOpenHistory.delete(id); else wwOpenHistory.add(id);
   target.innerHTML = wwOpenHistory.has(id) ? wwHistoryDetail(job) : '';
+  if (wwOpenHistory.has(id)) wwLoadJobDetail(job);
   const button = target.parentElement && target.parentElement.querySelector('.ww-history-toggle');
   if (button) button.textContent = wwOpenHistory.has(id) ? '收起操作详情⌃' : '查看操作详情 ›';
 }
