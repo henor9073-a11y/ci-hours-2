@@ -1652,21 +1652,36 @@ try {
 
   await step('自动召回意图判断能看到最近对话，不拿短回复里的通用词乱联想', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');
-    let received = null;
+    let called = false;
     const context = '辞: 你最近好像很喜欢粉色的宝石\n棋子: 本身喜欢的是欧泊和紫水晶';
+    const result = await autoRecall('嗯……应该是喜欢的', {
+      useAgent: true,
+      context,
+      _intent: async () => { called = true; throw new Error('短回复不应再调用意图模型'); },
+      suppressRecent: false,
+    });
+    assert.equal(called, false);
+    assert.equal(result.skipped_by_context, true);
+    assert.deepEqual(result.memories, []);
+  });
+
+  await step('自动召回把最近对话传给需要查历史的意图判断', async () => {
+    const { autoRecall } = await import('../lib/muwen/recall.js');
+    let received = null;
+    const context = '辞: 我们上次定过一个安排\n棋子: 我想重新确认';
     const intent = async (message, recent) => {
       received = { message, recent };
-      return { skip: true, intent: 'association', queries: [], why: '是当下宝石话题的短回复' };
+      return { skip: true, intent: 'answer', queries: [], why: '测试上下文传递' };
     };
-    const result = await autoRecall('嗯……应该是喜欢的', {
+    const message = '你还记得我们上次定的安排吗';
+    const result = await autoRecall(message, {
       useAgent: true,
       context,
       _intent: intent,
       suppressRecent: false,
     });
-    assert.deepEqual(received, { message: '嗯……应该是喜欢的', recent: context });
+    assert.deepEqual(received, { message, recent: context });
     assert.equal(result.skipped_by_agent, true);
-    assert.deepEqual(result.memories, []);
   });
 
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
