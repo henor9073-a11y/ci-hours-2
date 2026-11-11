@@ -35,6 +35,11 @@ assert.ok(index.dates[date].muwu >= 1);
 assert.equal(index.dates[date].call, 2);
 assert.ok(index.dates[date].claude >= 1);
 assert.equal(index.dates[date].nursery, 0);
+// 日期索引按来源文件 mtime 缓存：文件没变就复用，一写入就失效
+assert.deepEqual(history.dates(), index);
+await chat.sendMessage({ sender: 'nor', content: '让日期索引缓存失效的第二句', source_device: 'test' });
+assert.equal(history.dates().dates[date].muwu, index.dates[date].muwu + 1);
+assert.equal(index.dates[date].muwu + 1, history.dates().dates[date].muwu, '返回的是新对象，旧结果不被改动');
 
 const mainDay = history.day({ date });
 assert.equal(mainDay.source, 'main');
