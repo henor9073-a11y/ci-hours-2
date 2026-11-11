@@ -920,7 +920,7 @@ try {
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const heartbeat = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
-      body: JSON.stringify({ agent_id: 'test-mini', current: {
+      body: JSON.stringify({ agent_id: 'test-mini', capabilities: ['wake_toggle', 'wake_config_v2'], current: {
         session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
         windows: [
           { session_id: PRIMARY_SESSION, name: '主要窗口', is_primary: true, state: 'idle' },
@@ -929,6 +929,28 @@ try {
       } })
     });
     assert.equal(heartbeat.status, 200);
+    const wakeSaved = await fetch(`${base}/api/wake-settings?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wake_enabled: true, wake_config: { version: 2, enabled: true, min_interval_min: 20, max_interval_min: 60 } })
+    }).then(r => r.json());
+    assert.equal(wakeSaved.status, 'queued');
+    const wakeClaimed = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
+      body: JSON.stringify({ agent_id: 'test-mini', capabilities: ['wake_toggle', 'wake_config_v2'], current: {
+        session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
+        windows: [
+          { session_id: PRIMARY_SESSION, name: '主要窗口', is_primary: true, state: 'idle' },
+          { session_id: SECONDARY_SESSION, name: '在线副窗口', is_primary: false, state: 'idle' }
+        ]
+      } })
+    }).then(r => r.json());
+    assert.equal(wakeClaimed.wake_command.id, wakeSaved.id);
+    const wakeCompleted = await fetch(`${base}/api/window-workbench/agent/wake-settings/${wakeSaved.id}/complete?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
+      body: JSON.stringify({ message: '写入完成' })
+    }).then(r => r.json());
+    assert.equal(wakeCompleted.status, 'completed');
+    assert.equal((await rest(`/api/wake-settings/${wakeSaved.id}`)).status, 'completed');
     const calls = await import('../lib/muwen/calls.js');
     let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
     assert.equal(calls.pauseMs(), 800); assert.equal(settings.endPause, 'fast');

@@ -1132,6 +1132,23 @@ app.post('/api/window-workbench/jobs/:id/cancel', (req, res) => {
   try { res.json(windowWorkbench.cancelJob(req.params.id)); }
   catch (e) { res.status(404).json({ error: String(e.message || e) }); }
 });
+// 苏醒配置有自己的控制通道，不和耗时的换窗／裁窗任务争同一把锁。
+app.post('/api/wake-settings', (req, res) => {
+  try { res.json(windowWorkbench.createWakeSetting(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.get('/api/wake-settings/:id', (req, res) => {
+  try { res.json(windowWorkbench.getWakeSetting(req.params.id)); }
+  catch (e) { res.status(404).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/wake-settings/:id/complete', windowAgent, (req, res) => {
+  try { res.json(windowWorkbench.completeWakeSetting(req.params.id, req.body || {})); }
+  catch (e) { res.status(404).json({ error: String(e.message || e) }); }
+});
+app.post('/api/window-workbench/agent/wake-settings/:id/fail', windowAgent, (req, res) => {
+  try { res.json(windowWorkbench.failWakeSetting(req.params.id, req.body || {})); }
+  catch (e) { res.status(404).json({ error: String(e.message || e) }); }
+});
 app.post('/api/window-workbench/agent/heartbeat', windowAgent, (req, res) => {
   try {
     const result = windowWorkbench.agentHeartbeat(req.body || {});

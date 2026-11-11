@@ -290,6 +290,24 @@ assert.equal(customBrief.brief_mode, 'custom');
 assert.equal(customBrief.brief_id, job.id);
 ww.cancelJob(customBrief.id);
 
+const activeWindowTask = ww.createJob({ mode: 'handoff' });
+const independentWake = ww.createWakeSetting({ wake_enabled: true, wake_config: {
+  version: 2, enabled: true, min_interval_min: 20, max_interval_min: 60,
+  min_wakes: 1, max_wakes: 3, min_gap_min: 15, sleep_start: '02:00', sleep_end: '11:00'
+} });
+assert.equal(independentWake.status, 'queued');
+assert.equal(ww.getWorkbench().active_job.id, activeWindowTask.id, '保存苏醒设置不能替换正在运行的换窗任务');
+const wakeClaimHeartbeat = ww.agentHeartbeat({
+  agent_id: 'mini',
+  capabilities: ww.getWorkbench().agent.capabilities,
+  current: ww.getWorkbench().agent.current
+});
+assert.equal(wakeClaimHeartbeat.wake_command.id, independentWake.id, '心跳应该独立领取苏醒设置');
+assert.equal(ww.getWakeSetting(independentWake.id).status, 'running');
+assert.equal(ww.completeWakeSetting(independentWake.id, { message: '写入完成' }).status, 'completed');
+assert.equal(ww.getWorkbench().active_job.id, activeWindowTask.id, '应用苏醒设置不能碰换窗任务');
+ww.cancelJob(activeWindowTask.id);
+
 const wakeOff = ww.createJob({ mode: 'set_wake', wake_enabled: false });
 assert.equal(wakeOff.mode, 'set_wake');
 assert.equal(wakeOff.type, 'window_setting');
