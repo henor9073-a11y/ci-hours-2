@@ -10,13 +10,14 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
+    "adm-zip": "^0.5.16",
+    "compression": "^1.8.2",
     "epub2": "^3.0.2",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "pdf-parse": "^1.1.1",
-    "sharp": "^0.35.4",
-    "adm-zip": "^0.5.16"
+    "sharp": "^0.35.4"
   },
   "engines": {
     "node": ">=18"

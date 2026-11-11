@@ -28,6 +28,7 @@ import { leaveMessage, getMessages } from './lib/messages.js';
 import { playFishing } from './lib/fishing.js';
 import { sendPush, getPushConfig, registerPushDevice, removePushDevice } from './lib/bark.js';
 import * as windowWorkbench from './lib/window-workbench.js';
+import compression from 'compression';
 import {
   addSchedule, getSchedule, updateSchedule, completeSchedule, removeSchedule, getDueSchedules, markSchedulePushed,
   getScheduleByMonth, getScheduleForDate
@@ -62,6 +63,9 @@ runNegativeMemoryCleanup20261017();
 
 const app = express();
 app.set('trust proxy', true); // Render 在代理后面，这样 req.protocol 才能正确识别 https
+// 全站 gzip：JSON 一般能压到 1/5–1/10，聊天轮询和工作台整包都受益。
+// 图片 / 音频这类本来就压过的类型 compression 自己会跳过；流式语音也不是可压类型，不受影响。
+app.use(compression());
 app.use(express.json({ limit: '80mb' })); // 聊天允许一条最多 10 张；业务层另外限制单张和总大小。
 // 好让超限时报的是 album.js 里那句人话（'先在手机上裁一下'），而不是 express 的 413 HTML。后端会再自动压到 2MB 存
 app.use((req, res, next) => {
