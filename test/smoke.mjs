@@ -1650,6 +1650,25 @@ try {
     assert.ok(guarded.includes('游戏中心'), '过滤系统状态时不能误伤正常记忆');
   });
 
+  await step('自动召回意图判断能看到最近对话，不拿短回复里的通用词乱联想', async () => {
+    const { autoRecall } = await import('../lib/muwen/recall.js');
+    let received = null;
+    const context = '辞: 你最近好像很喜欢粉色的宝石\n棋子: 本身喜欢的是欧泊和紫水晶';
+    const intent = async (message, recent) => {
+      received = { message, recent };
+      return { skip: true, intent: 'association', queries: [], why: '是当下宝石话题的短回复' };
+    };
+    const result = await autoRecall('嗯……应该是喜欢的', {
+      useAgent: true,
+      context,
+      _intent: intent,
+      suppressRecent: false,
+    });
+    assert.deepEqual(received, { message: '嗯……应该是喜欢的', recent: context });
+    assert.equal(result.skipped_by_agent, true);
+    assert.deepEqual(result.memories, []);
+  });
+
   await step('语义兜底层：弱关键词才触发、排在前面、失败静默、强命中不跑', async () => {
     const { autoRecall } = await import('../lib/muwen/recall.js');
     const { buildIndex } = await import('../lib/muwen/semantic.js');
