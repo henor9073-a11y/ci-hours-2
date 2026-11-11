@@ -1395,7 +1395,6 @@ function wwRender(data, node) {
   if (!node || !node.isConnected) return;
   const agent = data.agent || {}, c = agent.current || {}, online = wwAgentOnline(agent), job = data.active_job;
   const forceStopAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('force_stop');
-  const wakeToggleAvailable = Array.isArray(agent.capabilities) && agent.capabilities.includes('wake_toggle');
   const models = (data.choices && data.choices.models) || [], displays = (data.choices && data.choices.thinking_displays) || [], cropProfiles = (data.choices && data.choices.crop_profiles) || [], briefs = (data.choices && data.choices.briefs) || [];
   if (!models.some(x => x.id === wwDraft.model) && models[0]) wwDraft.model = models[0].id;
   if (!cropProfiles.some(x => x.id === wwDraft.crop_profile) && cropProfiles[0]) wwDraft.crop_profile = cropProfiles[0].id;
@@ -1420,8 +1419,6 @@ function wwRender(data, node) {
     if (job && wwJobScope(job) === 'actions') h += wwJobCard(job);
     h += status;
     if (notice) h += `<div class="card ww-context-notice level-${Number(notice.level) >= 80 ? '80' : '70'}"><div><b>当前窗口已到 ${Math.round(Number(notice.percent || notice.level))}%</b><span>${esc(notice.message || '')}</span></div><button class="btn" onclick="wwChooseCrop()">看裁剪方案</button><button class="btn ghost" onclick="wwChooseHandoff()">看换窗方案</button></div>`;
-    h += `<div class="card ww-setting-card"><div><b>辞当前 session 的自主苏醒</b><span>这里只控制主力苏醒；三层框架稍后单独整理。</span></div><label class="ww-switch"><input type="checkbox" ${c.wake_enabled ? 'checked' : ''} ${job || !wakeToggleAvailable ? 'disabled' : ''} onchange="wwSetWake(this.checked)"><i></i></label></div>`;
-    if (!wakeToggleAvailable) h += '<div class="ww-choice-note">Mac mini 的自主苏醒开关还没有接入正式执行器。</div>';
     if (!job) {
     const fresh = wwDraft.mode === 'fresh';
     const cropping = wwDraft.mode === 'crop';

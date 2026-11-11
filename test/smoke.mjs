@@ -489,13 +489,13 @@ try {
     const g = sa.results.find(r => r.layer === 'grains');
     assert.equal(g.label, '经历');
 
-    // 苏醒状态：三层都在，当前窗口和看门狗只认 Mac mini 执行器的真实回报
+    // 苏醒状态：随机、心潮和看门狗都只认 Mac mini 执行器的真实回报
     let w = await tool('get_wake_status');
     assert.equal(w.layers.length, 3);
-    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours']);
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'xinchao', 'heartbeat']);
     assert.equal(w.layers[0].connected, false);
     assert.ok(w.layers[0].status.includes('没有最近报到'));
-    assert.equal(w.layers.find(l => l.key === 'ci_hours').connected, true);   // 第三层是服务器自己的，永远看得到
+    assert.equal(w.layers.find(l => l.key === 'xinchao').connected, false);
     // 旧 wake-ping 只为兼容保留，不能再把已废弃的 Windows ping 冒充当前看门狗
     const pr = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: 'heartbeat', note: '测试' }) });
     assert.ok(pr.ok);
@@ -567,16 +567,18 @@ try {
     assert.ok(q.text.includes('我会陪你的'));
     assert.equal((await (await fetch(`${base}/api/daily-quote?token=${TOKEN}`)).json()).text, q.text);
   });
-  await step('三层分工：边界写进代码，服务器没有会说话的 cron', async () => {
+  await step('苏醒三路分工：随机、心潮、看门狗边界写进代码', async () => {
     const w = await tool('get_wake_status');
-    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours'], '顺序按一二三层');
-    const [l1, l2, l3] = w.layers;
-    assert.equal(l1['权限'], '只向主要窗口注入 /loop');
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'xinchao', 'heartbeat']);
+    const [l1, heart, watchdog] = w.layers;
+    assert.equal(l1['权限'], '只向当前主要窗口发送一次性系统提醒');
     assert.ok(l1.only.some(x => x.includes('主要窗口')), '第一层只能叫醒登记的主要窗口');
     assert.ok(l1.never.some(x => x.includes('不另开 session')));
-    assert.equal(l2['权限'], '只能发手机通知');
-    assert.ok(l2.never.includes('不读留言') && l2.never.includes('不启动新 session'));
-    assert.ok(l3.never.includes('不回留言') && l3.never.some(x => x.includes('辞的语气')));
+    assert.ok(l1.never.includes('不使用 /loop'));
+    assert.equal(heart['权限'], '只向当前主要窗口发送动作邀请');
+    assert.ok(heart.never.some(x => x.includes('不直接念数值')));
+    assert.equal(watchdog['权限'], '只能发手机通知');
+    assert.ok(watchdog.never.includes('不读留言') && watchdog.never.includes('不启动新 session'));
     // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
     const fs2 = await import('fs');
     const hbCode = fs2.readFileSync(new URL('../../../remote-fix/wake_watchdog.py', import.meta.url), 'utf8')
@@ -584,9 +586,11 @@ try {
     assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
     assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
     assert.ok(hbCode.includes("mcp_call('send_push'"));
-    // 第一层只往现有主要窗口注入 /loop
+    // 第一层只往现有主要窗口注入一次性系统提醒，不再安装 /loop
     const wake = fs2.readFileSync(new URL('../../../remote-fix/wakeup.py', import.meta.url), 'utf8');
-    assert.ok(wake.includes('os.write(fd, b"/loop\\n")'));
+    assert.ok(wake.includes('"action": "wake_once"'));
+    assert.ok(wake.includes('<system-reminder source="autonomous-wake">'));
+    assert.ok(!wake.includes('os.write(fd, b"/loop\\n")'));
     assert.ok(!/claude\s+-p/.test(wake));
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');

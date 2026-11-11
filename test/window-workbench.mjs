@@ -53,10 +53,21 @@ assert.throws(() => ww.createJob({ mode: 'fresh' }), /正在进行/);
 const primaryId = '11111111-1111-4111-8111-111111111111';
 const otherId = '22222222-2222-4222-8222-222222222222';
 const activeId = '44444444-4444-4444-8444-444444444444';
-ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle', 'not_allowed'], current: {
+ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_session', 'wake_toggle', 'wake_config_v2', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle', 'not_allowed'], current: {
   session_id: primaryId, model: 'opus', context_percent: 27.4, state: 'idle', wake_enabled: true,
   wake_last_at: '2026-10-08T10:00:00+11:00', wake_last_check_at: '2026-10-08T10:04:00+11:00',
   wake_mode: 'chase', wake_count_today: 3, wake_next_interval_min: 5,
+  wake_config: {
+    version: 2, enabled: true, min_interval_min: 20, max_interval_min: 60,
+    min_wakes: 1, max_wakes: 3, min_gap_min: 15, sleep_start: '02:00', sleep_end: '11:00',
+    prompts: { first: '第一次', next: '又一次', watch: '手表', dream: '梦' },
+    xinchao: { enabled: true, hold_min: 20, cooldown_min: 90, drives: {
+      possess: { label: '乱写会被覆盖', enabled: true, threshold: .7, release: .55, prompt: '想她了。去找她吧。' }
+    } }
+  },
+  wake_runtime: { absence_user_at: '2026-10-08T09:00:00+11:00', planned_wakes: 3, completed_wakes: 1, next_wake_at: '2026-10-08T10:30:00+11:00', last_source: 'random' },
+  wake_history: [{ at: '2026-10-08T10:00:00+11:00', source: 'random', prompt_key: 'first', prompt: '第一次', number: 1, planned: 3 }],
+  xinchao_wake: { connected: true, source_updated_at: '2026-10-08T10:05:00+11:00', age_seconds: 12, drives: { possess: .71, invalid: 99 }, dream_pending: false },
   watchdog: { installed: true, healthy: false, checked_at: '2026-10-08T10:05:00+11:00', problems: ['主要窗口没运行', 17] },
   daily_pipeline: { last_run_at: '2026-10-08T08:30:00+11:00', last_success_date: '2026-10-07', last_error_at: '2026-10-08 08:30:00', last_error_date: '2026-10-07', last_error: '一次失败' },
   usage: {
@@ -86,13 +97,18 @@ ww.agentHeartbeat({ agent_id: 'mini', capabilities: ['force_stop', 'crop_same_se
   ]
 } });
 assert.equal(ww.getWorkbench().agent.current.windows.length, 3);
-assert.deepEqual(ww.getWorkbench().agent.capabilities, ['force_stop', 'crop_same_session', 'wake_toggle', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle']);
+assert.deepEqual(ww.getWorkbench().agent.capabilities, ['force_stop', 'crop_same_session', 'wake_toggle', 'wake_config_v2', 'interrupt_window', 'resume_window', 'mcp_reconnect', 'mcp_toggle']);
 assert.equal(ww.getWorkbench().agent.current.windows[0].crop_generation, 2);
 assert.equal(ww.getWorkbench().agent.current.windows[0].last_crop_at, '2026-10-08T02:00:00+11:00');
 assert.deepEqual(ww.getWorkbench().agent.current.windows[1].recent_messages.map(x => x.text), ['还在吗']);
 assert.deepEqual(ww.getWorkbench().agent.current.windows[0].mcp_servers.map(x => [x.name, x.status, x.enabled]), [['muwen', 'connected', true], ['GPD', 'offline', true], ['moomoo', 'disabled', false]]);
 assert.equal(ww.getWorkbench().agent.current.wake_mode, 'chase');
 assert.equal(ww.getWorkbench().agent.current.wake_count_today, 3);
+assert.equal(ww.getWorkbench().agent.current.wake_config.min_interval_min, 20);
+assert.equal(ww.getWorkbench().agent.current.wake_config.xinchao.drives.possess.label, '想念');
+assert.equal(ww.getWorkbench().agent.current.wake_runtime.planned_wakes, 3);
+assert.equal(ww.getWorkbench().agent.current.wake_history[0].source, 'random');
+assert.deepEqual(ww.getWorkbench().agent.current.xinchao_wake.drives, { possess: .71 });
 assert.equal(ww.getWorkbench().agent.current.watchdog.installed, true);
 assert.deepEqual(ww.getWorkbench().agent.current.watchdog.problems, ['主要窗口没运行', '17']);
 assert.equal(ww.getWorkbench().agent.current.daily_pipeline.last_success_date, '2026-10-07');
@@ -284,6 +300,20 @@ const wakeOn = ww.createJob({ mode: 'set_wake', wake_enabled: true });
 assert.equal(wakeOn.wake_enabled, true);
 assert.match(wakeOn.message, /打开自主苏醒/);
 ww.cancelJob(wakeOn.id);
+const wakeConfigured = ww.createJob({ mode: 'set_wake', wake_enabled: true, wake_config: {
+  version: 2, enabled: true, min_interval_min: 1, max_interval_min: 999,
+  min_wakes: 2, max_wakes: 4, min_gap_min: 15, sleep_start: 'bad', sleep_end: '11:00',
+  prompts: { first: '自定义第一次', next: '自定义再次', watch: '手表', dream: '梦' },
+  xinchao: { enabled: true, hold_min: 20, cooldown_min: 90, drives: {
+    curiosity: { enabled: true, threshold: .44, release: .33, prompt: '出去逛逛。' }
+  } }
+} });
+assert.equal(wakeConfigured.wake_config.min_interval_min, 5);
+assert.equal(wakeConfigured.wake_config.max_interval_min, 720);
+assert.equal(wakeConfigured.wake_config.sleep_start, '02:00');
+assert.equal(wakeConfigured.wake_config.xinchao.drives.curiosity.threshold, .44);
+assert.equal(wakeConfigured.wake_config.xinchao.drives.possess.label, '想念');
+ww.cancelJob(wakeConfigured.id);
 assert.throws(() => ww.createJob({ mode: 'set_wake', wake_enabled: true, preview_only: true }), /不支持只生成预览/);
 
 const waitsTooLong = ww.createJob({ mode: 'stop_window', target_session_id: activeId });
