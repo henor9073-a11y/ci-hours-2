@@ -358,6 +358,18 @@ try {
     assert.equal(JSON.parse(originalCall.result.content[1].text).returned, 'original');
     const img = await fetch(`${base}/api/album/${p2.photo.id}/image?token=${TOKEN}`);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
+    assert.ok(img.headers.get('etag'), '图片路由要带 ETag');
+    assert.ok(Number(img.headers.get('content-length')) > 0, '图片路由要带 Content-Length');
+    assert.equal(img.headers.get('cache-control'), 'private, max-age=604800');
+    // ?w= 出方形缩略图（webp），再请求一次命中落盘缓存；非法尺寸报 400
+    for (let round = 0; round < 2; round++) {
+      const thumb = await fetch(`${base}/api/album/${p2.photo.id}/image?w=128&token=${TOKEN}`);
+      assert.equal(thumb.status, 200);
+      assert.equal(thumb.headers.get('content-type'), 'image/webp');
+      assert.ok(thumb.headers.get('etag'));
+      assert.ok(Number(thumb.headers.get('content-length')) > 0);
+    }
+    assert.equal((await fetch(`${base}/api/album/${p2.photo.id}/image?w=999&token=${TOKEN}`)).status, 400);
     const original = await fetch(`${base}/api/album/${p2.photo.id}/original?token=${TOKEN}`);
     assert.equal(original.headers.get('content-type'), 'image/png');
     assert.deepEqual(Buffer.from(await original.arrayBuffer()), bigPng);
@@ -1177,6 +1189,9 @@ try {
     assert.ok(!(await tool('list_photos', {})).some(x => x.id === img.photo_id), '聊天图收藏前不应该出现在相册列表');
     const file = await fetch(`${base}/api/chat/image/${img.id}?token=${TOKEN}`);
     assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png');
+    assert.ok(file.headers.get('etag'));
+    const fileThumb = await fetch(`${base}/api/chat/image/${img.id}?w=128&token=${TOKEN}`);
+    assert.equal(fileThumb.status, 200); assert.equal(fileThumb.headers.get('content-type'), 'image/webp');
     // 多张图作为同一条消息保存，刷新后也不会拆成多个气泡
     const group = await (await fetch(`${base}/api/chat?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -474,21 +474,34 @@ app.get('/api/fishing/encyclopedia', async (_, res) => {
 app.get('/api/moods', (req, res) => res.json(mw.moods.getMoods({ limit: Number(req.query.limit) || 50 })));
 app.get('/api/album', (req, res) => res.json(mw.album.listPhotos({ category: req.query.category || '', limit: Number(req.query.limit) || 100 })));
 app.get('/api/album-categories', (_, res) => res.json(mw.album.listPhotoCategories()));
+// 图片一律走 res.sendFile：自动带 ETag / Last-Modified / Content-Length / Range，
+// 手机第二次请求同一张图只拿 304。?w=128|256|512 出方形缩略图（给头像、网格用），
+// 缩略图生成失败就退回完整预览图，不会因此 500。
+async function sendImageFile(req, res, { file, mime, thumbKey }) {
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  if (req.query.w !== undefined && req.query.w !== '') {
+    const size = mw.album.thumbSize(req.query.w);
+    if (!size) return res.status(400).json({ error: `w 只支持 ${mw.album.THUMB_SIZES.join(' / ')}` });
+    try {
+      const thumb = await mw.album.thumbnail({ source: file, key: thumbKey, size });
+      if (thumb) return res.type(thumb.mime).sendFile(path.resolve(thumb.path));
+    } catch (e) { console.error('[album] 缩略图生成失败，退回完整预览图：', e.message || e); }
+  }
+  if (mime) res.type(mime);
+  res.sendFile(path.resolve(file));
+}
 app.get('/api/album/:id/image', (req, res) => {
   const meta = mw.album.getPhotoMeta(req.params.id);
   const p = mw.album.getPhotoPath(req.params.id);
   if (!meta || !p) return res.status(404).json({ error: '找不到这张照片' });
-  res.setHeader('Content-Type', meta.preview_mime_type || meta.mime_type);
-  res.setHeader('Cache-Control', 'private, max-age=604800');
-  fs.createReadStream(p).pipe(res);
+  return sendImageFile(req, res, { file: p, mime: meta.preview_mime_type || meta.mime_type, thumbKey: req.params.id });
 });
 app.get('/api/album/:id/original', (req, res) => {
   const meta = mw.album.getPhotoMeta(req.params.id);
   const p = mw.album.getPhotoOriginalPath(req.params.id);
   if (!meta || !p) return res.status(404).json({ error: '找不到这张照片的原图' });
-  res.setHeader('Content-Type', meta.original_mime_type || meta.mime_type);
   res.setHeader('Cache-Control', 'private, max-age=604800');
-  fs.createReadStream(p).pipe(res);
+  res.type(meta.original_mime_type || meta.mime_type).sendFile(path.resolve(p));
 });
 app.delete('/api/album/:id', (req, res) => {
   try {
@@ -1036,12 +1049,11 @@ function sendChatImage(req, res) {
   if (r.photo_id) {
     const p = mw.album.getPhotoPath(r.photo_id);
     if (!p) return res.status(404).json({ error: '相册里这张图没了' });
-    res.setHeader('Cache-Control', 'private, max-age=604800');
-    return res.sendFile(path.resolve(p));
+    const meta = mw.album.getPhotoMeta(r.photo_id);
+    return sendImageFile(req, res, { file: p, mime: meta?.preview_mime_type || meta?.mime_type || null, thumbKey: r.photo_id });
   }
-  res.setHeader('Cache-Control', 'private, max-age=604800');
-  res.setHeader('Content-Type', r.mime);
-  fs.createReadStream(r.path).pipe(res);
+  // 旧版聊天图不在相册里，缩略图按消息 id + 序号落盘
+  return sendImageFile(req, res, { file: r.path, mime: r.mime, thumbKey: `chat-${req.params.id}-${r.index || req.params.index || 1}` });
 }
 app.get('/api/chat/image/:id/:index', sendChatImage);
 app.get('/api/chat/image/:id', sendChatImage);
@@ -1052,24 +1064,9 @@ app.post('/api/chat/read', (req, res) => {
 app.get('/api/chat/voice/:id', (req, res) => {
   const v = mw.chat.voicePath(req.params.id);
   if (!v) return res.status(404).json({ error: '找不到这条语音' });
-  const stat = fs.statSync(v.path);
-  res.setHeader('Content-Type', v.mime);
-  res.setHeader('Accept-Ranges', 'bytes');
-  const range = req.headers.range;
-  if (range) {
-    const m = /bytes=(\d*)-(\d*)/.exec(range);
-    let start = m && m[1] ? parseInt(m[1], 10) : 0;
-    let end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
-    if (isNaN(start) || start < 0) start = 0;
-    if (isNaN(end) || end >= stat.size) end = stat.size - 1;
-    if (start > end) { res.status(416).setHeader('Content-Range', `bytes */${stat.size}`); return res.end(); }
-    res.status(206);
-    res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
-    res.setHeader('Content-Length', end - start + 1);
-    return fs.createReadStream(v.path, { start, end }).pipe(res);
-  }
-  res.setHeader('Content-Length', stat.size);
-  fs.createReadStream(v.path).pipe(res);
+  // sendFile 自带 Range / ETag / Last-Modified / Content-Length，手写的分段逻辑不用了
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  res.type(v.mime).sendFile(path.resolve(v.path));
 });
 app.get('/api/chat/voice-stream/:id', async (req, res) => {
   const m = mw.chat.getMessage(req.params.id);
@@ -1627,32 +1624,10 @@ app.get('/api/voice/history', (req, res) => res.json(getVoiceHistory(Number(req.
 app.get('/api/voice/:id/audio', (req, res) => {
   const p = getVoiceFilePath(req.params.id);
   if (!p) return res.status(404).json({ error: '找不到这段语音' });
-  // 之前这里直接把整个文件流 pipe 出去，没带 Content-Length、也不支持 Range 请求——
-  // 浏览器（尤其 iOS Safari）拿不到总时长，进度条自然拖不动，有时候还会在快放完
-  // 的时候误判"播完了"提前掐断。这里补上标准的 HTTP Range 支持来修这个。
-  const stat = fs.statSync(p);
-  const total = stat.size;
-  const range = req.headers.range;
-  res.setHeader('Content-Type', 'audio/mpeg');
-  res.setHeader('Accept-Ranges', 'bytes');
-  if (range) {
-    const m = /bytes=(\d*)-(\d*)/.exec(range);
-    let start = m && m[1] ? parseInt(m[1], 10) : 0;
-    let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
-    if (isNaN(start) || start < 0) start = 0;
-    if (isNaN(end) || end >= total) end = total - 1;
-    if (start > end) {
-      res.status(416).setHeader('Content-Range', `bytes */${total}`);
-      return res.end();
-    }
-    res.status(206);
-    res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
-    res.setHeader('Content-Length', end - start + 1);
-    fs.createReadStream(p, { start, end }).pipe(res);
-  } else {
-    res.setHeader('Content-Length', total);
-    fs.createReadStream(p).pipe(res);
-  }
+  // 浏览器（尤其 iOS Safari）要 Content-Length 和 Range 才能拿到总时长、拖进度条；
+  // sendFile 自带这些（还有 ETag / Last-Modified），以前手写的分段逻辑不用了。
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  res.type('audio/mpeg').sendFile(path.resolve(p));
 });
 // 醒来/排班这些还是棋子 Cowork 账号里的辞通过 /mcp 主动来做，服务器不轮询这部分。
 // 但棋子的日程提醒是个例外：不能等辞醒来才推，所以这里单独开一个每分钟跑一次的
