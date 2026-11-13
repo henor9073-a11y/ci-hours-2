@@ -1009,6 +1009,11 @@ app.post('/api/call/transcribe', async (req, res) => {
         const text = await transcribeAudio(buf, b.mime || 'audio/webm');
         // Check after STT too: the old phone call may have ended during upload.
         mw.calls.requireActive(call.id);
+        const echoCandidates = (Array.isArray(b.echo_candidates) ? b.echo_candidates : [])
+          .map(value => String(value || '').slice(0, 600)).filter(Boolean).slice(-4);
+        if (text && echoCandidates.length && mw.calls.looksLikePlaybackEcho(text, echoCandidates)) {
+          return { text: '', event: null, no_speech: true, suppressed_echo: true };
+        }
         const event = text ? mw.calls.say('nor', text, 'voice', { callId: call.id, segmentId: b.segment_id }) : null;
         if (event) keepCallAudio(event.id, buf, b.mime || 'audio/webm');
         return { text, event, no_speech: !text };

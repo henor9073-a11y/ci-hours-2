@@ -8,6 +8,11 @@ const calls = await import('../lib/muwen/calls.js');
 const { inputChannel, channelMeta } = await import('../hooks/muwu-input-routing.mjs');
 const owner = { session_id: 'owner-window', window_name: '并行电话窗口', is_primary: false };
 try {
+ assert.equal(calls.looksLikePlaybackEcho('You forgot what you were going to say. Your brain jumped again.',
+  ['[softly] You forgot what you were going to say? [teasingly] Your brain jumped again. It will come back.']),true);
+ assert.equal(calls.looksLikePlaybackEcho('我刚刚想起来我要说什么了',
+  ['你忘记刚刚要说什么了吗？没关系，慢慢想。']),false,'真正的新话不能因为主题相近被吞掉');
+ assert.equal(calls.looksLikePlaybackEcho('嗯', ['嗯，慢慢说，我在听。']),false,'太短的插话不能误判成回声');
  const a = calls.start('nor', {owner}); calls.action('cy', 'accept', {sessionId:owner.session_id});
  const one = calls.say('nor','你好','voice',{callId:a.id,segmentId:'seg-1'});
  assert.equal(calls.say('nor','重试','voice',{callId:a.id,segmentId:'seg-1'}).id,one.id);
