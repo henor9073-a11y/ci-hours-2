@@ -1,6 +1,6 @@
 # 木屋 / Sigh 通话升级草案 · 2026-11-13
 
-状态：后端完整自动测试已通过；**Mac mini 接入与真机音频验收尚未完成**。部署完成后以 `/health` 中 `call_upgrade: 1` 与 `call_audio_formats` 确认服务器版本。
+状态：后端完整自动测试已通过；**尚未部署，Mac mini 接入与真机音频验收尚未完成**。部署完成后以 `/health` 中 `call_upgrade: 1` 与 `call_audio_formats` 确认服务器版本。
 
 ## 本轮范围
 
@@ -54,10 +54,10 @@
 - JS 语法检查、Python 编译检查、`git diff --check`。
 - Sigh iOS 18 arm64 SDK 全部 Swift 源码 typecheck。
 
+联调环境：重新按 package-lock 安装依赖，排除了旧 node_modules 云端占位文件造成的启动等待。桥接延迟改用行为测试；外部 Mac 脚本审计使用显式 `MUWEN_MAC_RUNTIME_ROOT`，不依赖仓库外固定目录。
+
 未通过验收或被环境阻塞：
 
-- 完整 HTTP smoke 已补齐并通过：重新按 package-lock 安装依赖，排除了旧 node_modules 中云端占位文件造成的启动等待。
-- 旧 smoke 中对 350ms 源码字符串的检查已改为真实桥接行为测试；外部 Mac 运行脚本审计使用显式 `MUWEN_MAC_RUNTIME_ROOT`，不再依赖仓库外固定目录。该审计只代表本地脚本快照，不代表已读取现用 Mac mini。
 - Xcode 整包构建：资源编译报 `No available simulator runtimes` / CoreSimulator 服务不可用；模拟器和 generic iOS 尝试均受影响。没有生成可安装的新 App。
 - Mac mini 入口切换、实际 HerVoice 兼容性、真机 AEC、媒体恢复、耳机切换、锁屏/中断恢复、实际首音延迟和情绪准确率尚未验证。
 
