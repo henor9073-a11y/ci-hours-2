@@ -995,8 +995,12 @@ try {
     await postCall('/api/call/settings', {ambientEnabled:true});
     const ambient = await postCall('/api/call/ambient', {call_id:c.id,sounds:[{label:'music',confidence:.98}]}).then(r=>r.json());
     assert.equal(ambient.by,'system');assert.equal(ambient.source,'environment_audio');
-    const corrected = await postCall(`/api/call/events/${first.id}/voice-label`, {tags:['平静']}).then(r=>r.json());
-    assert.deepEqual(corrected.voice_label.tags,['平静']);
+    const manualTags = ['平静','认真说事','想念','表达爱意','嘴硬','吃醋','松了一口气','期待','安心','撒娇','委屈','开心','第十三个'];
+    const corrected = await postCall(`/api/call/events/${first.id}/voice-label`, {tags:manualTags,note:'我当时其实在笑'}).then(r=>r.json());
+    assert.deepEqual(corrected.voice_label.tags,manualTags.slice(0,12),'人工标注应完整保留至十二个标签');
+    const correctionEvent = calls.getState().events.find(e=>e.type==='emotion_correction' && e.related_event_id===first.id);
+    assert.match(correctionEvent.text,/平静、认真说事、想念、表达爱意、嘴硬、吃醋、松了一口气、期待、安心、撒娇、委屈、开心/);
+    assert.match(correctionEvent.text,/我当时其实在笑/,'辞收到的更正应包含手机上保存的备注');
     const favorite = await postCall('/api/call/favorites', {event_ids:[first.id]}).then(r=>r.json());
     assert.equal(favorite.events[0].text,'HTTP 通话语句');
     assert.ok((await rest('/api/call/favorites')).some(item=>item.id===favorite.id));
@@ -1004,6 +1008,10 @@ try {
     await postCall('/api/call/settings', {ambientEnabled:false});
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
+    const tonedCall = calls.setVoiceTone(said.id, { status:'ready', tone:'语速稍慢', emotion:'累', tags:['累'], confidence:.8 });
+    assert.equal(tonedCall.voice_tone.emotion, '累');
+    assert.equal(calls.getState().events.filter(e => e.type === 'voice_observation').length, 0,
+      '同一句的语气只能更新原事件，不能再唤醒一次');
     assert.deepEqual(await toolForSession(SECONDARY_SESSION, 'call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
     await assert.rejects(toolForSession(PRIMARY_SESSION, 'call_say', { content: '抢电话' }), /属于另一个窗口/);
     calls.action('nor', 'hangup');
@@ -1066,11 +1074,14 @@ try {
     const said = textForCy(toned, []);
     assert.ok(said.includes('音高比平时偏低') && said.includes('听起来：累、委屈、难过（像是撑了一天）'), said);
     assert.equal((await jpost(`/api/chat/${textMsg.id}/tone`, { tone: 'x' })).status, 404, '只收棋子的语音');
-    const lr = await jpost(`/api/chat/${v.id}/voice-label`, { tags: ['累'], intensity: 2, text_wrong: true, note: '其实在笑' });
-    assert.equal((await lr.json()).voice_label.note, '其实在笑');
+    const savedTags = ['累','委屈','难过','嘴硬','想念','吃醋','安心','期待','认真','撒娇','开心','兴奋','第十三个'];
+    const lr = await jpost(`/api/chat/${v.id}/voice-label`, { tags: savedTags, intensity: 2, text_wrong: true, note: '其实在笑' });
+    const labeled = await lr.json();
+    assert.equal(labeled.voice_label.note, '其实在笑');
+    assert.deepEqual(labeled.voice_label.tags,savedTags.slice(0,12),'木屋语音人工标签也应保留至十二个');
     const items = await rest('/api/voice-tone/items?labeled=1');
     const it = items.find(x => x.id === v.id);
-    assert.ok(it && it.voice_label.tags[0] === '累' && it.voice_tone.tone, JSON.stringify(it));
+    assert.ok(it && it.voice_label.tags.length === 12 && it.voice_label.tags[0] === '累' && it.voice_tone.tone, JSON.stringify(it));
   });
   await step('Apple Watch：固定动作显示系统小字，只投递主要窗口', async () => {
     const invalid = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
