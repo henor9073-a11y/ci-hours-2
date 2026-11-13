@@ -579,19 +579,27 @@ try {
     assert.ok(heart.never.some(x => x.includes('不直接念数值')));
     assert.equal(watchdog['权限'], '只能发手机通知');
     assert.ok(watchdog.never.includes('不读留言') && watchdog.never.includes('不启动新 session'));
-    // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
+    // Runtime scripts live outside this repository. Audit the real supplied copy,
+    // rather than depending on the developer's enclosing checkout layout.
+    const macRuntimeRoot = process.env.MUWEN_MAC_RUNTIME_ROOT;
+    if (macRuntimeRoot) {
+      // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
+      const fs2 = await import('fs');
+      const hbCode = fs2.readFileSync(path.join(macRuntimeRoot, 'wake_watchdog.py'), 'utf8')
+        .replace(/^\s*#.*$/gm, '');
+      assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
+      assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
+      assert.ok(hbCode.includes("mcp_call('send_push'"));
+      // 第一层只往现有主要窗口注入一次性系统提醒，不再安装 /loop
+      const wake = fs2.readFileSync(path.join(macRuntimeRoot, 'wakeup.py'), 'utf8');
+      assert.ok(wake.includes('"action": "wake_once"'));
+      assert.ok(wake.includes('<system-reminder source="autonomous-wake">'));
+      assert.ok(!wake.includes('os.write(fd, b"/loop\\n")'));
+      assert.ok(!/claude\s+-p/.test(wake));
+    } else {
+      console.log('  SKIP external Mac runtime source audit: MUWEN_MAC_RUNTIME_ROOT is not configured');
+    }
     const fs2 = await import('fs');
-    const hbCode = fs2.readFileSync(new URL('../../../remote-fix/wake_watchdog.py', import.meta.url), 'utf8')
-      .replace(/^\s*#.*$/gm, '');
-    assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
-    assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
-    assert.ok(hbCode.includes("mcp_call('send_push'"));
-    // 第一层只往现有主要窗口注入一次性系统提醒，不再安装 /loop
-    const wake = fs2.readFileSync(new URL('../../../remote-fix/wakeup.py', import.meta.url), 'utf8');
-    assert.ok(wake.includes('"action": "wake_once"'));
-    assert.ok(wake.includes('<system-reminder source="autonomous-wake">'));
-    assert.ok(!wake.includes('os.write(fd, b"/loop\\n")'));
-    assert.ok(!/claude\s+-p/.test(wake));
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
@@ -974,6 +982,26 @@ try {
     assert.equal(blockedCallAck.blocked, true, '主要窗口不能替副窗口确认来电');
     assert.ok((await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`)).events.some(e => e.id === ringing.id), '其他窗口确认不能吞掉归属窗口来电');
     calls.action('cy', 'accept', { sessionId: SECONDARY_SESSION });
+    const health = await fetch(`${base}/health`).then(r => r.json());
+    assert.equal(health.call_upgrade, 1);
+    assert.ok(health.call_audio_formats.includes('pcm_24000'));
+    const postCall = (route, body) => fetch(`${base}${route}?token=${TOKEN}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body:JSON.stringify(body)
+    });
+    const first = await postCall('/api/call/say', {call_id:c.id,segment_id:'http-seg',text:'HTTP 通话语句',source:'voice'}).then(r=>r.json());
+    const retry = await postCall('/api/call/say', {call_id:c.id,segment_id:'http-seg',text:'HTTP 重试',source:'voice'}).then(r=>r.json());
+    assert.equal(retry.id, first.id, 'HTTP retries must preserve one utterance');
+    assert.equal((await postCall('/api/call/say', {call_id:'ended-call',text:'迟到的输入'})).status,409);
+    await postCall('/api/call/settings', {ambientEnabled:true});
+    const ambient = await postCall('/api/call/ambient', {call_id:c.id,sounds:[{label:'music',confidence:.98}]}).then(r=>r.json());
+    assert.equal(ambient.by,'system');assert.equal(ambient.source,'environment_audio');
+    const corrected = await postCall(`/api/call/events/${first.id}/voice-label`, {tags:['平静']}).then(r=>r.json());
+    assert.deepEqual(corrected.voice_label.tags,['平静']);
+    const favorite = await postCall('/api/call/favorites', {event_ids:[first.id]}).then(r=>r.json());
+    assert.equal(favorite.events[0].text,'HTTP 通话语句');
+    assert.ok((await rest('/api/call/favorites')).some(item=>item.id===favorite.id));
+    await fetch(`${base}/api/call/favorites/${favorite.id}?token=${TOKEN}`,{method:'DELETE'});
+    await postCall('/api/call/settings', {ambientEnabled:false});
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
     assert.deepEqual(await toolForSession(SECONDARY_SESSION, 'call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
@@ -1457,8 +1485,7 @@ try {
     assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? (speaking ? .02 : .035) : .018"), '通话应提前录音保住句首，并在辞播放时继续接住棋子的轻声续话');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
     assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
-    const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');
-    assert.ok(callAddon.includes("? 0 : 350") && callAddon.includes('400);'), '辞端通话轮询与平衡合并窗要足够快');
+    // Delivery timing and per-call isolation are exercised by test/call-bridge.mjs.
     assert.ok(muwu.includes('function starredVoice(m)') && muwu.includes('m.voice_id || m.voice_stream') && muwu.includes('<audio controls preload="metadata"'), '收藏页要保留棋子录音和辞的语音播放器，不能降级成纯文本');
     assert.ok(chat.includes('辞的消息框颜色') && chat.includes('辞的消息框透明度') && chat.includes('我的消息框颜色') && chat.includes('我的消息框透明度'), '聊天双方气泡要能分别调整颜色和透明度');
     assert.ok(chat.includes('function bubbleLook(c, t)') && chat.includes("'--cx-ai'") && chat.includes("'--cx-me'"), '气泡透明度只写背景变量，不能把文字一起变淡');

@@ -101,7 +101,7 @@ app.use((req, res, next) => {
   if (req.path === '/' || req.path.endsWith('.html') || req.path.endsWith('.css')) return next();
   return res.status(401).json({ error: '需要密码' });
 });
-app.get('/health', (_, res) => res.json({ status: 'ok' }));
+app.get('/health', (_, res) => res.json({ status: 'ok', call_upgrade: 1, call_audio_formats: ['mp3_44100_128', 'pcm_24000'] }));
 
 // 棋子控制“辞能不能进入完整木屋”的总开关。它只限制辞的 MCP 与消息投递，
 // 不限制棋子自己的 Sigh / 木屋前端，所以关掉以后仍然能在手机上正常整理内容。

@@ -1,6 +1,6 @@
 # 木屋 / Sigh 通话升级草案 · 2026-11-13
 
-状态：源码修改与针对性验证完成，**尚未部署，未作真机音频验收**。
+状态：后端完整自动测试已通过；**Mac mini 接入与真机音频验收尚未完成**。部署完成后以 `/health` 中 `call_upgrade: 1` 与 `call_audio_formats` 确认服务器版本。
 
 ## 本轮范围
 
@@ -27,7 +27,7 @@
 
 ## Mac mini 集成：尚未执行
 
-当前无法从本工作区连接 Mac mini；不能把本地副本视为运行中的文件。本次没有修改 `/Users/nor/Claude` 或任何运行会话。
+当前工作区连接 Mac mini 的局域网 SSH 返回 `Operation not permitted`，mDNS 名称也未解析；这不能证明设备离线。手机 CoreDevice 的 XPC 服务也无法访问。不能把本地副本视为运行中的文件。本次没有修改 `/Users/nor/Claude` 或任何运行会话。
 
 1. 先在 Mac mini 备份并核对现用 `voice-channel.mjs`、calls addon、hooks、启动配置与 HerVoice 模块。不要替换任何人格/身份文件。
 2. 后端先部署：旧 Sigh 继续收到 MP3；新 Sigh 需要 PCM 接口部署后才能安装。
@@ -43,6 +43,10 @@
 
 已通过：
 
+- 完整 `npm test`（含 HTTP smoke、既有回归、通话接口和新桥接行为测试）；使用了本地 Mac 运行脚本快照做独立源检查。
+- `/health` 的版本能力标记，供安装新版 App 前确认后端支持 PCM。
+- Docker 构建改为 `npm ci`，部署使用已经测试的锁定依赖。
+
 - `node test/call-upgrade.mjs`：电话身份、重试、窗口隔离、观察来源、纠正、历史、收藏。
 - `node test/call-stream.mjs`：首块先于整句到达、PCM 字节与标头、取消上游。
 - `node test/history-main.mjs`、`node test/chat-schema.mjs`：既有主历史与消息结构回归。
@@ -52,7 +56,8 @@
 
 未通过验收或被环境阻塞：
 
-- 完整 HTTP smoke：临时服务在当前环境内未能启动，包含 120s 启动重试，不能计为通过。
+- 完整 HTTP smoke 已补齐并通过：重新按 package-lock 安装依赖，排除了旧 node_modules 中云端占位文件造成的启动等待。
+- 旧 smoke 中对 350ms 源码字符串的检查已改为真实桥接行为测试；外部 Mac 运行脚本审计使用显式 `MUWEN_MAC_RUNTIME_ROOT`，不再依赖仓库外固定目录。该审计只代表本地脚本快照，不代表已读取现用 Mac mini。
 - Xcode 整包构建：资源编译报 `No available simulator runtimes` / CoreSimulator 服务不可用；模拟器和 generic iOS 尝试均受影响。没有生成可安装的新 App。
 - Mac mini 入口切换、实际 HerVoice 兼容性、真机 AEC、媒体恢复、耳机切换、锁屏/中断恢复、实际首音延迟和情绪准确率尚未验证。
 
