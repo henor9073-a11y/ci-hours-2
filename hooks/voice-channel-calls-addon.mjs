@@ -12,6 +12,24 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, call
   const pushed = new Set(), utteranceBuffer = new Map(); let busy = false, bufferChangedAt = 0;
   const nurseryPushed = new Set(); let nurseryBusy = false;
   let bufferedCallId = '';
+  function utteranceText(e) {
+    if (e.voice_label?.skip) return e.text;
+    if (e.voice_label) {
+      const tags = Array.isArray(e.voice_label.tags) ? e.voice_label.tags.filter(Boolean).join('、') : '';
+      const note = String(e.voice_label.note || '').trim();
+      const parts = [tags ? `她本人纠正的感受：${tags}` : '她本人纠正为没有明显情绪'];
+      if (note) parts.push(`她的补充：${note}`);
+      return `${e.text}\n[${parts.join('；')}；人工更正优先于机器推测]`;
+    }
+    const tone = e.voice_tone;
+    if (!tone || !['ready', 'neutral'].includes(e.analysis_status)) return e.text;
+    const parts = [];
+    if (tone.tone) parts.push(String(tone.tone).slice(0, 120));
+    if (e.analysis_status === 'ready' && Number(tone.confidence) >= 0.6 && tone.emotion) {
+      parts.push(`可能的情绪：${String(tone.emotion).slice(0, 60)}`);
+    }
+    return parts.length ? `${e.text}\n[同一句的声音观察：${parts.join('；')}；不确定时以 Nor 更正为准]` : e.text;
+  }
   async function poll() {
     if (busy) return; busy = true;
     try {
@@ -24,10 +42,13 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, call
       const fresh = events.filter(x => (!eventTypes || eventTypes(x)) && !pushed.has(x.id) && !utteranceBuffer.has(x.id));
       for (const e of fresh.filter(x => x.type === 'utterance')) { utteranceBuffer.set(e.id, e); bufferChangedAt = Date.now(); }
       for (const e of fresh.filter(x => x.type !== 'utterance')) {
+        // Older servers may still have queued one of these.  A voice analysis
+        // update is metadata on its utterance, never a second conversational turn.
+        if (e.type === 'voice_observation') { pushed.add(e.id); continue; }
         const content = e.type === 'ringing'
           ? '棋子正在给你打电话。请立刻决定用 call_accept 接听，或者 call_reject 拒接；不要只在终端里回答。'
           : e.type === 'accepted' ? '电话已接通。进入通话轻量模式：请口语化简短回答；普通内容暂停自动 recall，明确问过去时才轻量召回。'
-            : ['ambient', 'emotion_correction', 'voice_observation'].includes(e.type) ? `[通话观察，非 Nor 原话] ${e.text}` : `电话状态：${e.type}`;
+            : ['ambient', 'emotion_correction'].includes(e.type) ? `[通话观察，非 Nor 原话] ${e.text}` : `电话状态：${e.type}`;
         await mcp.notification({ method: 'notifications/claude/channel', params: {
           content, meta: safeMeta({ origin: 'muwu_system', speaker: 'system', source: e.source || 'call_state',
             call_id: e.call_id, owner_session_id: call?.owner_session_id, event_id: e.id, kind: e.type,
@@ -39,7 +60,7 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, call
       const wait = settings.tokenMode === 'economy' ? 1400 : 0;
       if (utteranceBuffer.size && Date.now() - bufferChangedAt >= wait) {
         const batch = [...utteranceBuffer.values()];
-        const content = batch.map(e => e.text).join('\n');
+        const content = batch.map(utteranceText).join('\n');
         await mcp.notification({ method: 'notifications/claude/channel', params: {
           content, meta: safeMeta({ origin: 'muwu_call', speaker: 'nor', call_id: batch[0].call_id,
             owner_session_id: call?.owner_session_id, reply_tool: 'call_say', counts_as_user_activity: true,

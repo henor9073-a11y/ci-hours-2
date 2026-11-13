@@ -26,12 +26,15 @@ const start = extra => startCallBridge({ mcp: { notification: async value => not
   safeMeta, nursery: false, log: () => {}, ...extra });
 const poll = async () => { for (const fn of [...intervals.values()]) fn(); await tick(); };
 try {
-  payload.events = [event('ready','accepted'),event('speech','utterance',{text:'你好',source:'voice'}),
+  payload.events = [event('ready','accepted'),event('speech','utterance',{text:'你好',source:'voice',analysis_status:'ready',
+    voice_tone:{tone:'语速稍慢',emotion:'累',confidence:.8}}),
+    event('legacy-tone','voice_observation',{text:'旧版分开发送的语气观察'}),
     event('room','ambient',{text:'背景里可能有音乐',source:'environment_audio'})];
   failAck = true;
   bridge = start(); await tick();
   const spoken = notifications.find(n => n.meta.event_id === 'speech');
   assert.ok(spoken,'balanced delivery must not wait for another timer after VAD has completed');
+  assert.match(spoken.content,/你好[\s\S]*同一句的声音观察：语速稍慢；可能的情绪：累/);
   assert.equal(spoken.meta.call_id,'call-a'); assert.equal(spoken.meta.owner_session_id,'window-a');
   assert.equal(spoken.meta.reply_tool,'call_say');
   for (const note of notifications.filter(n => n.meta.event_id !== 'speech')) {
@@ -39,8 +42,17 @@ try {
     assert.equal(note.meta.counts_as_user_activity,'false');
   }
   failAck = false; await poll();
-  assert.equal(notifications.length,3,'an ACK retry must not deliver the same events twice');
-  assert.equal(acknowledged.size,3);
+  assert.equal(notifications.length,3,'voice observations must not create a second prompt and ACK retries must not duplicate events');
+  assert.equal(acknowledged.size,4,'a legacy separate observation is silently acknowledged');
+  bridge.stop(); notifications.length=0; acknowledged.clear();
+
+  payload.events=[event('manual','utterance',{text:'其实不是生气',source:'voice',analysis_status:'ready',
+    voice_tone:{tone:'音量偏高',emotion:'生气',confidence:.9},
+    voice_label:{tags:['嘴硬','委屈','想念','吃醋'],note:'我当时其实在忍笑'}})];
+  bridge=start();await tick();
+  assert.equal(notifications.length,1);
+  assert.match(notifications[0].content,/她本人纠正的感受：嘴硬、委屈、想念、吃醋；她的补充：我当时其实在忍笑；人工更正优先于机器推测/);
+  assert.doesNotMatch(notifications[0].content,/音量偏高|机器.*生气/,'人工更正不能和机器猜测混在一起');
   bridge.stop(); notifications.length=0; acknowledged.clear();
 
   payload.settings.tokenMode='economy';
