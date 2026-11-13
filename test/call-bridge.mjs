@@ -57,7 +57,12 @@ try {
   bridge=start({eventTypes:e=>e.type==='utterance'});await tick();
   assert.equal(notifications.length,1);assert.equal(notifications[0].meta.event_id,'filtered-speech');
   assert.deepEqual([...acknowledged],['filtered-speech'],'a dedicated call channel must not consume system events');
-  console.log('✓ immediate balanced delivery, system provenance, ACK retries, call boundaries, dedicated-channel filtering');
+  bridge.stop(); notifications.length=0; acknowledged.clear();
+
+  bridge=start({calls:false,nursery:false});await tick();
+  assert.equal(intervals.size,0,'nursery-only mode must not start the legacy call poller');
+  assert.equal(notifications.length,0);
+  console.log('✓ immediate balanced delivery, system provenance, ACK retries, call boundaries, dedicated-channel filtering, legacy-call opt-out');
 } finally {
   bridge?.stop();
   Object.assign(globalThis,{fetch:original.fetch,setInterval:original.setInterval,clearInterval:original.clearInterval});

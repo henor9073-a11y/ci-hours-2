@@ -3,12 +3,16 @@
 // Uses the same MCP SDK installation as the existing parallel-recall-mcp runner.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import fs from 'node:fs';
 import { inputChannel, channelMeta, safeMeta, instructions } from './muwu-input-routing.mjs';
 import { startCallBridge } from './voice-channel-calls-addon.mjs';
 const name = process.env.MUWU_CHANNEL;
 if (!Object.hasOwn(instructions, name)) throw new Error('MUWU_CHANNEL 必须是 muwu-chat / muwu-voice / muwu-call / muwu-system');
-const url = String(process.env.MUWU_URL || '').replace(/\/$/, '');
-const token = process.env.MUWU_TOKEN || '';
+let stored = {};
+try { stored = JSON.parse(fs.readFileSync(new URL('./.muwu.json', import.meta.url), 'utf8')); }
+catch { /* Environment variables remain the explicit fallback. */ }
+const url = String(process.env.MUWU_URL || stored.url || '').replace(/\/$/, '');
+const token = process.env.MUWU_TOKEN || stored.token || '';
 const sessionId = process.env.MUWU_SESSION_ID || '';
 if (!url || !token || !sessionId) throw new Error('缺少木屋地址、令牌或窗口身份');
 const mcp = new Server({ name, version: '2.0.0' }, {

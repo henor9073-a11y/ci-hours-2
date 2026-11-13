@@ -46,8 +46,16 @@ def judge(module, transcript, features, acoustic, context, corrections):
 
 
 def main():
-    base = os.environ['MUWU_URL'].rstrip('/')
-    token = os.environ['MUWU_TOKEN']
+    config = {}
+    try:
+        config_path = Path(os.environ.get('MUWU_CONFIG', '/Users/nor/Claude/stackchan-voice/.muwu.json'))
+        config = json.loads(config_path.read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError, TypeError):
+        pass
+    base = str(os.environ.get('MUWU_URL') or config.get('url') or '').rstrip('/')
+    token = str(os.environ.get('MUWU_TOKEN') or config.get('token') or '')
+    if not base or not token:
+        raise RuntimeError('missing Muwu URL or token')
     module_path = Path(os.environ['HERVOICE_MODULE']).resolve()
     sys.path.insert(0, str(module_path.parent))
     spec = importlib.util.spec_from_file_location('hervoice_call_base', module_path)
@@ -73,7 +81,14 @@ def main():
             now = time.time()
             # Only still-ephemeral audio; never analyse months of historical calls on startup.
             from datetime import datetime
-            recent = [item for item in items if now - datetime.fromisoformat(item['at'].replace('Z','+00:00')).timestamp() < 580]
+            def is_recent(item):
+                try:
+                    return now - datetime.fromisoformat(str(item['at']).replace('Z', '+00:00')).timestamp() < 580
+                except (KeyError, TypeError, ValueError):
+                    # A malformed historical item must not block every other pending
+                    # analysis in the same polling cycle.
+                    return False
+            recent = [item for item in items if is_recent(item)]
             for item in reversed(recent):
                 if item.get('voice_label') or item.get('analysis_status') not in {'pending', None}: continue
                 is_call = item['source_kind'] == 'call'

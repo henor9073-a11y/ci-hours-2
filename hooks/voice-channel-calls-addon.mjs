@@ -2,7 +2,7 @@
 // voice-channel.mjs 连接 mcp 后调用：
 //   import { startCallBridge } from './voice-channel-calls-addon.mjs'
 //   startCallBridge({ mcp, muwu: MUWU, safeMeta, log })
-export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nursery = true, eventTypes = null }) {
+export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, calls = true, nursery = true, eventTypes = null }) {
   if (!muwu?.sessionId) {
     if (muwu) log('木屋通话：缺少 MUWU_SESSION_ID，为避免多个窗口同时接听，保持关闭');
     return { stop() {} };
@@ -93,11 +93,14 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
     finally { nurseryBusy = false; }
   }
 
-  const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400);
+  const timer = calls
+    ? setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400)
+    : null;
   const nurseryTimer = nursery
     ? setInterval(() => pollNursery().catch(e => log('婴儿房轮询异常', e?.message)), 1000)
     : null;
-  poll(); if (nursery) pollNursery();
-  log(`木屋通话${nursery ? '+婴儿房' : ''}：已绑定窗口 ${muwu.sessionId.slice(0, 8)}`);
-  return { stop() { clearInterval(timer); if (nurseryTimer) clearInterval(nurseryTimer); } };
+  if (calls) poll();
+  if (nursery) pollNursery();
+  log(`${calls ? '木屋通话' : ''}${calls && nursery ? '+' : ''}${nursery ? '婴儿房' : ''}：已绑定窗口 ${muwu.sessionId.slice(0, 8)}`);
+  return { stop() { if (timer) clearInterval(timer); if (nurseryTimer) clearInterval(nurseryTimer); } };
 }
