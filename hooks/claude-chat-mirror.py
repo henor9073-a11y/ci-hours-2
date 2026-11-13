@@ -165,6 +165,9 @@ def original_user(entry: Dict[str, Any]) -> bool:
         return False
     if entry.get("isMeta") is True or entry.get("is_meta") is True:
         return False
+    origin = entry.get("origin") or {}
+    if isinstance(origin, dict) and origin.get("kind") == "channel" and origin.get("server") == "muwu-system":
+        return False
     message = entry.get("message")
     if not isinstance(message, dict) or not isinstance(message.get("content"), str):
         return False
@@ -174,10 +177,10 @@ def original_user(entry: Dict[str, Any]) -> bool:
 
 def from_muwu(entry: Dict[str, Any]) -> bool:
     origin = entry.get("origin")
-    if not isinstance(origin, dict) or origin.get("kind") != "channel" or origin.get("server") != "stackchan-voice":
+    if not isinstance(origin, dict) or origin.get("kind") != "channel" or origin.get("server") not in {"stackchan-voice", "muwu-chat", "muwu-voice", "muwu-call", "muwu-system"}:
         return False
     content = (entry.get("message") or {}).get("content")
-    return isinstance(content, str) and ('origin="muwu"' in content or 'origin="muwu_call"' in content)
+    return isinstance(content, str) and (any(f'origin="{key}"' in content for key in ('muwu', 'muwu_chat', 'muwu_voice', 'muwu_call')))
 
 
 def clipped(value: Any, limit: int) -> str:

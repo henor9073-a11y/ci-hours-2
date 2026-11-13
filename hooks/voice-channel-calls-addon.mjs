@@ -2,7 +2,7 @@
 // voice-channel.mjs 连接 mcp 后调用：
 //   import { startCallBridge } from './voice-channel-calls-addon.mjs'
 //   startCallBridge({ mcp, muwu: MUWU, safeMeta, log })
-export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nursery = true }) {
+export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nursery = true, eventTypes = null }) {
   if (!muwu?.sessionId) {
     if (muwu) log('木屋通话：缺少 MUWU_SESSION_ID，为避免多个窗口同时接听，保持关闭');
     return { stop() {} };
@@ -11,32 +11,41 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
   const q = 'token=' + encodeURIComponent(muwu.token) + '&session_id=' + encodeURIComponent(muwu.sessionId);
   const pushed = new Set(), utteranceBuffer = new Map(); let busy = false, bufferChangedAt = 0;
   const nurseryPushed = new Set(); let nurseryBusy = false;
+  let bufferedCallId = '';
   async function poll() {
     if (busy) return; busy = true;
     try {
       const r = await fetch(`${base}/api/call/pending?${q}`, { signal: AbortSignal.timeout(15000) });
       if (!r.ok) throw new Error('取通话事件 HTTP ' + r.status);
       const { call, events = [], settings = {} } = await r.json();
-      const fresh = events.filter(x => !pushed.has(x.id) && !utteranceBuffer.has(x.id));
+      if (call?.id !== bufferedCallId) {
+        utteranceBuffer.clear(); pushed.clear(); bufferedCallId = call?.id || '';
+      }
+      const fresh = events.filter(x => (!eventTypes || eventTypes(x)) && !pushed.has(x.id) && !utteranceBuffer.has(x.id));
       for (const e of fresh.filter(x => x.type === 'utterance')) { utteranceBuffer.set(e.id, e); bufferChangedAt = Date.now(); }
       for (const e of fresh.filter(x => x.type !== 'utterance')) {
         const content = e.type === 'ringing'
           ? '棋子正在给你打电话。请立刻决定用 call_accept 接听，或者 call_reject 拒接；不要只在终端里回答。'
           : e.type === 'accepted' ? '电话已接通。进入通话轻量模式：请口语化简短回答；普通内容暂停自动 recall，明确问过去时才轻量召回。'
-            : `电话状态：${e.type}`;
+            : ['ambient', 'emotion_correction', 'voice_observation'].includes(e.type) ? `[通话观察，非 Nor 原话] ${e.text}` : `电话状态：${e.type}`;
         await mcp.notification({ method: 'notifications/claude/channel', params: {
-          content, meta: safeMeta({ origin: 'muwu_call', speaker: 'nor', call_id: call?.id || e.call_id, event_id: e.id, kind: e.type, sent_at: e.at })
+          content, meta: safeMeta({ origin: 'muwu_system', speaker: 'system', source: e.source || 'call_state',
+            call_id: e.call_id, owner_session_id: call?.owner_session_id, event_id: e.id, kind: e.type,
+            counts_as_user_activity: false, requires_reply: e.type === 'ringing', sent_at: e.at })
         }});
         pushed.add(e.id);
       }
       // 通话本身已经由 VAD 判断完句；这里只留很短的合并窗，避免又额外排队一整秒。
-      const wait = settings.tokenMode === 'economy' ? 1400 : settings.tokenMode === 'low_latency' ? 0 : 350;
+      const wait = settings.tokenMode === 'economy' ? 1400 : 0;
       if (utteranceBuffer.size && Date.now() - bufferChangedAt >= wait) {
         const batch = [...utteranceBuffer.values()];
         const content = batch.map(e => e.text).join('\n');
         await mcp.notification({ method: 'notifications/claude/channel', params: {
-          content, meta: safeMeta({ origin: 'muwu_call', speaker: 'nor', call_id: call?.id || batch[0].call_id,
-            event_id: batch.at(-1).id, event_ids: batch.map(e => e.id).join(','), kind: batch.length > 1 ? 'utterance_batch' : 'utterance', sent_at: batch.at(-1).at })
+          content, meta: safeMeta({ origin: 'muwu_call', speaker: 'nor', call_id: batch[0].call_id,
+            owner_session_id: call?.owner_session_id, reply_tool: 'call_say', counts_as_user_activity: true,
+            event_id: batch.at(-1).id, event_ids: batch.map(e => e.id).join(','),
+            input_sources: batch.map(e => e.source || 'voice').join(','),
+            kind: batch.length > 1 ? 'utterance_batch' : 'utterance', sent_at: batch.at(-1).at })
         }});
         batch.forEach(e => { pushed.add(e.id); utteranceBuffer.delete(e.id); });
       }

@@ -23,7 +23,7 @@ $timeout = [int]$env:MUWEN_RECALL_TIMEOUT; if ($timeout -le 0) { $timeout = 12 }
 # stdin 用 $input 读（-File 场景 [Console]::In 读不到；$input 能读且中文不乱）
 $p = ''
 try { $p = [string](($input | Out-String | ConvertFrom-Json).prompt) } catch { $p = '' }
-if (-not $p) { exit 0 }
+if (-not $p -or $p.Contains('origin="muwu_system"')) { exit 0 }
 # 木纹自己注入的召回内容（[muwen:...] 开头）和自动唤醒 prompt 不再触发召回，避免套娃
 if ($p.StartsWith('[muwen:') -or $p.StartsWith('苏醒') -or $p -match '^(?:/loop(?:\s|$)|\[自动唤醒\])') { exit 0 }
 

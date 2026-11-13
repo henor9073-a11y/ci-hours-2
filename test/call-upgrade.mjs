@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muwu-call-upgrade-'));
+process.env.DATA_DIR = dir;
+const calls = await import('../lib/muwen/calls.js');
+const { inputChannel, channelMeta } = await import('../hooks/muwu-input-routing.mjs');
+const owner = { session_id: 'owner-window', window_name: '并行电话窗口', is_primary: false };
+try {
+ const a = calls.start('nor', {owner}); calls.action('cy', 'accept', {sessionId:owner.session_id});
+ const one = calls.say('nor','你好','voice',{callId:a.id,segmentId:'seg-1'});
+ assert.equal(calls.say('nor','重试','voice',{callId:a.id,segmentId:'seg-1'}).id,one.id);
+ assert.throws(()=>calls.say('cy','偷接','voice',{sessionId:'wrong'}));
+ assert.throws(()=>calls.say('system','伪造原话'));
+ assert.equal(calls.ambient(a.id,{sounds:[{label:'music',confidence:.99}]}).reason,'disabled');
+ calls.updateSettings({ambientEnabled:true});
+ assert.equal(calls.ambient(a.id,{sounds:[{label:'music',confidence:.1}]}).reason,'uncertain');
+ const ambient = calls.ambient(a.id,{sounds:[{label:'music',confidence:.98}]});
+ assert.equal(ambient.by,'system'); assert.equal(ambient.source,'environment_audio');
+ assert.equal(calls.ambient(a.id,{sounds:[{label:'music',confidence:.98}]}).reason,'unchanged');
+ assert.ok(!calls.transcriptDay(one.at.slice(0,10)).some(e=>e.id===ambient.id));
+ calls.setVoiceTone(one.id,{status:'uncertain',tags:[],confidence:.2});
+ calls.setVoiceLabel(one.id,{tags:['打闹·玩闹']});
+ calls.setVoiceTone(one.id,{emotion:'真生气',confidence:.99});
+ assert.deepEqual(calls.event(one.id).voice_label.tags,['打闹·玩闹'],'a late inference must not overwrite correction');
+ const clip = calls.favorite({event_ids:[one.id]});
+ assert.equal(clip.events[0].call_id,a.id); assert.equal(clip.events[0].type,'utterance');
+ assert.equal(calls.favorites().length,1);
+ calls.action('nor','hangup');
+ calls.setVoiceLabel(one.id,{tags:[]});
+ calls.setVoiceLabel(one.id,{skip:true});
+ assert.ok(!calls.transcriptDay(one.at.slice(0,10)).some(e=>e.id===one.id),'non-user speech must not feed memory as Nor');
+ calls.setVoiceLabel(one.id,{tags:[]});
+ assert.deepEqual(calls.history()[0].events.find(e=>e.id===one.id).voice_label.tags,[],'archived correction persists');
+ const b=calls.start('nor',{owner});calls.action('nor','accept');
+ assert.throws(()=>calls.say('nor','上一通的慢转写','voice',{callId:a.id,segmentId:'late'}),{status:409});
+ const before=calls.getState().events.length;
+ calls.setVoiceLabel(one.id,{tags:['平静']});
+ assert.equal(calls.getState().events.length,before,'old-call correction never wakes a new call');
+ assert.equal(calls.favorites()[0].events[0].text,'你好');
+ calls.deleteFavorite(clip.id); assert.equal(calls.favorites().length,0);
+ assert.throws(()=>calls.favorite({event_ids:[one.id,'unknown']}));
+ for (const [sender,type,expected] of [['nor','text','muwu-chat'],['nor','voice','muwu-voice'],['nor','image','muwu-chat'],['system','voice','muwu-system']]) {
+  const message={id:'m',sender,type,at:'now'};
+  assert.equal(inputChannel(message),expected);
+  assert.equal(channelMeta(message).counts_as_user_activity,String(sender==='nor'));
+ }
+ console.log('✓ call identity, retries, owner isolation, ambient sidecars, corrections, archive, favorites, channel provenance');
+} finally {fs.rmSync(dir,{recursive:true,force:true});}

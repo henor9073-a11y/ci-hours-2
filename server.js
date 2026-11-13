@@ -906,9 +906,15 @@ app.post('/api/chat/:id/tone', (req, res) => {
   if (!m) return res.status(404).json({ error: '找不到这条棋子的语音' });
   res.json(m);
 });
-app.post('/api/chat/:id/voice-label', (req, res) => {
+app.post('/api/chat/:id/voice-label', async (req, res) => {
   const m = mw.chat.setVoiceLabel(String(req.params.id || ''), req.body || {});
   if (!m) return res.status(404).json({ error: '找不到这条棋子的语音' });
+  if (m.delivered_at) {
+    const label = m.voice_label;
+    await mw.chat.sendSystemEvent(label.skip ? `Nor 更正了语音 ${m.id}：不是她在说话，不应据此推断她的情绪。`
+      : `Nor 更正了语音 ${m.id} 的情绪：${label.tags.join('、') || '没有明显情绪'}。以她的更正为准。`,
+      'voice_emotion_correction', { deliverToCy: true, deliveryKey: `voice-label:${m.id}:${label.revision || label.at}` });
+  }
   res.json(m);
 });
 app.get('/api/voice-tone/items', (req, res) => res.json(mw.chat.voiceToneItems({
@@ -985,17 +991,54 @@ app.post('/api/call/start', (req, res) => {
   } catch (e) { res.status(409).json({ error: String(e.message || e) }); }
 });
 app.post('/api/call/action', (req, res) => { try { res.json(mw.calls.action('nor', (req.body || {}).action)); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
-app.post('/api/call/say', (req, res) => { try { res.json(mw.calls.say('nor', (req.body || {}).text, (req.body || {}).source || 'voice')); } catch (e) { res.status(400).json({ error: String(e.message || e) }); } });
+app.post('/api/call/say', (req, res) => { try {
+  const b = req.body || {};
+  res.json(mw.calls.say('nor', b.text, b.source || 'voice', { callId: b.call_id, segmentId: b.segment_id }));
+} catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); } });
+const pendingCallTranscripts = new Map();
 app.post('/api/call/transcribe', async (req, res) => {
   try {
     const b = req.body || {}, buf = Buffer.from(String(b.audio_base64 || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
     if (!buf.length) return res.status(400).json({ error: '没有音频' });
-    const { transcribeAudio } = await import('./lib/voice.js');
-    const text = await transcribeAudio(buf, b.mime || 'audio/webm');
-    const event = text ? mw.calls.say('nor', text, 'voice') : null;
-    if (event) keepCallAudio(event.id, buf, b.mime || 'audio/webm');
-    res.json({ text, event });
-  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+    const call = mw.calls.requireActive(b.call_id);
+    const key = b.segment_id ? `${call.id}:${String(b.segment_id).slice(0, 100)}` : '';
+    let work = key && pendingCallTranscripts.get(key);
+    if (!work) {
+      work = (async () => {
+        const { transcribeAudio } = await import('./lib/voice.js');
+        const text = await transcribeAudio(buf, b.mime || 'audio/webm');
+        // Check after STT too: the old phone call may have ended during upload.
+        mw.calls.requireActive(call.id);
+        const event = text ? mw.calls.say('nor', text, 'voice', { callId: call.id, segmentId: b.segment_id }) : null;
+        if (event) keepCallAudio(event.id, buf, b.mime || 'audio/webm');
+        return { text, event, no_speech: !text };
+      })();
+      if (key) pendingCallTranscripts.set(key, work);
+    }
+    try { res.json(await work); }
+    finally { if (key && pendingCallTranscripts.get(key) === work) pendingCallTranscripts.delete(key); }
+  } catch (e) { res.status(e.status || 500).json({ error: String(e.message || e) }); }
+});
+app.post('/api/call/ambient', (req, res) => {
+  try { res.json(mw.calls.ambient((req.body || {}).call_id, req.body || {})); }
+  catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); }
+});
+app.post('/api/call/events/:id/tone', (req, res) => {
+  const event = mw.calls.setVoiceTone(req.params.id, req.body || {});
+  event ? res.json(event) : res.status(404).json({ error: '找不到这句通话' });
+});
+app.post('/api/call/events/:id/voice-label', (req, res) => {
+  const event = mw.calls.setVoiceLabel(req.params.id, req.body || {});
+  event ? res.json(event) : res.status(404).json({ error: '找不到这句通话' });
+});
+app.get('/api/call/voice-tone/items', (_, res) => res.json(mw.calls.voiceToneItems()));
+app.get('/api/call/favorites', (_, res) => res.json(mw.calls.favorites()));
+app.post('/api/call/favorites', (req, res) => {
+  try { res.json(mw.calls.favorite(req.body || {})); }
+  catch (e) { res.status(400).json({ error: String(e.message || e) }); }
+});
+app.delete('/api/call/favorites/:id', (req, res) => {
+  mw.calls.deleteFavorite(req.params.id); res.json({ ok: true });
 });
 // 通话里棋子每一段的录音：只放内存、10 分钟就扔、最多 40 段，给 Mac mini 听语气用，不落盘
 const CALL_AUDIO_TTL_MS = 10 * 60 * 1000, CALL_AUDIO_MAX = 40;
@@ -1024,7 +1067,7 @@ app.post('/api/call/delivered', (req, res) => {
 app.get('/api/call/audio/:eventId', async (req, res) => {
   const e = mw.calls.event(req.params.eventId);
   if (!e || e.type !== 'utterance' || e.by !== 'cy') return res.status(404).json({ error: '找不到这句通话语音' });
-  try { await streamSpeech(e.text, res); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
+  try { await streamSpeech(e.text, res, { format: req.query.format }); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
 function sendChatImage(req, res) {
   const r = mw.chat.imageRef(req.params.id, req.params.index || req.query.index || 1);
