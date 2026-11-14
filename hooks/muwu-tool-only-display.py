@@ -42,14 +42,14 @@ def is_muwu_prompt(entry: Dict[str, Any]) -> bool:
     origin = entry.get("origin")
     if not isinstance(origin, dict):
         return False
-    if origin.get("kind") != "channel" or origin.get("server") != "stackchan-voice":
+    if origin.get("kind") != "channel" or origin.get("server") not in {"stackchan-voice", "muwu-chat", "muwu-voice", "muwu-call", "muwu-system"}:
         return False
 
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or "<channel " not in content:
         return False
-    return 'origin="muwu"' in content or 'origin="muwu_call"' in content
+    return any(f'origin="{key}"' in content for key in ('muwu', 'muwu_chat', 'muwu_voice', 'muwu_call'))
 
 
 def matching_prompt(transcript_path: str, turn_id: str) -> Optional[Dict[str, Any]]:

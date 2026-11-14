@@ -505,13 +505,13 @@ try {
     const g = sa.results.find(r => r.layer === 'grains');
     assert.equal(g.label, '经历');
 
-    // 苏醒状态：三层都在，当前窗口和看门狗只认 Mac mini 执行器的真实回报
+    // 苏醒状态：随机、心潮和看门狗都只认 Mac mini 执行器的真实回报
     let w = await tool('get_wake_status');
     assert.equal(w.layers.length, 3);
-    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours']);
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'xinchao', 'heartbeat']);
     assert.equal(w.layers[0].connected, false);
     assert.ok(w.layers[0].status.includes('没有最近报到'));
-    assert.equal(w.layers.find(l => l.key === 'ci_hours').connected, true);   // 第三层是服务器自己的，永远看得到
+    assert.equal(w.layers.find(l => l.key === 'xinchao').connected, false);
     // 旧 wake-ping 只为兼容保留，不能再把已废弃的 Windows ping 冒充当前看门狗
     const pr = await fetch(`${base}/api/wake-ping?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer: 'heartbeat', note: '测试' }) });
     assert.ok(pr.ok);
@@ -583,27 +583,39 @@ try {
     assert.ok(q.text.includes('我会陪你的'));
     assert.equal((await (await fetch(`${base}/api/daily-quote?token=${TOKEN}`)).json()).text, q.text);
   });
-  await step('三层分工：边界写进代码，服务器没有会说话的 cron', async () => {
+  await step('苏醒三路分工：随机、心潮、看门狗边界写进代码', async () => {
     const w = await tool('get_wake_status');
-    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'heartbeat', 'ci_hours'], '顺序按一二三层');
-    const [l1, l2, l3] = w.layers;
-    assert.equal(l1['权限'], '只向主要窗口注入 /loop');
+    assert.deepEqual(w.layers.map(l => l.key), ['schedule_wakeup', 'xinchao', 'heartbeat']);
+    const [l1, heart, watchdog] = w.layers;
+    assert.equal(l1['权限'], '只向当前主要窗口发送一次性系统提醒');
     assert.ok(l1.only.some(x => x.includes('主要窗口')), '第一层只能叫醒登记的主要窗口');
     assert.ok(l1.never.some(x => x.includes('不另开 session')));
-    assert.equal(l2['权限'], '只能发手机通知');
-    assert.ok(l2.never.includes('不读留言') && l2.never.includes('不启动新 session'));
-    assert.ok(l3.never.includes('不回留言') && l3.never.some(x => x.includes('辞的语气')));
-    // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
+    assert.ok(l1.never.includes('不使用 /loop'));
+    assert.equal(heart['权限'], '只向当前主要窗口发送动作邀请');
+    assert.ok(heart.never.some(x => x.includes('不直接念数值')));
+    assert.equal(watchdog['权限'], '只能发手机通知');
+    assert.ok(watchdog.never.includes('不读留言') && watchdog.never.includes('不启动新 session'));
+    // Runtime scripts live outside this repository. Audit the real supplied copy,
+    // rather than depending on the developer's enclosing checkout layout.
+    const macRuntimeRoot = process.env.MUWEN_MAC_RUNTIME_ROOT;
+    if (macRuntimeRoot) {
+      // Mac 看门狗只检查和推 Bark：不许出现启动/恢复 session 的动作
+      const fs2 = await import('fs');
+      const hbCode = fs2.readFileSync(path.join(macRuntimeRoot, 'wake_watchdog.py'), 'utf8')
+        .replace(/^\s*#.*$/gm, '');
+      assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
+      assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
+      assert.ok(hbCode.includes("mcp_call('send_push'"));
+      // 第一层只往现有主要窗口注入一次性系统提醒，不再安装 /loop
+      const wake = fs2.readFileSync(path.join(macRuntimeRoot, 'wakeup.py'), 'utf8');
+      assert.ok(wake.includes('"action": "wake_once"'));
+      assert.ok(wake.includes('<system-reminder source="autonomous-wake">'));
+      assert.ok(!wake.includes('os.write(fd, b"/loop\\n")'));
+      assert.ok(!/claude\s+-p/.test(wake));
+    } else {
+      console.log('  SKIP external Mac runtime source audit: MUWEN_MAC_RUNTIME_ROOT is not configured');
+    }
     const fs2 = await import('fs');
-    const hbCode = fs2.readFileSync(new URL('../../../remote-fix/wake_watchdog.py', import.meta.url), 'utf8')
-      .replace(/^\s*#.*$/gm, '');
-    assert.ok(!/claude\s+(?:-p|--resume)/.test(hbCode), '看门狗不该启动或恢复 session');
-    assert.ok(!/chat_|get_messages|留言/.test(hbCode), '看门狗不该碰留言');
-    assert.ok(hbCode.includes("mcp_call('send_push'"));
-    // 第一层只往现有主要窗口注入 /loop
-    const wake = fs2.readFileSync(new URL('../../../remote-fix/wakeup.py', import.meta.url), 'utf8');
-    assert.ok(wake.includes('os.write(fd, b"/loop\\n")'));
-    assert.ok(!/claude\s+-p/.test(wake));
     // 服务器 cron 只剩机械活
     const srv = fs2.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
     const crons = srv.match(/cron\.schedule\('([^']+)'/g) || [];
@@ -932,7 +944,7 @@ try {
   await step('实时通话：拨号、接听、说话、挂断、记录和安静设置', async () => {
     const heartbeat = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
-      body: JSON.stringify({ agent_id: 'test-mini', current: {
+      body: JSON.stringify({ agent_id: 'test-mini', capabilities: ['wake_toggle', 'wake_config_v2'], current: {
         session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
         windows: [
           { session_id: PRIMARY_SESSION, name: '主要窗口', is_primary: true, state: 'idle' },
@@ -941,6 +953,28 @@ try {
       } })
     });
     assert.equal(heartbeat.status, 200);
+    const wakeSaved = await fetch(`${base}/api/wake-settings?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wake_enabled: true, wake_config: { version: 2, enabled: true, min_interval_min: 20, max_interval_min: 60 } })
+    }).then(r => r.json());
+    assert.equal(wakeSaved.status, 'queued');
+    const wakeClaimed = await fetch(`${base}/api/window-workbench/agent/heartbeat?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
+      body: JSON.stringify({ agent_id: 'test-mini', capabilities: ['wake_toggle', 'wake_config_v2'], current: {
+        session_id: PRIMARY_SESSION, model: 'claude-opus-4-6[1m]', state: 'idle',
+        windows: [
+          { session_id: PRIMARY_SESSION, name: '主要窗口', is_primary: true, state: 'idle' },
+          { session_id: SECONDARY_SESSION, name: '在线副窗口', is_primary: false, state: 'idle' }
+        ]
+      } })
+    }).then(r => r.json());
+    assert.equal(wakeClaimed.wake_command.id, wakeSaved.id);
+    const wakeCompleted = await fetch(`${base}/api/window-workbench/agent/wake-settings/${wakeSaved.id}/complete?token=${TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-window-agent-key': WINDOW_AGENT_TOKEN },
+      body: JSON.stringify({ message: '写入完成' })
+    }).then(r => r.json());
+    assert.equal(wakeCompleted.status, 'completed');
+    assert.equal((await rest(`/api/wake-settings/${wakeSaved.id}`)).status, 'completed');
     const calls = await import('../lib/muwen/calls.js');
     let settings = calls.updateSettings({ endPause: 'fast', tokenMode: 'economy', allowIncoming: true, quietEnabled: false });
     assert.equal(calls.pauseMs(), 800); assert.equal(settings.endPause, 'fast');
@@ -964,8 +998,36 @@ try {
     assert.equal(blockedCallAck.blocked, true, '主要窗口不能替副窗口确认来电');
     assert.ok((await rest(`/api/call/pending?session_id=${SECONDARY_SESSION}`)).events.some(e => e.id === ringing.id), '其他窗口确认不能吞掉归属窗口来电');
     calls.action('cy', 'accept', { sessionId: SECONDARY_SESSION });
+    const health = await fetch(`${base}/health`).then(r => r.json());
+    assert.equal(health.call_upgrade, 1);
+    assert.ok(health.call_audio_formats.includes('pcm_24000'));
+    const postCall = (route, body) => fetch(`${base}${route}?token=${TOKEN}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body:JSON.stringify(body)
+    });
+    const first = await postCall('/api/call/say', {call_id:c.id,segment_id:'http-seg',text:'HTTP 通话语句',source:'voice'}).then(r=>r.json());
+    const retry = await postCall('/api/call/say', {call_id:c.id,segment_id:'http-seg',text:'HTTP 重试',source:'voice'}).then(r=>r.json());
+    assert.equal(retry.id, first.id, 'HTTP retries must preserve one utterance');
+    assert.equal((await postCall('/api/call/say', {call_id:'ended-call',text:'迟到的输入'})).status,409);
+    await postCall('/api/call/settings', {ambientEnabled:true});
+    const ambient = await postCall('/api/call/ambient', {call_id:c.id,sounds:[{label:'music',confidence:.98}]}).then(r=>r.json());
+    assert.equal(ambient.by,'system');assert.equal(ambient.source,'environment_audio');
+    const manualTags = ['平静','认真说事','想念','表达爱意','嘴硬','吃醋','松了一口气','期待','安心','撒娇','委屈','开心','第十三个'];
+    const corrected = await postCall(`/api/call/events/${first.id}/voice-label`, {tags:manualTags,note:'我当时其实在笑'}).then(r=>r.json());
+    assert.deepEqual(corrected.voice_label.tags,manualTags.slice(0,12),'人工标注应完整保留至十二个标签');
+    const correctionEvent = calls.getState().events.find(e=>e.type==='emotion_correction' && e.related_event_id===first.id);
+    assert.match(correctionEvent.text,/平静、认真说事、想念、表达爱意、嘴硬、吃醋、松了一口气、期待、安心、撒娇、委屈、开心/);
+    assert.match(correctionEvent.text,/我当时其实在笑/,'辞收到的更正应包含手机上保存的备注');
+    const favorite = await postCall('/api/call/favorites', {event_ids:[first.id]}).then(r=>r.json());
+    assert.equal(favorite.events[0].text,'HTTP 通话语句');
+    assert.ok((await rest('/api/call/favorites')).some(item=>item.id===favorite.id));
+    await fetch(`${base}/api/call/favorites/${favorite.id}?token=${TOKEN}`,{method:'DELETE'});
+    await postCall('/api/call/settings', {ambientEnabled:false});
     const said = calls.say('nor', '喂，小辞听得到吗', 'voice');
     assert.equal(said.type, 'utterance'); assert.equal(calls.getState().call.status, 'active');
+    const tonedCall = calls.setVoiceTone(said.id, { status:'ready', tone:'语速稍慢', emotion:'累', tags:['累'], confidence:.8 });
+    assert.equal(tonedCall.voice_tone.emotion, '累');
+    assert.equal(calls.getState().events.filter(e => e.type === 'voice_observation').length, 0,
+      '同一句的语气只能更新原事件，不能再唤醒一次');
     assert.deepEqual(await toolForSession(SECONDARY_SESSION, 'call_say', { content: '听得到。' }), { ok: true }, 'call_say 不该把整条事件重复塞回 context');
     await assert.rejects(toolForSession(PRIMARY_SESSION, 'call_say', { content: '抢电话' }), /属于另一个窗口/);
     calls.action('nor', 'hangup');
@@ -1028,11 +1090,14 @@ try {
     const said = textForCy(toned, []);
     assert.ok(said.includes('音高比平时偏低') && said.includes('听起来：累、委屈、难过（像是撑了一天）'), said);
     assert.equal((await jpost(`/api/chat/${textMsg.id}/tone`, { tone: 'x' })).status, 404, '只收棋子的语音');
-    const lr = await jpost(`/api/chat/${v.id}/voice-label`, { tags: ['累'], intensity: 2, text_wrong: true, note: '其实在笑' });
-    assert.equal((await lr.json()).voice_label.note, '其实在笑');
+    const savedTags = ['累','委屈','难过','嘴硬','想念','吃醋','安心','期待','认真','撒娇','开心','兴奋','第十三个'];
+    const lr = await jpost(`/api/chat/${v.id}/voice-label`, { tags: savedTags, intensity: 2, text_wrong: true, note: '其实在笑' });
+    const labeled = await lr.json();
+    assert.equal(labeled.voice_label.note, '其实在笑');
+    assert.deepEqual(labeled.voice_label.tags,savedTags.slice(0,12),'木屋语音人工标签也应保留至十二个');
     const items = await rest('/api/voice-tone/items?labeled=1');
     const it = items.find(x => x.id === v.id);
-    assert.ok(it && it.voice_label.tags[0] === '累' && it.voice_tone.tone, JSON.stringify(it));
+    assert.ok(it && it.voice_label.tags.length === 12 && it.voice_label.tags[0] === '累' && it.voice_tone.tone, JSON.stringify(it));
   });
   await step('Apple Watch：固定动作显示系统小字，只投递主要窗口', async () => {
     const invalid = await fetch(`${base}/api/watch-events?token=${TOKEN}`, {
@@ -1450,8 +1515,7 @@ try {
     assert.ok(call.includes('beginCapture()') && call.includes('now - captureStartedAt > 4000') && call.includes("voicePlaying ? (speaking ? .02 : .035) : .018"), '通话应提前录音保住句首，并在辞播放时继续接住棋子的轻声续话');
     assert.ok(call.includes('很慢 · 4 秒') && call.includes('慢 · 2.5 秒'), '慢速说话要有更长的停顿档位');
     assert.ok(call.includes('setInterval(poll, 700)'), '手机端通话状态不能两秒才取一次');
-    const callAddon = fs.readFileSync(path.join(process.cwd(), 'hooks/voice-channel-calls-addon.mjs'), 'utf8');
-    assert.ok(callAddon.includes("? 0 : 350") && callAddon.includes('400);'), '辞端通话轮询与平衡合并窗要足够快');
+    // Delivery timing and per-call isolation are exercised by test/call-bridge.mjs.
     assert.ok(muwu.includes('function starredVoice(m)') && muwu.includes('m.voice_id || m.voice_stream') && muwu.includes('<audio controls preload="metadata"'), '收藏页要保留棋子录音和辞的语音播放器，不能降级成纯文本');
     assert.ok(chat.includes('辞的消息框颜色') && chat.includes('辞的消息框透明度') && chat.includes('我的消息框颜色') && chat.includes('我的消息框透明度'), '聊天双方气泡要能分别调整颜色和透明度');
     assert.ok(chat.includes('function bubbleLook(c, t)') && chat.includes("'--cx-ai'") && chat.includes("'--cx-me'"), '气泡透明度只写背景变量，不能把文字一起变淡');

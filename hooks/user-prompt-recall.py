@@ -37,6 +37,8 @@ def main():
         prompt = str((json.load(sys.stdin) or {}).get('prompt') or '')
     except Exception:
         return 0
+    if 'origin="muwu_system"' in prompt:
+        return 0
     if not prompt.strip():
         return 0
     # 木纹自己注入的召回内容（[muwen:...] 开头）和自动唤醒 prompt 不再触发召回，避免套娃

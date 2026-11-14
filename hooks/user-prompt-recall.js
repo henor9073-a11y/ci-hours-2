@@ -13,6 +13,7 @@ const LOG_MAX = 2 * 1024 * 1024;
 const RECENT_MS = 30 * 60 * 1000;
 const SESSION_COOLDOWN_MS = 15 * 60 * 1000;
 const PHOTO_EXPLICIT_RE = /照片|图片|相册|截图|影像|合照|自拍|找.{0,5}(?:照片|图片|图)|看.{0,4}(?:照片|图片|图)|长什么样|什么样子/;
+const CALL_HISTORY_RE = /记得|回忆|记忆|以前|之前|过去|那次|上次|当时|照片|图片|相册|截图|影像|合照|自拍/;
 const PARALLEL_RECALL_ONLY = process.env.MUWU_PARALLEL_RECALL_ONLY === '1';
 
 function log(message) {
@@ -83,7 +84,8 @@ process.stdin.on('end', async () => {
   try { event = JSON.parse(input); } catch { process.exit(0); }
   const prompt = String(event.prompt || '');
   const sessionId = String(event.session_id || '');
-  if (!prompt || prompt.startsWith('[muwen:')) process.exit(0);
+  if (!prompt || prompt.startsWith('[muwen:') || /<channel\b[^>]*\borigin="muwu_system"/.test(prompt)) process.exit(0);
+  if (/<channel\b[^>]*\borigin="muwu_call"/.test(prompt) && !CALL_HISTORY_RE.test(prompt.replace(/<[^>]+>/g, ''))) process.exit(0);
 
   const url = process.env.MUWEN_URL || 'https://ci-hours-2.onrender.com';
   const token = process.env.MUWEN_TOKEN || '010219';
