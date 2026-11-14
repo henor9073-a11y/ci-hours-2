@@ -975,7 +975,8 @@ app.post('/api/coupons/:id/revoke', async (req, res) => {
 });
 
 // ---- 持续通话：网页与 GPD 上当前 Claude Code session 之间的状态桥 ----
-app.get('/api/call/state', (req, res) => res.json(mw.calls.getState({ since: req.query.since || '' })));
+// 手机 / 网页轮询：顺带算作棋子这头的在线心跳（辞的窗口走 /api/call/pending）。
+app.get('/api/call/state', (req, res) => res.json(mw.calls.getState({ since: req.query.since || '', presence: 'nor' })));
 app.get('/api/call/history', (req, res) => res.json(mw.calls.history(Number(req.query.limit) || 50)));
 app.get('/api/call/targets', (_, res) => res.json({
   routing_version: mw.calls.sessionRoutingEnabled() ? 2 : 1,
