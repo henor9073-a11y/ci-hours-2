@@ -1692,7 +1692,21 @@ cron.schedule('0 1 * * *', () => {
   } catch (e) { console.error('[muwen] 后台苏醒失败：', e.message || e); }
 }, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
 
+// 「值得辞看一眼」的记忆候选：01:00 那班整理挑好，这里每半小时看一次该不该投进辞的主要窗口。
+// 投递时段 02:30–10:30 是**棋子 2026-11-14 点名定的**（原话「最好是在他的安静时段投，他安静时段刚好
+// 差不多是我睡觉的时间」）——不是忘了安静时段规则。那条规则管的是随机 / 心潮苏醒；这条是她要的。
+// 一天最多一次、候选为空不投、通话中不投、她 30 分钟内还在说话就推半小时再试，过了 10:30 就今晚不投。
+// 文案是机械的一句话（"后台挑了 N 条记忆等你定"），不调模型、不用辞的语气，和手表叫人 / 修改提案走同一条
+// deliverToCy 队列，只有主要窗口的 /api/chat/pending 拿得到。
+cron.schedule('0,30 2-10 * * *', async () => {
+  try {
+    const r = await mw.heatCandidates.deliverDue();
+    if (r.delivered || r.reason !== 'outside_window') console.log('[muwen] 记忆候选投递：', JSON.stringify(r));
+  } catch (e) { console.error('[muwen] 记忆候选投递失败：', e.message || e); }
+}, { timezone: (() => { try { return mw.timezone(); } catch { return 'Australia/Melbourne'; } })() });
+
 app.get('/api/tidy', (_, res) => res.json(mw.tidy.lastReport() || {}));
+app.get('/api/heat-candidates', (_, res) => res.json(mw.heatCandidates.listCandidates()));
 
 // 注：这里以前有一个每天 9:00 的 cron，用"你是辞"的 prompt 让模型写今日一句。
 // 已经拆掉——服务器是第三层（机械后台），不能用辞的语气说话。今日一句归第一层
