@@ -1010,7 +1010,7 @@ try {
     assert.equal((await postCall('/api/call/say', {call_id:'ended-call',text:'迟到的输入'})).status,409);
     await postCall('/api/call/settings', {ambientEnabled:true});
     const ambient = await postCall('/api/call/ambient', {call_id:c.id,sounds:[{label:'music',confidence:.98}]}).then(r=>r.json());
-    assert.equal(ambient.by,'system');assert.equal(ambient.source,'environment_audio');
+    assert.equal(ambient.attach_to,'next_utterance','环境音不再单独成事件，附在下一句上');
     const manualTags = ['平静','认真说事','想念','表达爱意','嘴硬','吃醋','松了一口气','期待','安心','撒娇','委屈','开心','第十三个'];
     const corrected = await postCall(`/api/call/events/${first.id}/voice-label`, {tags:manualTags,note:'我当时其实在笑'}).then(r=>r.json());
     assert.deepEqual(corrected.voice_label.tags,manualTags.slice(0,12),'人工标注应完整保留至十二个标签');

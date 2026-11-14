@@ -19,7 +19,13 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
   const IDLE_MS = Math.max(FAST_MS, Number(process.env.MUWU_CALL_IDLE_POLL_MS) || 2500);
   const LIVE = new Set(['ringing', 'active', 'reconnecting']);
   let nextPollAt = 0;
+  // 环境音现在附在她那一句上（不再单独推一条），放在句尾一起送。
   function utteranceText(e) {
+    const base = utteranceBase(e);
+    const ambient = String(e.ambient?.text || '').trim();
+    return ambient ? `${base}\n[这句话的同时听到的背景声音（机器判断，有不确定性，不必回应）：${ambient}]` : base;
+  }
+  function utteranceBase(e) {
     if (e.voice_label?.skip) return e.text;
     if (e.voice_label) {
       const tags = Array.isArray(e.voice_label.tags) ? e.voice_label.tags.filter(Boolean).join('、') : '';

@@ -1015,6 +1015,7 @@ app.post('/api/call/say', (req, res) => { try {
 } catch (e) { res.status(e.status || 400).json({ error: String(e.message || e) }); } });
 const pendingCallTranscripts = new Map();
 app.post('/api/call/transcribe', async (req, res) => {
+  const receivedAt = Date.now();
   try {
     const b = req.body || {}, buf = Buffer.from(String(b.audio_base64 || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
     if (!buf.length) return res.status(400).json({ error: '没有音频' });
@@ -1027,10 +1028,23 @@ app.post('/api/call/transcribe', async (req, res) => {
         const text = await transcribeAudio(buf, b.mime || 'audio/webm');
         // Check after STT too: the old phone call may have ended during upload.
         mw.calls.requireActive(call.id);
+        // 第一道：按时间窗。录音段结束时刻 ≈ 收到请求的时刻（手机可用 recorded_end_at 毫秒时间戳校正），
+        // 开始时刻 = 结束 − WAV 时长。大部分时间落在辞的播放窗里就当回声，不看转写内容。
+        const durationMs = mw.calls.wavDurationMs(buf);
+        if (text && durationMs > 0) {
+          const segEnd = Number(b.recorded_end_at) > 1e12 ? Number(b.recorded_end_at) : receivedAt;
+          const overlap = mw.calls.overlapsPlayback(call.id, segEnd - durationMs, segEnd);
+          if (overlap.ratio >= 0.6) {
+            console.log(`[call] 回声（时间窗）丢弃：录音 ${durationMs}ms，${Math.round(overlap.ratio * 100)}% 落在辞 ${overlap.event_id} 的播放里`);
+            return { text: '', event: null, no_speech: true, suppressed_echo: true, echo_reason: 'playback_window' };
+          }
+        }
+        // 第二道：按字面（手机交上来辞最近 4 句）。
         const echoCandidates = (Array.isArray(b.echo_candidates) ? b.echo_candidates : [])
           .map(value => String(value || '').slice(0, 600)).filter(Boolean).slice(-4);
         if (text && echoCandidates.length && mw.calls.looksLikePlaybackEcho(text, echoCandidates)) {
-          return { text: '', event: null, no_speech: true, suppressed_echo: true };
+          console.log(`[call] 回声（字面）丢弃：${text.length} 字`);
+          return { text: '', event: null, no_speech: true, suppressed_echo: true, echo_reason: 'text' };
         }
         const event = text ? mw.calls.say('nor', text, 'voice', { callId: call.id, segmentId: b.segment_id }) : null;
         if (event) keepCallAudio(event.id, buf, b.mime || 'audio/webm');
@@ -1090,7 +1104,12 @@ app.post('/api/call/delivered', (req, res) => {
 app.get('/api/call/audio/:eventId', async (req, res) => {
   const e = mw.calls.event(req.params.eventId);
   if (!e || e.type !== 'utterance' || e.by !== 'cy') return res.status(404).json({ error: '找不到这句通话语音' });
-  try { await streamSpeech(e.text, res, { format: req.query.format }); } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
+  const startedAt = Date.now();
+  try {
+    const bytes = await streamSpeech(e.text, res, { format: req.query.format });
+    // 记下这句什么时候推给了手机、推了多长，给 /api/call/transcribe 按时间窗拦回声用。
+    mw.calls.notePlayback(e.call_id, e.id, { startedAt, endedAt: Date.now(), bytes, format: req.query.format === 'pcm_24000' ? 'pcm_24000' : 'mp3' });
+  } catch (err) { if (!res.headersSent) res.status(502).json({ error: String(err.message || err) }); else res.end(); }
 });
 function sendChatImage(req, res) {
   const r = mw.chat.imageRef(req.params.id, req.params.index || req.query.index || 1);

@@ -46,6 +46,12 @@ try {
   assert.equal(acknowledged.size,4,'a legacy separate observation is silently acknowledged');
   bridge.stop(); notifications.length=0; acknowledged.clear();
 
+  payload.events=[event('bg','utterance',{text:'我在听',source:'voice',ambient:{text:'背景里可能有音乐'}})];
+  bridge=start();await tick();
+  assert.equal(notifications.length,1);assert.match(notifications[0].content,/我在听[\s\S]*背景声音[\s\S]*背景里可能有音乐/,'环境音附在她那句后面');
+  assert.equal(notifications[0].meta.speaker,'nor');
+  bridge.stop(); notifications.length=0; acknowledged.clear();
+
   payload.events=[event('manual','utterance',{text:'其实不是生气',source:'voice',analysis_status:'ready',
     voice_tone:{tone:'音量偏高',emotion:'生气',confidence:.9},
     voice_label:{tags:['嘴硬','委屈','想念','吃醋'],note:'我当时其实在忍笑'}})];
