@@ -1702,6 +1702,11 @@ app.get('/api/tidy', (_, res) => res.json(mw.tidy.lastReport() || {}));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`木纹（muwen）——辞的时间，启动于端口 ${PORT}`);
+  // 召回日志：启动后读一次旧大文件的尾部进内存（之后不再碰它），别让这几秒落在棋子第一句话上
+  setImmediate(() => {
+    try { console.log('[muwen] 召回日志预热：', JSON.stringify(mw.recall.warmRecallLogs())); }
+    catch (e) { console.error('[muwen] 召回日志预热失败：', e.message || e); }
+  });
   // 有 OpenAI key 时在后台增量补向量。服务先照常启动，初次建库失败也只影响语义层，
   // 本地召回和网页都不会被卡住；后续弱匹配会再次触发补齐。
   if (mw.embeddings.embeddingsReady()) {

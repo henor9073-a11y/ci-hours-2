@@ -436,6 +436,10 @@ try {
     const jt = JSON.parse(rawBody);
     assert.ok(jt.text.startsWith('[muwen:recall]') && jt.text.includes('摆摊'), jt.text);
     assert.equal(jt.count, jt.text.split('\n').length - 1);
+    // 召回日志：按天追加进 recall_logs/*.jsonl，不再生成或改写整表 recall_logs.json（2026-11-14）
+    const logDir = path.join(DATA, 'recall_logs');
+    assert.ok(fs.existsSync(logDir) && fs.readdirSync(logDir).some(n => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n)), '召回日志该按天写进 recall_logs/*.jsonl');
+    assert.ok(!fs.existsSync(path.join(DATA, 'recall_logs.json')), '不该再生成整表 recall_logs.json');
     // 要求联动相册时，同一轮会送回最相关图片的元数据。真实图片由 GPD 钩子
     // 立即调 get_photo 取，不把 base64 塞进 hook 的文本上下文。
     const rp = await fetch(`${base}/api/recall?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '摆摊那天', suppress_recent: false, use_agent: false, use_semantic: false, include_photos: true, photo_limit: 1 }) });
