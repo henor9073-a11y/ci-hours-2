@@ -12,6 +12,13 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
   const pushed = new Set(), utteranceBuffer = new Map(); let busy = false, bufferChangedAt = 0;
   const nurseryPushed = new Set(); let nurseryBusy = false;
   let bufferedCallId = '';
+  // 轮询快慢按需：这通电话属于本窗口且还没结束时 0.4 秒问一次；平时（没电话、
+  // 电话不是自己的、已挂断）放慢到 MUWU_CALL_IDLE_POLL_MS（默认 2.5 秒）。
+  // 五个窗口 × 两个入口一直 0.4 秒狂问，曾把服务器拖到 /health 都要等 6 秒。
+  const FAST_MS = 400;
+  const IDLE_MS = Math.max(FAST_MS, Number(process.env.MUWU_CALL_IDLE_POLL_MS) || 2500);
+  const LIVE = new Set(['ringing', 'active', 'reconnecting']);
+  let nextPollAt = 0;
   function utteranceText(e) {
     if (e.voice_label?.skip) return e.text;
     if (e.voice_label) {
@@ -36,6 +43,9 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
       const r = await fetch(`${base}/api/call/pending?${q}`, { signal: AbortSignal.timeout(15000) });
       if (!r.ok) throw new Error('取通话事件 HTTP ' + r.status);
       const { call, events = [], settings = {} } = await r.json();
+      // 旧服务器不带 status 字段时按进行中处理，宁快勿慢。
+      const live = !!call && (call.status == null || LIVE.has(call.status));
+      nextPollAt = Date.now() + (live || pushed.size ? 0 : IDLE_MS - FAST_MS);
       if (call?.id !== bufferedCallId) {
         utteranceBuffer.clear(); pushed.clear(); bufferedCallId = call?.id || '';
       }
@@ -76,7 +86,11 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
         if (!d.ok) throw new Error('回报通话事件 HTTP ' + d.status);
         ids.forEach(id => pushed.delete(id));
       }
-    } catch (e) { log('木屋通话轮询失败', e?.message); }
+    } catch (e) {
+      log('木屋通话轮询失败', e?.message);
+      // 还有推进会话但没回报成功的事件时保持快速重试；否则按慢速退避。
+      nextPollAt = Date.now() + (pushed.size ? 0 : IDLE_MS - FAST_MS);
+    }
     finally { busy = false; }
   }
 
@@ -114,7 +128,7 @@ export function startCallBridge({ mcp, muwu, safeMeta, log = console.error, nurs
     finally { nurseryBusy = false; }
   }
 
-  const timer = setInterval(() => poll().catch(e => log('通话轮询异常', e?.message)), 400);
+  const timer = setInterval(() => { if (Date.now() < nextPollAt) return; poll().catch(e => log('通话轮询异常', e?.message)); }, FAST_MS);
   const nurseryTimer = nursery
     ? setInterval(() => pollNursery().catch(e => log('婴儿房轮询异常', e?.message)), 1000)
     : null;
