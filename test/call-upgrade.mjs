@@ -14,6 +14,8 @@ try {
   ['你忘记刚刚要说什么了吗？没关系，慢慢想。']),false,'真正的新话不能因为主题相近被吞掉');
  assert.equal(calls.looksLikePlaybackEcho('嗯', ['嗯，慢慢说，我在听。']),false,'太短的插话不能误判成回声');
  const a = calls.start('nor', {owner}); calls.action('cy', 'accept', {sessionId:owner.session_id});
+ calls.action('nor','accept'); calls.action('cy','accept',{sessionId:owner.session_id});
+ assert.equal(calls.getState().events.filter(e=>e.type==='accepted').length,1,'重复按接听不能多记 accepted 事件');
  const one = calls.say('nor','你好','voice',{callId:a.id,segmentId:'seg-1'});
  assert.equal(calls.say('nor','重试','voice',{callId:a.id,segmentId:'seg-1'}).id,one.id);
  assert.throws(()=>calls.say('cy','偷接','voice',{sessionId:'wrong'}));
