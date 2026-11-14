@@ -74,6 +74,15 @@ await step('问历史口吻：不组上文角度、不加权', async () => {
   assert.equal(r.angles.length, 1, JSON.stringify(r.angles));
 });
 
+await step('粘贴进来的长文：检索只用前 600 字，几百毫秒内返回', async () => {
+  const long = '她今天把整篇论文草稿贴给我看了，'.repeat(400);   // 6000 多字
+  const t0 = Date.now();
+  const r = await recall.autoRecall(long, { autoMode: true, context: ctx, useAgent: false, suppressRecent: false });
+  assert.ok(Date.now() - t0 < 3000, `耗时 ${Date.now() - t0}ms`);
+  assert.ok(r.angles[0].length <= recall.QUERY_MAX_CHARS, `检索文本该截到 ${recall.QUERY_MAX_CHARS} 字：${r.angles[0].length}`);
+  assert.equal(r.skipped, undefined, '长文不算短话');
+});
+
 fs.rmSync(DATA, { recursive: true, force: true });
 if (failed) { console.log(`\n${failed} 项失败`); process.exit(1); }
 console.log('\n召回看上下文：全部通过');
