@@ -386,7 +386,7 @@ try {
     const r2 = await tool('search_all', { query: '木纹上线' });
     assert.ok(r2.results.find(x => x.layer === 'grains') && r2.results.find(x => x.layer === 'rings'));
   });
-  await step('recall：有候选、记日志、返回的 heat +5', async () => {
+  await step('recall：有候选、记日志、返回的 heat +2', async () => {
     const before = (await tool('get_grain', { id: 'x2' })).heat;
     const r = await tool('recall', { notice: '她说会陪我' });
     assert.ok(r.candidates > 0);
@@ -395,7 +395,7 @@ try {
     assert.equal(logs[0].notice, '她说会陪我');
     if (r.memories.find(m => m.id === 'x2')) {
       const after = (await tool('get_grain', { id: 'x2' })).heat;
-      assert.equal(after, before + 5);
+      assert.equal(after, before + 2);   // BONUS.recall 2026-11-14 从 5 降到 2
     }
     const empty = await tool('recall', { notice: 'zzqqxx完全不相关的词' });
     assert.deepEqual(empty.memories, []);

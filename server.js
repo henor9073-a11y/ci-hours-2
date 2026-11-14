@@ -1225,13 +1225,16 @@ app.post('/api/recall', async (req, res) => {
   // 默认回 { text, count }——text 就是拼好的注入文本，钩子取 .text 打到 stdout 就行。
   // ?format=full（旧名 json 也认）回完整结构，带 via / angles / matched_angles，用来看是哪个角度召回的。
   try {
-    const { query, max_return, use_agent, use_semantic, context, queries, suppress_recent, include_photos, photo_limit } = req.body || {};
+    const { query, max_return, use_agent, use_semantic, context, queries, suppress_recent, include_photos, photo_limit, origin, skip_short } = req.body || {};
     if (!query || !String(query).trim()) return jsonAscii(res, { error: 'query 不能为空' }, 400);
     const cleanQuery = String(query);
     // 图片精选和文本召回并行跑，不让相册多加一整段等待。
     // 只有文本记忆真的命中时才会把图交给钩子，避免每句闲聊都翻相册。
     const photoIntent = mw.album.photoRecallIntent(cleanQuery);
-    const photoTask = include_photos && photoIntent.eligible && !mw.recall.isTrivial(cleanQuery)
+    // 短话 / 电话 / 系统事件整个不召回（2026-11-14 棋子定），相册也别翻。skip_short=false 可关掉（调试用）。
+    const autoMode = skip_short === undefined ? true : !!skip_short;
+    const preSkip = autoMode ? mw.recall.skipReason(cleanQuery, { origin: origin || '' }) : '';
+    const photoTask = include_photos && photoIntent.eligible && !mw.recall.isTrivial(cleanQuery) && !preSkip
       ? Promise.race([
         mw.album.recallPhotos(cleanQuery, { limit: Math.max(1, Math.min(Number(photo_limit) || 1, 2)) })
           .catch(error => ({ query: cleanQuery, mode: 'error', warning: String(error.message || error), photos: [] })),
@@ -1244,7 +1247,11 @@ app.post('/api/recall', async (req, res) => {
       useAgent: use_agent === undefined ? null : !!use_agent,
       useSemantic: use_semantic === undefined ? null : !!use_semantic,
       queries: Array.isArray(queries) && queries.length ? queries : null,
-      context: context || ''
+      context: context || '',
+      autoMode,
+      origin: origin || '',
+      // 真注进去的纹理 +2 度（2026-11-14 起；以前这条路一直不升温，两个月下来 94% 的纹理凉到 30 度以下）
+      touchHits: true
     });
     const photoResult = await photoTask;
     // 自动联想仍要求文字记忆也命中；但用户明确说“找照片”时不应因为文字层空手而吞图。
