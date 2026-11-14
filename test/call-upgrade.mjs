@@ -38,9 +38,13 @@ try {
  calls.updateSettings({ambientEnabled:true});
  assert.equal(calls.ambient(a.id,{sounds:[{label:'music',confidence:.1}]}).reason,'uncertain');
  const ambient = calls.ambient(a.id,{sounds:[{label:'music',confidence:.98}]});
- assert.equal(ambient.by,'system'); assert.equal(ambient.source,'environment_audio');
+ assert.equal(ambient.attach_to,'next_utterance'); assert.match(ambient.text,/音乐/);
+ assert.ok(!calls.getState().events.some(e=>e.type==='ambient'),'环境音不再单独成事件推给辞');
  assert.equal(calls.ambient(a.id,{sounds:[{label:'music',confidence:.98}]}).reason,'unchanged');
- assert.ok(!calls.transcriptDay(one.at.slice(0,10)).some(e=>e.id===ambient.id));
+ const withAmbient = calls.say('nor','背景有音乐时说的','voice',{callId:a.id,segmentId:'seg-amb'});
+ assert.match(withAmbient.ambient.text,/音乐/,'环境音附在她紧接着的那一句上');
+ assert.ok(!calls.say('nor','再说一句','voice',{callId:a.id,segmentId:'seg-amb-2'}).ambient,'只附一次');
+ assert.ok(!calls.transcriptDay(one.at.slice(0,10)).some(e=>e.type==='ambient'));
  calls.setVoiceTone(one.id,{status:'uncertain',tags:[],confidence:.2});
  calls.setVoiceLabel(one.id,{tags:['打闹·玩闹']});
  calls.setVoiceTone(one.id,{emotion:'真生气',confidence:.99});
